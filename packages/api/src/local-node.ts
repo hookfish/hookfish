@@ -11,7 +11,9 @@ import type { BrokerEnv } from './oauth/config'
  */
 const apiPackageRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
 
-export async function createLocalBrokerEnv(dataDir: string): Promise<BrokerEnv> {
+export async function createLocalBrokerEnv(
+  dataDir: string,
+): Promise<BrokerEnv> {
   const { db } = await createPgliteDatabase(dataDir)
 
   await migrate(db, {
