@@ -16,7 +16,8 @@
     "preview": "turbo preview",
     "deploy": "turbo deploy",
     "cf-typegen": "turbo cf-typegen",
-    "db:studio": "pnpm --filter @template/api db:studio"
+    "db:studio": "pnpm --filter @template/api db:studio",
+    "db:seed": "pnpm --filter @template/api db:seed"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",

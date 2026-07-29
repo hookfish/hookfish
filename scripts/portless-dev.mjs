@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { getPortlessRoute } from './portless-utils.mjs'
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+)
 
 const [, , appName, separator, ...command] = process.argv
 
@@ -53,6 +60,20 @@ run('pnpm', [
 const env = { ...process.env }
 env.PORT = String(appPort)
 env.HOST = env.HOST ?? '127.0.0.1'
+
+// OAuth callbacks must be absolute and must byte-match what is registered with
+// the provider, so hand the API this branch's stable portless origin as
+// BASE_URL instead of making every dev set it by hand.
+//
+// Read apps/server/.env first: the API loads it later via `loadEnvFile`, which
+// does not overwrite already-set vars, so defaulting BASE_URL here without
+// looking would silently outrank a value the dev put in .env.
+try {
+  process.loadEnvFile(path.join(repoRoot, 'apps/server/.env'))
+} catch {
+  // No .env yet -- the portless origin is the right default anyway.
+}
+env.BASE_URL = process.env.BASE_URL ?? url
 
 const child = spawn(command[0], command.slice(1), {
   env,

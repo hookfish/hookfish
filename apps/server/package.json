@@ -11,7 +11,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "deploy": "pnpm build && wrangler deploy --config ./wrangler.jsonc",
-    "cf-typegen": "wrangler types --config ./wrangler.jsonc"
+    "cf-typegen": "wrangler types --config ./wrangler.jsonc --env-file ./.env.example --strict-vars false"
   },
   "dependencies": {
     "@template/api": "workspace:*",

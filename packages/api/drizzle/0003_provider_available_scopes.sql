@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_providers" ADD COLUMN "available_scopes" jsonb DEFAULT '[]'::jsonb NOT NULL;

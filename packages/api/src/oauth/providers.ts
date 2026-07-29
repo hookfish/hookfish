@@ -1,20 +1,25 @@
 import { z } from '@hono/zod-openapi'
+import { eq } from 'drizzle-orm'
+import {
+  type OAuthProvider,
+  oauthConnections,
+  oauthProviders,
+  oauthStates,
+  type ProviderScope,
+} from '../db/schema'
+import type { Database } from '../db/types'
+import { decryptSecret, encryptSecret } from './crypto'
+import { BrokerError } from './errors'
 
 /**
- * Everything the broker needs to know about a provider that is *not* a secret.
- * Credentials come from the environment (see `config.ts`); this file is just
- * the shape of each provider's OAuth dialect.
- *
- * To add a provider, append an entry to `providerRegistry` and set
- * `<ID>_CLIENT_ID` / `<ID>_CLIENT_SECRET` in the environment. Nothing else in
- * the codebase needs to change.
+ * Everything the broker needs to know about a provider's OAuth dialect.
+ * Rows live in `oauth_providers` and are managed entirely over the API.
  */
 export type ProviderDefinition = {
   id: string
   label: string
   authorizeUrl: string
   tokenUrl: string
-  /** Applied when `<ID>_SCOPES` is not set in the environment. */
   defaultScopes: string[]
   /** Google/GitHub use spaces; Linear uses commas. */
   scopeSeparator: string
@@ -28,81 +33,280 @@ export type ProviderDefinition = {
   supportsRefresh: boolean
   /** Static params appended to the authorize URL. */
   authorizeParams?: Record<string, string>
-  /** Pulls a stable account identity out of the raw token response. */
-  describeAccount?: (payload: Record<string, unknown>) => {
-    id?: string
-    label?: string
-  }
+  /** Dot-paths into the token response for a stable account identity. */
+  accountIdPath?: string | null
+  accountLabelPath?: string | null
 }
+
+export const providerIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z][a-z0-9_-]*$/,
+    'Provider id must be lowercase alphanumeric, starting with a letter (may include - and _).',
+  )
+
+export const tokenRequestFormatSchema = z.enum(['form', 'json'])
+export const clientAuthSchema = z.enum(['basic', 'body'])
+
+/** One advertised scope in a provider's catalog. */
+export const providerScopeSchema = z
+  .object({
+    value: z.string().min(1).openapi({ example: 'workspace:read' }),
+    description: z.string().optional().openapi({
+      description: "The provider's own wording for what this scope grants.",
+    }),
+  })
+  .openapi('OAuthProviderScope')
 
 const stringField = z.string().optional().catch(undefined)
 
-/** Notion returns the workspace inline with the token. */
-function describeNotionAccount(payload: Record<string, unknown>) {
+/** Resolve a dotted path like `workspace_id` or `user.email` on a plain object. */
+export function readPath(
+  payload: Record<string, unknown>,
+  path: string | null | undefined,
+): string | undefined {
+  if (!path) return undefined
+
+  const segments = path.split('.').filter((segment) => segment.length > 0)
+  let current: unknown = payload
+
+  for (const segment of segments) {
+    if (typeof current !== 'object' || current === null) return undefined
+    current = Reflect.get(current, segment)
+  }
+
+  return stringField.parse(current)
+}
+
+export function describeAccount(
+  definition: ProviderDefinition,
+  payload: Record<string, unknown>,
+): { id?: string; label?: string } {
   return {
-    id: stringField.parse(payload.workspace_id),
-    label: stringField.parse(payload.workspace_name),
+    id: readPath(payload, definition.accountIdPath),
+    label: readPath(payload, definition.accountLabelPath),
   }
 }
 
-export const providerRegistry: Record<string, ProviderDefinition> = {
-  notion: {
-    id: 'notion',
-    label: 'Notion',
-    authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-    tokenUrl: 'https://api.notion.com/v1/oauth/token',
-    // Notion has no scope parameter -- access is chosen by the user in the
-    // consent UI when they pick which pages to share.
-    defaultScopes: [],
-    scopeSeparator: ' ',
-    tokenRequestFormat: 'json',
-    clientAuth: 'basic',
-    usePkce: false,
-    // Classic Notion integration tokens do not expire and have no refresh.
-    supportsRefresh: false,
-    authorizeParams: { owner: 'user' },
-    describeAccount: describeNotionAccount,
-  },
-
-  linear: {
-    id: 'linear',
-    label: 'Linear',
-    authorizeUrl: 'https://linear.app/oauth/authorize',
-    tokenUrl: 'https://api.linear.app/oauth/token',
-    defaultScopes: ['read', 'write'],
-    scopeSeparator: ',',
-    tokenRequestFormat: 'form',
-    clientAuth: 'body',
-    usePkce: false,
-    supportsRefresh: true,
-  },
-
-  google: {
-    id: 'google',
-    label: 'Google',
-    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    defaultScopes: [
-      'openid',
-      'email',
-      'profile',
-      'https://www.googleapis.com/auth/drive.readonly',
-    ],
-    scopeSeparator: ' ',
-    tokenRequestFormat: 'form',
-    clientAuth: 'body',
-    usePkce: true,
-    supportsRefresh: true,
-    // `offline` + `consent` are required to actually receive a refresh token;
-    // without them Google only returns one on the very first authorization.
-    authorizeParams: { access_type: 'offline', prompt: 'consent' },
-  },
+function asTokenRequestFormat(value: string): 'form' | 'json' {
+  return tokenRequestFormatSchema.parse(value)
 }
 
-export function getProviderDefinition(
+function asClientAuth(value: string): 'basic' | 'body' {
+  return clientAuthSchema.parse(value)
+}
+
+export function rowToDefinition(row: OAuthProvider): ProviderDefinition {
+  return {
+    id: row.id,
+    label: row.label,
+    authorizeUrl: row.authorizeUrl,
+    tokenUrl: row.tokenUrl,
+    defaultScopes: row.defaultScopes,
+    scopeSeparator: row.scopeSeparator,
+    tokenRequestFormat: asTokenRequestFormat(row.tokenRequestFormat),
+    clientAuth: asClientAuth(row.clientAuth),
+    usePkce: row.usePkce,
+    supportsRefresh: row.supportsRefresh,
+    authorizeParams:
+      Object.keys(row.authorizeParams).length > 0
+        ? row.authorizeParams
+        : undefined,
+    accountIdPath: row.accountIdPath,
+    accountLabelPath: row.accountLabelPath,
+  }
+}
+
+/** Public shape -- never includes credentials. */
+export function serializeProvider(row: OAuthProvider) {
+  return {
+    id: row.id,
+    label: row.label,
+    authorize_url: row.authorizeUrl,
+    token_url: row.tokenUrl,
+    default_scopes: row.defaultScopes,
+    available_scopes: row.availableScopes,
+    scope_separator: row.scopeSeparator,
+    token_request_format: asTokenRequestFormat(row.tokenRequestFormat),
+    client_auth: asClientAuth(row.clientAuth),
+    use_pkce: row.usePkce,
+    supports_refresh: row.supportsRefresh,
+    authorize_params: row.authorizeParams,
+    account_id_path: row.accountIdPath,
+    account_label_path: row.accountLabelPath,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  }
+}
+
+export async function listProviderRows(db: Database): Promise<OAuthProvider[]> {
+  return db.select().from(oauthProviders).orderBy(oauthProviders.id)
+}
+
+export async function findProviderRow(
+  db: Database,
   providerId: string,
-): ProviderDefinition | undefined {
-  return providerRegistry[providerId]
+): Promise<OAuthProvider | undefined> {
+  const [row] = await db
+    .select()
+    .from(oauthProviders)
+    .where(eq(oauthProviders.id, providerId))
+    .limit(1)
+
+  return row
 }
 
-export const providerIds = Object.keys(providerRegistry)
+export type CreateProviderInput = {
+  id: string
+  label: string
+  authorizeUrl: string
+  tokenUrl: string
+  clientId: string
+  clientSecret: string
+  defaultScopes?: string[]
+  availableScopes?: ProviderScope[]
+  scopeSeparator?: string
+  tokenRequestFormat?: 'form' | 'json'
+  clientAuth?: 'basic' | 'body'
+  usePkce?: boolean
+  supportsRefresh?: boolean
+  authorizeParams?: Record<string, string>
+  accountIdPath?: string | null
+  accountLabelPath?: string | null
+}
+
+export async function createProvider(
+  db: Database,
+  encryptionKey: string,
+  input: CreateProviderInput,
+): Promise<OAuthProvider> {
+  const existing = await findProviderRow(db, input.id)
+
+  if (existing) {
+    throw new BrokerError(
+      409,
+      'provider_exists',
+      `Provider "${input.id}" already exists. PATCH /api/oauth/providers/${input.id} to update it.`,
+    )
+  }
+
+  const [row] = await db
+    .insert(oauthProviders)
+    .values({
+      id: input.id,
+      label: input.label,
+      authorizeUrl: input.authorizeUrl,
+      tokenUrl: input.tokenUrl,
+      defaultScopes: input.defaultScopes ?? [],
+      availableScopes: input.availableScopes ?? [],
+      scopeSeparator: input.scopeSeparator ?? ' ',
+      tokenRequestFormat: input.tokenRequestFormat ?? 'form',
+      clientAuth: input.clientAuth ?? 'body',
+      usePkce: input.usePkce ?? false,
+      supportsRefresh: input.supportsRefresh ?? true,
+      authorizeParams: input.authorizeParams ?? {},
+      accountIdPath: input.accountIdPath ?? null,
+      accountLabelPath: input.accountLabelPath ?? null,
+      clientIdEncrypted: await encryptSecret(encryptionKey, input.clientId),
+      clientSecretEncrypted: await encryptSecret(
+        encryptionKey,
+        input.clientSecret,
+      ),
+    })
+    .returning()
+
+  return row
+}
+
+export type UpdateProviderInput = {
+  label?: string
+  authorizeUrl?: string
+  tokenUrl?: string
+  clientId?: string
+  clientSecret?: string
+  defaultScopes?: string[]
+  availableScopes?: ProviderScope[]
+  scopeSeparator?: string
+  tokenRequestFormat?: 'form' | 'json'
+  clientAuth?: 'basic' | 'body'
+  usePkce?: boolean
+  supportsRefresh?: boolean
+  authorizeParams?: Record<string, string>
+  accountIdPath?: string | null
+  accountLabelPath?: string | null
+}
+
+export async function updateProvider(
+  db: Database,
+  encryptionKey: string,
+  providerId: string,
+  input: UpdateProviderInput,
+): Promise<OAuthProvider> {
+  const existing = await findProviderRow(db, providerId)
+
+  if (!existing) {
+    throw new BrokerError(
+      404,
+      'unknown_provider',
+      `Unknown provider "${providerId}". Create it with POST /api/oauth/providers.`,
+    )
+  }
+
+  const { clientId, clientSecret, ...columns } = input
+
+  // The remaining input keys are named after their columns, and drizzle drops
+  // `undefined` values from an update set, so absent fields keep their current
+  // values while an explicit `null` still clears a nullable column.
+  const patch: Partial<typeof oauthProviders.$inferInsert> = {
+    ...columns,
+    updatedAt: new Date(),
+    clientIdEncrypted:
+      clientId === undefined
+        ? undefined
+        : await encryptSecret(encryptionKey, clientId),
+    clientSecretEncrypted:
+      clientSecret === undefined
+        ? undefined
+        : await encryptSecret(encryptionKey, clientSecret),
+  }
+
+  const [row] = await db
+    .update(oauthProviders)
+    .set(patch)
+    .where(eq(oauthProviders.id, providerId))
+    .returning()
+
+  return row
+}
+
+/**
+ * Removes the provider and any connections / in-flight states that reference
+ * it, so authorize against a deleted id cannot succeed with stale secrets.
+ */
+export async function deleteProvider(
+  db: Database,
+  providerId: string,
+): Promise<boolean> {
+  const existing = await findProviderRow(db, providerId)
+  if (!existing) return false
+
+  await db
+    .delete(oauthConnections)
+    .where(eq(oauthConnections.provider, providerId))
+  await db.delete(oauthStates).where(eq(oauthStates.provider, providerId))
+  await db.delete(oauthProviders).where(eq(oauthProviders.id, providerId))
+
+  return true
+}
+
+export async function resolveProviderCredentials(
+  encryptionKey: string,
+  row: OAuthProvider,
+): Promise<{ clientId: string; clientSecret: string }> {
+  return {
+    clientId: await decryptSecret(encryptionKey, row.clientIdEncrypted),
+    clientSecret: await decryptSecret(encryptionKey, row.clientSecretEncrypted),
+  }
+}
