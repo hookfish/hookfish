@@ -1,0 +1,50 @@
+{
+  "name": "@template/api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./pglite": {
+      "types": "./src/db/pglite.ts",
+      "default": "./src/db/pglite.ts"
+    },
+    "./local-node": {
+      "types": "./src/local-node.ts",
+      "default": "./src/local-node.ts"
+    },
+    "./oauth/config": {
+      "types": "./src/oauth/config.ts",
+      "default": "./src/oauth/config.ts"
+    },
+    "./oauth/providers": {
+      "types": "./src/oauth/providers.ts",
+      "default": "./src/oauth/providers.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@hono/swagger-ui": "^0.5.2",
+    "@hono/zod-openapi": "^1.4.0",
+    "@neondatabase/serverless": "^1.1.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.23",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260528.1",
+    "@types/node": "^24.12.3",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "~5.9.3"
+  }
+}

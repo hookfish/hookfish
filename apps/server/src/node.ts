@@ -1,19 +1,20 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import { migrate } from 'drizzle-orm/pglite/migrator'
-import { createPgliteDatabase } from './db/pglite'
-import app from './index'
-import { type BrokerEnv, isProviderConfigured } from './oauth/config'
-import { providerIds } from './oauth/providers'
+import app from '@template/api'
+import { createLocalBrokerEnv } from '@template/api/local-node'
+import {
+  type BrokerEnv,
+  isProviderConfigured,
+} from '@template/api/oauth/config'
+import { providerIds } from '@template/api/oauth/providers'
 
 /**
- * Local development entrypoint.
+ * Standalone API entrypoint.
  *
  * PGlite cannot persist inside workerd -- its Node FS / IndexedDB / OPFS
- * backends are all unavailable there -- so `wrangler dev` and production run
- * against HTTP Postgres via DATABASE_URL. This entrypoint runs the exact same
- * Hono app on Node with PGlite writing to disk, which is what makes the
- * zero-setup local database possible.
+ * backends are all unavailable there -- so deployed Workers need HTTP
+ * Postgres via DATABASE_URL. Locally, both this process and `pnpm dev`
+ * (frontend Vite plugin) run the shared Hono app on Node with PGlite.
  */
 
 /**
@@ -38,16 +39,11 @@ const dataDir = process.env.PGLITE_DATA_DIR ?? path.join(packageRoot, 'pgdata')
 const port = Number(process.env.PORT ?? 8787)
 
 /**
- * `pnpm dev` runs this behind the portless proxy, which sets HOST/PORT and
- * expects the app on the loopback interface it aliased.
+ * Portless sets HOST/PORT when this is launched via `pnpm --filter @template/server dev`.
  */
 const hostname = process.env.HOST ?? '127.0.0.1'
 
-const { db } = createPgliteDatabase(dataDir)
-
-await migrate(db, { migrationsFolder: path.join(packageRoot, 'drizzle') })
-
-const env: BrokerEnv = { ...process.env, DB: db }
+const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
 
 serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },

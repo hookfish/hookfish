@@ -4,10 +4,13 @@ import { cloudflare } from '@cloudflare/vite-plugin'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
+import { localApiPlugin } from './vite-plugin-local-api'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    // Node + PGlite for `/api` in local dev (before workerd).
+    localApiPlugin(),
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
     tanstackStart({
       srcDirectory: '.',

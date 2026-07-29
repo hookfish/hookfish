@@ -3,12 +3,6 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
-  },
   "scripts": {
     "dev": "node ../../scripts/portless-dev.mjs server -- sh -c 'exec tsx watch src/node.ts'",
     "dev:node": "tsx watch src/node.ts",
@@ -16,26 +10,17 @@
     "dev:worker:app": "wrangler dev --config ./wrangler.jsonc --ip ${HOST:-127.0.0.1} --port ${PORT:-8787} --inspector-port 0",
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio",
     "deploy": "pnpm build && wrangler deploy --config ./wrangler.jsonc",
     "cf-typegen": "wrangler types --config ./wrangler.jsonc"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.4",
-    "@hono/swagger-ui": "^0.5.2",
-    "@hono/zod-openapi": "^1.4.0",
-    "@neondatabase/serverless": "^1.1.0",
-    "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.23",
-    "zod": "^4.4.3"
+    "@template/api": "workspace:*",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260528.1",
     "@hono/node-server": "^2.0.12",
     "@types/node": "^24.12.3",
-    "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.1",
     "typescript": "~5.9.3",
     "wrangler": "^4.95.0"

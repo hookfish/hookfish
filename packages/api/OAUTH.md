@@ -20,13 +20,14 @@ Register `http://localhost:8787/api/oauth/<provider>/callback` as the redirect
 URI in each provider's developer console.
 
 ```sh
-pnpm dev
+pnpm --filter @template/server dev
 ```
 
-That runs the Hono app on Node with PGlite persisting to `./pgdata`, applying
-migrations at startup — no database to provision. Use
-`pnpm --filter @template/server dev:node` to run the server alone, without the
-portless proxy.
+That runs the Hono app on Node with PGlite persisting to `apps/server/pgdata`,
+applying migrations at startup — no database to provision. Use
+`pnpm --filter @template/server dev:node` without the portless proxy.
+`pnpm dev` does the same for frontend `/api` via a Vite Node middleware (still
+PGlite on disk), so you do not need a separate API process locally.
 
 ## Why there are two entrypoints
 
@@ -36,23 +37,24 @@ purely in memory, which loses every token when the isolate recycles. So:
 
 | | runtime | database |
 |---|---|---|
-| `pnpm dev` / `dev:node` | Node (`src/node.ts`) | PGlite → `./pgdata` |
-| `pnpm dev:worker` / `pnpm deploy` | Workers (`src/server.ts`) | Postgres over HTTP via `DATABASE_URL` |
+| `pnpm dev` (frontend `/api`) / `pnpm --filter @template/server dev` / `dev:node` | Node + PGlite | `apps/server/pgdata` |
+| frontend Worker SSR, `dev:worker`, `deploy` | Workers | Postgres over HTTP via `DATABASE_URL` |
 
-Local dev therefore needs no `DATABASE_URL`. Set one only when you want to
-exercise the Workers path with `pnpm dev:worker`, which is worth doing before
-deploying since that is the runtime production uses.
+Local API-only and frontend-mounted `/api` therefore need no `DATABASE_URL`.
+Set one when exercising the Workers path (or production), which is worth doing
+before deploying since that is the runtime production uses.
 
-Same Hono app, same Drizzle schema, same migrations. `src/db/pglite.ts` is
-imported only from the Node entrypoint, so PGlite never enters the Worker
-bundle. For the Workers path, set `DATABASE_URL` to a Neon-protocol Postgres
-and push secrets with `pnpm wrangler secret put <NAME>`.
+Same Hono app (`@template/api`), same Drizzle schema, same migrations.
+`src/db/pglite.ts` / `local-node` are imported only from Node entrypoints, so
+PGlite never enters the Worker bundle. For the Workers path, set `DATABASE_URL`
+to a Neon-protocol Postgres and push secrets with `pnpm wrangler secret put <NAME>`.
 
 ## Endpoints
 
 All routes require `Authorization: Bearer $BROKER_API_KEY`, except the callback
 — that one is hit by the user's browser and is authenticated by its single-use
-`state` value instead.
+`state` value instead. Outside production, `BROKER_API_KEY` defaults to `test`
+when unset.
 
 | Method | Path | Purpose |
 |---|---|---|

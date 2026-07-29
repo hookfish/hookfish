@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=@template/frontend",
     "portless:url": "turbo run //#portless:urls",
     "portless:urls": "node scripts/portless-url.mjs",
     "build": "turbo build",

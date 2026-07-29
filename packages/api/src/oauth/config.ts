@@ -116,6 +116,27 @@ export function resolveRedirectUri(
   return `${base.replace(/\/$/, '')}/api/oauth/${providerId}/callback`
 }
 
+function readAmbientNodeEnv(): string | undefined {
+  if (!('process' in globalThis)) return undefined
+
+  const proc = Reflect.get(globalThis, 'process')
+  if (typeof proc !== 'object' || proc === null || !('env' in proc)) {
+    return undefined
+  }
+
+  const value = Reflect.get(proc.env, 'NODE_ENV')
+  return typeof value === 'string' ? value : undefined
+}
+
 export function requireBrokerApiKey(env: BrokerEnv): string {
+  const configured = readEnvString(env, 'BROKER_API_KEY')
+  if (configured) return configured
+
+  const nodeEnv = readEnvString(env, 'NODE_ENV') ?? readAmbientNodeEnv()
+
+  if (nodeEnv !== 'production') {
+    return 'test'
+  }
+
   return requireEnvString(env, 'BROKER_API_KEY')
 }

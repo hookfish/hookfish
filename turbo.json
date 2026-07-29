@@ -6,6 +6,10 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".output/**", ".vinxi/**"]
     },
+    "@template/api#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "@template/server#build": {
       "dependsOn": ["^build"],
       "outputs": []

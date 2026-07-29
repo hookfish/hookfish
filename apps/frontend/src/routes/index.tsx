@@ -55,12 +55,12 @@ function Dashboard() {
           Cloudflare-compatible full stack app
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          TanStack Start owns app actions; Hono remains a separate API.
+          TanStack Start owns app actions; Hono serves `/api` on the same origin.
         </h1>
         <p className="text-muted-foreground">
           Health and message creation run through TanStack server functions. The
-          Hono API stays independent and exposes one stats endpoint read by the
-          frontend.
+          shared Hono app from `@template/api` is mounted at `/api/*` and exposes
+          one stats endpoint read by the frontend.
         </p>
       </section>
 
@@ -105,7 +105,7 @@ function Dashboard() {
           <CardHeader>
             <CardTitle>Hono Stats</CardTitle>
             <CardDescription>
-              Runtime metadata from the standalone Hono API
+              Runtime metadata from the mounted Hono API
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
