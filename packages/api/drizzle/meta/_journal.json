@@ -8,6 +8,20 @@
       "when": 1785298325372,
       "tag": "0000_cool_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785307068845,
+      "tag": "0001_oauth_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785400000000,
+      "tag": "0002_connection_group_id",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import type { Database } from '../db/types'
 import {
   type BrokerEnv,
   type ProviderConfig,
+  requireEncryptionKey,
   resolveProviderConfig,
 } from './config'
 import {
@@ -18,6 +19,7 @@ import {
   randomToken,
 } from './crypto'
 import { BrokerError } from './errors'
+import { describeAccount } from './providers'
 
 /** How long a pending authorization stays valid. */
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -32,20 +34,6 @@ const tokenResponseSchema = z.looseObject({
   expires_in: z.coerce.number().int().positive().optional(),
   scope: z.union([z.string(), z.array(z.string())]).optional(),
 })
-
-function requireEncryptionKey(env: BrokerEnv): string {
-  const key = env.OAUTH_ENCRYPTION_KEY
-
-  if (typeof key !== 'string' || key.trim().length === 0) {
-    throw new BrokerError(
-      500,
-      'missing_configuration',
-      'OAUTH_ENCRYPTION_KEY is not set. Generate one with: openssl rand -base64 32',
-    )
-  }
-
-  return key.trim()
-}
 
 function parseScopeValue(
   value: string | string[] | undefined,
@@ -65,7 +53,7 @@ function parseScopeValue(
 // ---------------------------------------------------------------------------
 
 export type StartAuthorizationInput = {
-  userId: string
+  connectionGroupId: string
   provider: string
   redirectUri: string
   /** Overrides the provider's configured scopes for this one flow. */
@@ -79,7 +67,7 @@ export async function startAuthorization(
   env: BrokerEnv,
   input: StartAuthorizationInput,
 ): Promise<{ authorizeUrl: string; state: string; expiresAt: Date }> {
-  const config = resolveProviderConfig(env, input.provider)
+  const config = await resolveProviderConfig(db, env, input.provider)
   const { definition } = config
 
   const scopes = input.scopes?.length ? input.scopes : config.scopes
@@ -89,7 +77,7 @@ export async function startAuthorization(
 
   await db.insert(oauthStates).values({
     id: state,
-    userId: input.userId,
+    connectionGroupId: input.connectionGroupId,
     provider: definition.id,
     codeVerifier: pkce?.verifier ?? null,
     redirectUri: input.redirectUri,
@@ -205,7 +193,7 @@ async function toStoredFields(
   // Providers commonly omit refresh_token on refresh; keep the one we hold.
   const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null
 
-  const account = config.definition.describeAccount?.(raw) ?? {}
+  const account = describeAccount(config.definition, raw)
 
   // Keep the provider payload, minus anything credential-shaped. Tokens live
   // in the encrypted columns; `id_token` is a signed identity assertion we
@@ -267,7 +255,7 @@ export async function completeAuthorization(
     )
   }
 
-  const config = resolveProviderConfig(env, input.provider)
+  const config = await resolveProviderConfig(db, env, input.provider)
 
   const params: Record<string, string> = {
     grant_type: 'authorization_code',
@@ -283,12 +271,12 @@ export async function completeAuthorization(
   const [connection] = await db
     .insert(oauthConnections)
     .values({
-      userId: pending.userId,
+      connectionGroupId: pending.connectionGroupId,
       provider: config.definition.id,
       ...fields,
     })
     .onConflictDoUpdate({
-      target: [oauthConnections.userId, oauthConnections.provider],
+      target: [oauthConnections.connectionGroupId, oauthConnections.provider],
       set: { ...fields, updatedAt: new Date() },
     })
     .returning()
@@ -305,14 +293,14 @@ async function refreshConnection(
   env: BrokerEnv,
   connection: OAuthConnection,
 ): Promise<OAuthConnection> {
-  const config = resolveProviderConfig(env, connection.provider)
+  const config = await resolveProviderConfig(db, env, connection.provider)
   const encryptionKey = requireEncryptionKey(env)
 
   if (!connection.refreshToken || !config.definition.supportsRefresh) {
     throw new BrokerError(
       401,
       'reauthorization_required',
-      `The ${config.definition.label} connection for user "${connection.userId}" expired and has no refresh token. Start the flow again.`,
+      `The ${config.definition.label} connection for group "${connection.connectionGroupId}" expired and has no refresh token. Start the flow again.`,
     )
   }
 
@@ -351,7 +339,7 @@ function isExpired(connection: OAuthConnection): boolean {
 
 export async function findConnection(
   db: Database,
-  userId: string,
+  connectionGroupId: string,
   provider: string,
 ): Promise<OAuthConnection | undefined> {
   const [connection] = await db
@@ -359,7 +347,7 @@ export async function findConnection(
     .from(oauthConnections)
     .where(
       and(
-        eq(oauthConnections.userId, userId),
+        eq(oauthConnections.connectionGroupId, connectionGroupId),
         eq(oauthConnections.provider, provider),
       ),
     )
@@ -370,7 +358,7 @@ export async function findConnection(
 
 export type AccessTokenResult = {
   provider: string
-  userId: string
+  connectionGroupId: string
   accessToken: string
   tokenType: string
   scopes: string[]
@@ -385,16 +373,16 @@ export type AccessTokenResult = {
 export async function getAccessToken(
   db: Database,
   env: BrokerEnv,
-  userId: string,
+  connectionGroupId: string,
   provider: string,
 ): Promise<AccessTokenResult> {
-  const existing = await findConnection(db, userId, provider)
+  const existing = await findConnection(db, connectionGroupId, provider)
 
   if (!existing) {
     throw new BrokerError(
       404,
       'not_connected',
-      `User "${userId}" has no ${provider} connection.`,
+      `Connection group "${connectionGroupId}" has no ${provider} connection.`,
     )
   }
 
@@ -405,7 +393,7 @@ export async function getAccessToken(
 
   return {
     provider: connection.provider,
-    userId: connection.userId,
+    connectionGroupId: connection.connectionGroupId,
     accessToken: await decryptSecret(
       requireEncryptionKey(env),
       connection.accessToken,
@@ -419,24 +407,24 @@ export async function getAccessToken(
 
 export async function listConnections(
   db: Database,
-  userId: string,
+  connectionGroupId: string,
 ): Promise<OAuthConnection[]> {
   return db
     .select()
     .from(oauthConnections)
-    .where(eq(oauthConnections.userId, userId))
+    .where(eq(oauthConnections.connectionGroupId, connectionGroupId))
 }
 
 export async function deleteConnection(
   db: Database,
-  userId: string,
+  connectionGroupId: string,
   provider: string,
 ): Promise<boolean> {
   const deleted = await db
     .delete(oauthConnections)
     .where(
       and(
-        eq(oauthConnections.userId, userId),
+        eq(oauthConnections.connectionGroupId, connectionGroupId),
         eq(oauthConnections.provider, provider),
       ),
     )

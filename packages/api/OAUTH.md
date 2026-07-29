@@ -1,9 +1,14 @@
 # OAuth broker
 
-Brokers OAuth connections on behalf of your users. You give it a **user id** and
-a **connection source** (`notion`, `linear`, `google`, ...); it runs the consent
-flow, stores the tokens encrypted, and hands back a valid access token on
-demand — refreshing transparently when one is about to expire.
+Brokers OAuth connections keyed by a **connection group** and a **provider id**
+(`notion`, `linear`, `google`, or any id you register). A connection group is
+the opaque bucket that owns connections — today you typically use one group per
+end-user of your app. The broker runs the consent flow, stores the tokens
+encrypted, and hands back a valid access token on demand — refreshing
+transparently when one is about to expire.
+
+Providers are **database rows**, configured entirely over the API. Adding a new
+IdP never requires a code change, env var, or redeploy.
 
 ## Setup
 
@@ -13,7 +18,6 @@ cp apps/server/.env.example apps/server/.env
 # Fill in at minimum:
 openssl rand -base64 32   # -> OAUTH_ENCRYPTION_KEY
 openssl rand -base64 32   # -> BROKER_API_KEY
-# ...plus NOTION_CLIENT_ID / NOTION_CLIENT_SECRET
 ```
 
 Register `http://localhost:8787/api/oauth/<provider>/callback` as the redirect
@@ -58,14 +62,84 @@ when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/oauth/providers` | Which providers exist and which have credentials |
-| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL for a user |
+| `GET` | `/api/oauth/providers` | List registered providers (no secrets) |
+| `POST` | `/api/oauth/providers` | Register a provider (dialect + credentials) |
+| `GET` | `/api/oauth/providers/{id}` | Get one provider |
+| `PATCH` | `/api/oauth/providers/{id}` | Update a provider (partial) |
+| `DELETE` | `/api/oauth/providers/{id}` | Delete a provider (+ its connections) |
+| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL for a connection group |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
-| `GET` | `/api/oauth/connections?user_id=` | A user's connections (never tokens) |
-| `GET` | `/api/oauth/connections/{provider}/token?user_id=` | A token valid *right now* |
-| `DELETE` | `/api/oauth/connections/{provider}?user_id=` | Forget a connection |
+| `GET` | `/api/oauth/connections?connection_group_id=` | A group's connections (never tokens) |
+| `GET` | `/api/oauth/connections/{provider}/token?connection_group_id=` | A token valid *right now* |
+| `DELETE` | `/api/oauth/connections/{provider}?connection_group_id=` | Forget a connection |
 
 Swagger UI lives at `/api`.
+
+## Register a provider
+
+```sh
+curl -X POST http://localhost:8787/api/oauth/providers \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "id": "notion",
+    "label": "Notion",
+    "authorize_url": "https://api.notion.com/v1/oauth/authorize",
+    "token_url": "https://api.notion.com/v1/oauth/token",
+    "client_id": "'"$NOTION_CLIENT_ID"'",
+    "client_secret": "'"$NOTION_CLIENT_SECRET"'",
+    "default_scopes": [],
+    "token_request_format": "json",
+    "client_auth": "basic",
+    "use_pkce": false,
+    "supports_refresh": false,
+    "authorize_params": { "owner": "user" },
+    "account_id_path": "workspace_id",
+    "account_label_path": "workspace_name"
+  }'
+```
+
+Linear and Google look the same — only the dialect fields change:
+
+```sh
+# Linear
+curl -X POST http://localhost:8787/api/oauth/providers \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "id": "linear",
+    "label": "Linear",
+    "authorize_url": "https://linear.app/oauth/authorize",
+    "token_url": "https://api.linear.app/oauth/token",
+    "client_id": "'"$LINEAR_CLIENT_ID"'",
+    "client_secret": "'"$LINEAR_CLIENT_SECRET"'",
+    "default_scopes": ["read", "write"],
+    "scope_separator": ",",
+    "token_request_format": "form",
+    "client_auth": "body",
+    "supports_refresh": true
+  }'
+
+# Google
+curl -X POST http://localhost:8787/api/oauth/providers \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "id": "google",
+    "label": "Google",
+    "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+    "token_url": "https://oauth2.googleapis.com/token",
+    "client_id": "'"$GOOGLE_CLIENT_ID"'",
+    "client_secret": "'"$GOOGLE_CLIENT_SECRET"'",
+    "default_scopes": ["openid", "email", "profile", "https://www.googleapis.com/auth/drive.readonly"],
+    "use_pkce": true,
+    "supports_refresh": true,
+    "authorize_params": { "access_type": "offline", "prompt": "consent" }
+  }'
+```
+
+Client id/secret are encrypted with `OAUTH_ENCRYPTION_KEY` before write and
+never returned by list/get.
 
 ## Usage
 
@@ -75,7 +149,7 @@ Start a connection:
 curl -X POST http://localhost:8787/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"user_id":"user_123","return_to":"http://localhost:3000/settings"}'
+  -d '{"connection_group_id":"group_123","return_to":"http://localhost:3000/settings"}'
 ```
 
 ```json
@@ -86,20 +160,20 @@ curl -X POST http://localhost:8787/api/oauth/notion/authorize \
 }
 ```
 
-Redirect the user to `authorize_url`. When they approve, the broker stores the
-connection and sends them to `return_to?connected=notion`.
+Redirect the end-user to `authorize_url`. When they approve, the broker stores
+the connection under the group and sends them to `return_to?connected=notion`.
 
 Then, whenever you need to call the provider:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "http://localhost:8787/api/oauth/connections/notion/token?user_id=user_123"
+  "http://localhost:8787/api/oauth/connections/notion/token?connection_group_id=group_123"
 ```
 
 ```json
 {
   "provider": "notion",
-  "user_id": "user_123",
+  "connection_group_id": "group_123",
   "access_token": "secret_...",
   "token_type": "bearer",
   "scopes": [],
@@ -110,42 +184,28 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 `refreshed: true` means the stored token had expired and was renewed on this
 call. If a connection expires with no usable refresh token, you get `401
-reauthorization_required` — send the user through `authorize` again.
+reauthorization_required` — send them through `authorize` again.
 
-## Adding a provider
+## Dialect fields
 
-Append an entry to `providerRegistry` in `src/oauth/providers.ts` and set
-`<ID>_CLIENT_ID` / `<ID>_CLIENT_SECRET`. Nothing else changes. The registry
-captures the per-provider dialect differences:
+| Field | Meaning |
+|---|---|
+| `scope_separator` | Join character for scopes (` ` or `,`) |
+| `token_request_format` | `form` or `json` body on the token endpoint |
+| `client_auth` | `basic` header vs `body` fields for client credentials |
+| `use_pkce` | S256 code challenge on authorize |
+| `supports_refresh` | Whether refresh_token grants are expected to work |
+| `authorize_params` | Extra query params on the authorize URL |
+| `account_id_path` / `account_label_path` | Dot-paths into the token JSON for account identity |
 
-```ts
-slack: {
-  id: 'slack',
-  label: 'Slack',
-  authorizeUrl: 'https://slack.com/oauth/v2/authorize',
-  tokenUrl: 'https://slack.com/api/oauth.v2.access',
-  defaultScopes: ['channels:read'],
-  scopeSeparator: ',',
-  tokenRequestFormat: 'form',
-  clientAuth: 'body',
-  usePkce: false,
-  supportsRefresh: true,
-}
-```
-
-`<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
-on the authorize request overrides it per flow.
-
-The three shipped providers differ in exactly the ways the registry models:
-Notion uses HTTP Basic auth with a JSON body and issues non-expiring tokens with
-no scope parameter; Linear separates scopes with commas; Google needs PKCE plus
-`access_type=offline&prompt=consent` to return a refresh token at all.
+The `scopes` field on the authorize request overrides `default_scopes` per flow.
 
 ## Security notes
 
-- Access and refresh tokens are encrypted with AES-GCM (`OAUTH_ENCRYPTION_KEY`)
-  before being written. **Rotating that key makes existing tokens
-  unreadable.** The plaintext is never stored or logged.
+- Access/refresh tokens **and** provider client secrets are encrypted with
+  AES-GCM (`OAUTH_ENCRYPTION_KEY`) before being written. **Rotating that key
+  makes existing secrets unreadable.** The plaintext is never stored or logged.
+- List/get provider responses never include credentials.
 - `metadata` retains the provider's token payload minus `access_token`,
   `refresh_token`, and `id_token`.
 - `state` rows are single-use and expire after 10 minutes; the callback deletes
@@ -153,3 +213,4 @@ no scope parameter; Linear separates scopes with commas; Google needs PKCE plus
 - The API key is compared without early exit to keep it off the timing side
   channel.
 - Connection-listing responses never include token columns.
+- Deleting a provider also deletes its connections and in-flight states.

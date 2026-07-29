@@ -1,15 +1,17 @@
 import type { Database } from '../db/types'
 import { BrokerError } from './errors'
 import {
-  getProviderDefinition,
+  findProviderRow,
+  resolveProviderCredentials,
+  rowToDefinition,
   type ProviderDefinition,
-  providerIds,
 } from './providers'
 
 /**
- * Bindings available to the Worker. Provider credentials are read dynamically
- * by name (`NOTION_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, ...) so adding a
- * provider never requires touching this type.
+ * Bindings available to the Worker / Node entrypoint.
+ *
+ * Provider credentials live encrypted in `oauth_providers` — they are no longer
+ * read from `<ID>_CLIENT_ID` / `<ID>_CLIENT_SECRET` env vars.
  *
  * `DB` is only ever populated by the Node entrypoint, which injects a live
  * PGlite-backed Drizzle instance; the Worker builds one from DATABASE_URL.
@@ -47,6 +49,10 @@ function requireEnvString(env: BrokerEnv, key: string): string {
   return value
 }
 
+export function requireEncryptionKey(env: BrokerEnv): string {
+  return requireEnvString(env, 'OAUTH_ENCRYPTION_KEY')
+}
+
 export type ProviderConfig = {
   definition: ProviderDefinition
   clientId: string
@@ -54,50 +60,32 @@ export type ProviderConfig = {
   scopes: string[]
 }
 
-function envPrefix(providerId: string): string {
-  return providerId.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-}
-
-/** True when both halves of the provider's credentials are present. */
-export function isProviderConfigured(
+export async function resolveProviderConfig(
+  db: Database,
   env: BrokerEnv,
   providerId: string,
-): boolean {
-  const prefix = envPrefix(providerId)
+): Promise<ProviderConfig> {
+  const row = await findProviderRow(db, providerId)
 
-  return (
-    readEnvString(env, `${prefix}_CLIENT_ID`) !== undefined &&
-    readEnvString(env, `${prefix}_CLIENT_SECRET`) !== undefined
-  )
-}
-
-export function resolveProviderConfig(
-  env: BrokerEnv,
-  providerId: string,
-): ProviderConfig {
-  const definition = getProviderDefinition(providerId)
-
-  if (!definition) {
+  if (!row) {
     throw new BrokerError(
       404,
       'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${providerIds.join(', ')}.`,
+      `Unknown provider "${providerId}". Register one with POST /api/oauth/providers.`,
     )
   }
 
-  const prefix = envPrefix(definition.id)
-  const scopeOverride = readEnvString(env, `${prefix}_SCOPES`)
+  const definition = rowToDefinition(row)
+  const credentials = await resolveProviderCredentials(
+    requireEncryptionKey(env),
+    row,
+  )
 
   return {
     definition,
-    clientId: requireEnvString(env, `${prefix}_CLIENT_ID`),
-    clientSecret: requireEnvString(env, `${prefix}_CLIENT_SECRET`),
-    scopes: scopeOverride
-      ? scopeOverride
-          .split(/[\s,]+/)
-          .map((scope) => scope.trim())
-          .filter((scope) => scope.length > 0)
-      : definition.defaultScopes,
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+    scopes: definition.defaultScopes,
   }
 }
 

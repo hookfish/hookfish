@@ -2,11 +2,8 @@ import path from 'node:path'
 import { serve } from '@hono/node-server'
 import app from '@template/api'
 import { createLocalBrokerEnv } from '@template/api/local-node'
-import {
-  type BrokerEnv,
-  isProviderConfigured,
-} from '@template/api/oauth/config'
-import { providerIds } from '@template/api/oauth/providers'
+import type { BrokerEnv } from '@template/api/oauth/config'
+import { listProviderRows } from '@template/api/oauth/providers'
 
 /**
  * Standalone API entrypoint.
@@ -47,15 +44,18 @@ const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
 
 serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },
-  (info) => {
-    const configured = providerIds.filter((id) => isProviderConfigured(env, id))
+  async (info) => {
+    const providers =
+      env.DB !== undefined && typeof env.DB !== 'string'
+        ? await listProviderRows(env.DB)
+        : []
 
     console.log(`OAuth broker on http://localhost:${info.port}/api`)
     console.log(`PGlite data directory: ${dataDir}`)
     console.log(
-      configured.length > 0
-        ? `Providers configured: ${configured.join(', ')}`
-        : 'Providers configured: none -- set <PROVIDER>_CLIENT_ID and _CLIENT_SECRET in .env',
+      providers.length > 0
+        ? `Providers registered: ${providers.map((p) => p.id).join(', ')}`
+        : 'Providers registered: none -- POST /api/oauth/providers to add one',
     )
   },
 )
