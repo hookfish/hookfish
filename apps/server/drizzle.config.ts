@@ -1,0 +1,18 @@
+import { defineConfig } from 'drizzle-kit'
+
+/**
+ * Migrations are generated against the Postgres dialect and applied to both
+ * targets: PGlite locally (see `src/node.ts`) and hosted Postgres in the
+ * Worker. One schema, one set of SQL files.
+ */
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  ...(process.env.DATABASE_URL
+    ? { dbCredentials: { url: process.env.DATABASE_URL } }
+    : {
+        driver: 'pglite',
+        dbCredentials: { url: process.env.PGLITE_DATA_DIR ?? './pgdata' },
+      }),
+})
