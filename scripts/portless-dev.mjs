@@ -11,7 +11,7 @@ if (!appName || separator !== '--' || command.length === 0) {
   process.exit(1)
 }
 
-const { routeName, serverUrl } = getPortlessRoute(appName)
+const { routeName, url } = getPortlessRoute(appName)
 const appPort = appName === 'server' ? 8787 : 5173
 
 function run(command, args, options = {}) {
@@ -54,14 +54,26 @@ const env = { ...process.env }
 env.PORT = String(appPort)
 env.HOST = env.HOST ?? '127.0.0.1'
 
-if (appName === 'frontend' && !env.VITE_API_BASE_URL) {
-  env.VITE_API_BASE_URL = serverUrl
-}
-
 const child = spawn(command[0], command.slice(1), {
   env,
   stdio: 'inherit',
 })
+
+if (appName === 'frontend') {
+  // Brief delay so Vite/portless are listening before the browser hits the URL.
+  setTimeout(() => {
+    if (process.platform === 'darwin') {
+      spawn('open', [url], { stdio: 'ignore', detached: true }).unref()
+    } else if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], {
+        stdio: 'ignore',
+        detached: true,
+      }).unref()
+    } else {
+      spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref()
+    }
+  }, 1500)
+}
 
 function cleanup() {
   run('pnpm', ['exec', 'portless', 'alias', '--remove', routeName], {

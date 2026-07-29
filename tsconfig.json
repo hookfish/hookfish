@@ -7,5 +7,9 @@
     }
   },
   "files": [],
-  "references": [{ "path": "./apps/frontend" }, { "path": "./apps/server" }]
+  "references": [
+    { "path": "./apps/frontend" },
+    { "path": "./apps/server" },
+    { "path": "./packages/api" }
+  ]
 }

@@ -1,6 +1,6 @@
 import { hc } from 'hono/client'
 import type { InferResponseType } from 'hono/client'
-import type { AppType } from '@template/server'
+import type { AppType } from '@template/api'
 import { apiBaseUrl } from './api-url'
 
 const api = hc<AppType>(`${apiBaseUrl}/api`)

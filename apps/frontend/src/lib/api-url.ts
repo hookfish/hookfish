@@ -1,7 +1,9 @@
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL
 
-export const apiBaseUrl = (
-  configuredApiBaseUrl ?? (import.meta.env.DEV ? 'http://localhost:8787' : '')
-).replace(/\/$/, '')
+/**
+ * Empty string = same origin (Hono is mounted on the frontend at `/api/*`).
+ * Override with `VITE_API_BASE_URL` when pointing at a standalone API process.
+ */
+export const apiBaseUrl = (configuredApiBaseUrl ?? '').replace(/\/$/, '')
 
 export const apiDocsUrl = `${apiBaseUrl}/api`

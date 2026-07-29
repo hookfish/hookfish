@@ -19,9 +19,10 @@ import { providerIds, providerRegistry } from '../oauth/providers'
 // ---------------------------------------------------------------------------
 // Documentation defaults
 //
-// These describe the local `pnpm dev` setup so Swagger's "Try it out" is
-// runnable without typing anything. They never affect runtime behaviour --
-// the real redirect URI is derived per-request by `resolveRedirectUri`.
+// These describe the standalone `pnpm --filter @template/server dev` setup so
+// Swagger's "Try it out" is runnable without typing anything. They never affect
+// runtime behaviour -- the real redirect URI is derived per-request by
+// `resolveRedirectUri`.
 // ---------------------------------------------------------------------------
 
 const LOCAL_API_ORIGIN = 'http://localhost:8787'

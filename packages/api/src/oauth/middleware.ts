@@ -11,9 +11,9 @@ export type BrokerContext = {
 }
 
 /**
- * Resolves the database for the request. The Node entrypoint injects a live
- * PGlite instance as `env.DB`; the Worker builds an HTTP client per request,
- * which is the right shape for a stateless isolate.
+ * Resolves the database for the request. Local Node entrypoints (standalone
+ * server and the frontend Vite `/api` plugin) inject a live PGlite instance as
+ * `env.DB`; deployed Workers build an HTTP client per request from DATABASE_URL.
  */
 export const withDatabase = createMiddleware<BrokerContext>(async (c, next) => {
   const injected = c.env.DB
@@ -30,7 +30,7 @@ export const withDatabase = createMiddleware<BrokerContext>(async (c, next) => {
     throw new BrokerError(
       500,
       'missing_configuration',
-      'DATABASE_URL is not set. Set it for the Worker, or run the Node entrypoint (pnpm dev) to use PGlite.',
+      'DATABASE_URL is not set. Set it for deployed Workers. Locally, `pnpm dev` and `pnpm --filter @template/server dev` use PGlite.',
     )
   }
 
