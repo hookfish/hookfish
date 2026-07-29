@@ -18,6 +18,10 @@
       "dependsOn": ["^typecheck"],
       "outputs": []
     },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "cf-typegen": {
       "cache": false,
       "outputs": []

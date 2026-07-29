@@ -1,3 +1,4 @@
+import type { NeonHttpDatabase } from 'drizzle-orm/neon-http'
 import {
   index,
   jsonb,
@@ -7,6 +8,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import type { PgliteDatabase } from 'drizzle-orm/pglite'
 
 /**
  * One row per connection. A connection_id is a single provider link -- multiple
@@ -79,3 +81,14 @@ export const oauthStates = pgTable(
 
 export type OAuthConnection = typeof oauthConnections.$inferSelect
 export type OAuthState = typeof oauthStates.$inferSelect
+
+type Schema = {
+  oauthConnections: typeof oauthConnections
+  oauthStates: typeof oauthStates
+}
+
+/**
+ * The broker only ever uses the subset of Drizzle that both drivers implement,
+ * so route code is written once and runs on either.
+ */
+export type Database = NeonHttpDatabase<Schema> | PgliteDatabase<Schema>

@@ -10,6 +10,7 @@
     "portless:urls": "node scripts/portless-url.mjs",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
+    "test": "turbo test --filter=@template/api",
     "prepare": "git config core.hooksPath .githooks",
     "fmt": "biome format --write .",
     "lint": "biome lint .",

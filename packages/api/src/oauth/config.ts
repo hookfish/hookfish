@@ -1,9 +1,9 @@
-import type { Database } from '../db/types'
+import type { Database } from '../db/schema'
 import { BrokerError } from './errors'
 import {
   getProviderDefinition,
+  listProviderIds,
   type ProviderDefinition,
-  providerIds,
 } from './providers'
 
 /**
@@ -81,7 +81,7 @@ export function resolveProviderConfig(
     throw new BrokerError(
       404,
       'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${providerIds.join(', ')}.`,
+      `Unknown provider "${providerId}". Known providers: ${listProviderIds().join(', ')}.`,
     )
   }
 
