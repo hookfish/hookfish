@@ -15,7 +15,8 @@
     "lint": "biome lint .",
     "preview": "turbo preview",
     "deploy": "turbo deploy",
-    "cf-typegen": "turbo cf-typegen"
+    "cf-typegen": "turbo cf-typegen",
+    "db:studio": "pnpm --filter @template/api db:studio"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
