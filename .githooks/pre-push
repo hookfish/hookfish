@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+set -eu
+
+tmp_output="$(mktemp)"
+before_diff="$(mktemp)"
+after_diff="$(mktemp)"
+trap 'rm -f "$tmp_output" "$before_diff" "$after_diff"' EXIT
+
+git diff --binary >"$before_diff"
+
+if ! pnpm fmt >"$tmp_output" 2>&1; then
+  cat "$tmp_output"
+  echo "pre-push: pnpm fmt failed" >&2
+  exit 1
+fi
+
+cat "$tmp_output"
+
+if grep -i "warning" "$tmp_output" >/dev/null; then
+  echo "pre-push: pnpm fmt emitted warnings" >&2
+  exit 1
+fi
+
+git diff --binary >"$after_diff"
+
+if ! cmp -s "$before_diff" "$after_diff"; then
+  echo "pre-push: pnpm fmt changed tracked files. Commit the formatting changes before pushing." >&2
+  git diff --stat
+  exit 1
+fi

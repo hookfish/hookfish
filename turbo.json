@@ -1,0 +1,39 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".output/**", ".vinxi/**"]
+    },
+    "@template/server#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "cf-typegen": {
+      "cache": false,
+      "outputs": []
+    },
+    "dev": {
+      "dependsOn": ["//#portless:urls"],
+      "cache": false,
+      "persistent": true
+    },
+    "//#portless:urls": {
+      "cache": false,
+      "outputs": []
+    },
+    "preview": {
+      "cache": false,
+      "persistent": true
+    },
+    "deploy": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}
