@@ -520,7 +520,8 @@ describe('OAuth broker integration', () => {
       new URL(location).pathname + new URL(location).search,
     )
     expect(missingKey.status).toBe(500)
-    expect((await missingKey.json()).error.code).toBe('missing_configuration')
+    const missingKeyBody: { error: { code: string } } = await missingKey.json()
+    expect(missingKeyBody.error.code).toBe('missing_configuration')
 
     h.env.OAUTH_ENCRYPTION_KEY = previous
     const authorizeRes2 = await h.fetch(
@@ -545,7 +546,8 @@ describe('OAuth broker integration', () => {
     h.env.OAUTH_ENCRYPTION_KEY = previous
 
     expect(badKey.status).toBe(500)
-    expect((await badKey.json()).error.code).toBe('invalid_encryption_key')
+    const badKeyBody: { error: { code: string } } = await badKey.json()
+    expect(badKeyBody.error.code).toBe('invalid_encryption_key')
   })
 
   it('fails decryption after the encryption key rotates', async () => {

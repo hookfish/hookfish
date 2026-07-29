@@ -128,7 +128,7 @@ export async function createHarness(): Promise<TestHarness> {
     STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
 
-  const apiFetch = (requestPath: string, init?: RequestInit) => {
+  const apiFetch = async (requestPath: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers)
     if (!headers.has('Authorization')) {
       headers.set('Authorization', 'Bearer test')
