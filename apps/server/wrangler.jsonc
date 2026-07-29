@@ -4,6 +4,13 @@
   "compatibility_date": "2026-05-28",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/server.ts",
+  "vars": {
+    // Public origin OAuth callbacks are built from:
+    // `{BASE_URL}/api/oauth/{provider}/callback`. Empty falls back to the
+    // origin of the incoming request, which is correct unless a proxy or
+    // custom domain makes the public origin differ from what the Worker sees.
+    "BASE_URL": ""
+  },
   "observability": {
     "enabled": true
   }

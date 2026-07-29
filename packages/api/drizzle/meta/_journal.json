@@ -22,6 +22,13 @@
       "when": 1785400000000,
       "tag": "0002_connection_group_id",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0003_provider_available_scopes",
+      "breakpoints": true
     }
   ]
 }

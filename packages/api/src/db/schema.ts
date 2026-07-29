@@ -10,6 +10,15 @@ import {
 } from 'drizzle-orm/pg-core'
 
 /**
+ * One entry in a provider's advertised scope catalog. `description` is the
+ * provider's own wording, shown to whoever is picking scopes.
+ */
+export type ProviderScope = {
+  value: string
+  description?: string
+}
+
+/**
  * OAuth IdP configuration. Anyone with the broker API key can register a
  * provider over the API -- no code or env changes required. Client credentials
  * are encrypted at rest with `OAUTH_ENCRYPTION_KEY` (same as connection tokens).
@@ -20,6 +29,15 @@ export const oauthProviders = pgTable('oauth_providers', {
   authorizeUrl: text('authorize_url').notNull(),
   tokenUrl: text('token_url').notNull(),
   defaultScopes: text('default_scopes').array().notNull().default([]),
+  /**
+   * Every scope this provider can grant, so a caller can present the menu and
+   * request a subset at authorize time. Advertisement only: `defaultScopes` is
+   * what actually gets requested when authorize does not override it.
+   */
+  availableScopes: jsonb('available_scopes')
+    .$type<ProviderScope[]>()
+    .notNull()
+    .default([]),
   /** Google/GitHub use spaces; Linear uses commas. */
   scopeSeparator: text('scope_separator').notNull().default(' '),
   /** How the token endpoint wants the request encoded. */

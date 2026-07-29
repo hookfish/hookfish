@@ -21,6 +21,7 @@ import {
   findProviderRow,
   listProviderRows,
   providerIdSchema,
+  providerScopeSchema,
   serializeProvider,
   tokenRequestFormatSchema,
   updateProvider,
@@ -109,6 +110,7 @@ const providerSchema = z
       .string()
       .openapi({ example: 'https://api.notion.com/v1/oauth/token' }),
     default_scopes: z.array(z.string()),
+    available_scopes: z.array(providerScopeSchema),
     scope_separator: z.string().openapi({ example: ' ' }),
     token_request_format: tokenRequestFormatSchema,
     client_auth: clientAuthSchema,
@@ -138,6 +140,14 @@ const createProviderBodySchema = z
       description: 'Scopes requested when authorize does not override them.',
       example: [],
     }),
+    available_scopes: z
+      .array(providerScopeSchema)
+      .optional()
+      .openapi({
+        description:
+          'Every scope this provider can grant, for callers building a scope picker. Advertised on list/get; never sent to the provider on its own.',
+        example: [{ value: 'workspace:read', description: 'View workspaces' }],
+      }),
     scope_separator: z.string().min(1).optional().openapi({
       description: 'How to join scopes on the authorize URL (space or comma).',
       example: ' ',
@@ -371,15 +381,6 @@ const authorizeRoute = createRoute({
               default: DEFAULT_RETURN_TO,
               example: DEFAULT_RETURN_TO,
             }),
-            redirect_uri: z
-              .url()
-              .optional()
-              .openapi({
-                description:
-                  'Overrides the derived callback URL. Must match what the provider has registered, byte for byte. Defaults at runtime to `<OAUTH_REDIRECT_BASE_URL, or the request origin>/api/oauth/<provider>/callback`.',
-                default: exampleCallbackUrl('notion'),
-                example: exampleCallbackUrl('notion'),
-              }),
           }),
         },
       },
@@ -406,7 +407,7 @@ const callbackRoute = createRoute({
   method: 'get',
   path: '/{provider}/callback',
   summary: 'OAuth redirect target (called by the provider, not by your code)',
-  description: `Register this exact URL in the provider's developer console, one per provider -- locally that is \`${exampleCallbackUrl('notion')}\` for Notion, \`${exampleCallbackUrl('linear')}\` for Linear, and so on. Authenticated by the single-use \`state\` parameter rather than the broker API key.`,
+  description: `Register this exact URL in the provider's developer console, one per provider. The broker derives it as \`{BASE_URL}/api/oauth/{provider}/callback\` -- e.g. \`${exampleCallbackUrl('notion')}\` -- falling back to the request origin when \`BASE_URL\` is unset. Run \`pnpm portless:url\` to see the origin your branch is served on. Authenticated by the single-use \`state\` parameter rather than the broker API key.`,
   middleware: [withDatabase],
   request: {
     params: providerParamSchema,
@@ -523,6 +524,7 @@ oauthRoutes.openapi(createProviderRoute, async (c) => {
     clientId: body.client_id,
     clientSecret: body.client_secret,
     defaultScopes: body.default_scopes,
+    availableScopes: body.available_scopes,
     scopeSeparator: body.scope_separator,
     tokenRequestFormat: body.token_request_format,
     clientAuth: body.client_auth,
@@ -570,6 +572,7 @@ oauthRoutes.openapi(updateProviderRoute, async (c) => {
       clientId: body.client_id,
       clientSecret: body.client_secret,
       defaultScopes: body.default_scopes,
+      availableScopes: body.available_scopes,
       scopeSeparator: body.scope_separator,
       tokenRequestFormat: body.token_request_format,
       clientAuth: body.client_auth,
@@ -593,8 +596,7 @@ oauthRoutes.openapi(authorizeRoute, async (c) => {
   const { provider } = c.req.valid('param')
   const body = c.req.valid('json')
 
-  const redirectUri =
-    body.redirect_uri ?? resolveRedirectUri(c.env, c.req.url, provider)
+  const redirectUri = resolveRedirectUri(c.env, c.req.url, provider)
 
   const result = await startAuthorization(c.get('db'), c.env, {
     connectionGroupId: body.connection_group_id,

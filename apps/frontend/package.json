@@ -10,7 +10,7 @@
     "typecheck": "tsc -b",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler deploy --config ./wrangler.jsonc",
-    "cf-typegen": "wrangler types --config ./wrangler.jsonc"
+    "cf-typegen": "wrangler types --config ./wrangler.jsonc --env-file ../server/.env.example --strict-vars false"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -2,9 +2,9 @@ import type { Database } from '../db/types'
 import { BrokerError } from './errors'
 import {
   findProviderRow,
+  type ProviderDefinition,
   resolveProviderCredentials,
   rowToDefinition,
-  type ProviderDefinition,
 } from './providers'
 
 /**
@@ -20,7 +20,12 @@ export type BrokerEnv = {
   DATABASE_URL?: string
   OAUTH_ENCRYPTION_KEY?: string
   BROKER_API_KEY?: string
-  OAUTH_REDIRECT_BASE_URL?: string
+  /**
+   * Public origin this API is reached at, e.g. `https://branch.frontend.localhost`
+   * under portless. A Worker `vars` binding, so it arrives on `c.env` rather
+   * than `process.env` and works unchanged on Cloudflare.
+   */
+  BASE_URL?: string
   PGLITE_DATA_DIR?: string
   DB?: Database
   [key: string]: string | Database | undefined
@@ -90,16 +95,20 @@ export async function resolveProviderConfig(
 }
 
 /**
- * The callback URL registered with the provider. Falls back to the origin of
- * the incoming request, which keeps local dev working without extra config.
+ * The callback URL registered with the provider, always derived here rather
+ * than accepted from the caller: whoever picks the redirect URI picks where the
+ * authorization code lands, so letting a request choose it hands out codes.
+ *
+ * Falls back to the origin of the incoming request, which is correct whenever
+ * the API is reached directly. Set `BASE_URL` when a proxy or custom domain
+ * means the public origin differs from what the Worker sees.
  */
 export function resolveRedirectUri(
   env: BrokerEnv,
   requestUrl: string,
   providerId: string,
 ): string {
-  const configuredBase = readEnvString(env, 'OAUTH_REDIRECT_BASE_URL')
-  const base = configuredBase ?? new URL(requestUrl).origin
+  const base = readEnvString(env, 'BASE_URL') ?? new URL(requestUrl).origin
 
   return `${base.replace(/\/$/, '')}/api/oauth/${providerId}/callback`
 }

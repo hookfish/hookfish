@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm'
 import { z } from '@hono/zod-openapi'
+import { eq } from 'drizzle-orm'
 import {
   type OAuthProvider,
   oauthConnections,
   oauthProviders,
   oauthStates,
+  type ProviderScope,
 } from '../db/schema'
 import type { Database } from '../db/types'
 import { decryptSecret, encryptSecret } from './crypto'
@@ -48,6 +49,16 @@ export const providerIdSchema = z
 
 export const tokenRequestFormatSchema = z.enum(['form', 'json'])
 export const clientAuthSchema = z.enum(['basic', 'body'])
+
+/** One advertised scope in a provider's catalog. */
+export const providerScopeSchema = z
+  .object({
+    value: z.string().min(1).openapi({ example: 'workspace:read' }),
+    description: z.string().optional().openapi({
+      description: "The provider's own wording for what this scope grants.",
+    }),
+  })
+  .openapi('OAuthProviderScope')
 
 const stringField = z.string().optional().catch(undefined)
 
@@ -116,6 +127,7 @@ export function serializeProvider(row: OAuthProvider) {
     authorize_url: row.authorizeUrl,
     token_url: row.tokenUrl,
     default_scopes: row.defaultScopes,
+    available_scopes: row.availableScopes,
     scope_separator: row.scopeSeparator,
     token_request_format: asTokenRequestFormat(row.tokenRequestFormat),
     client_auth: asClientAuth(row.clientAuth),
@@ -154,6 +166,7 @@ export type CreateProviderInput = {
   clientId: string
   clientSecret: string
   defaultScopes?: string[]
+  availableScopes?: ProviderScope[]
   scopeSeparator?: string
   tokenRequestFormat?: 'form' | 'json'
   clientAuth?: 'basic' | 'body'
@@ -187,6 +200,7 @@ export async function createProvider(
       authorizeUrl: input.authorizeUrl,
       tokenUrl: input.tokenUrl,
       defaultScopes: input.defaultScopes ?? [],
+      availableScopes: input.availableScopes ?? [],
       scopeSeparator: input.scopeSeparator ?? ' ',
       tokenRequestFormat: input.tokenRequestFormat ?? 'form',
       clientAuth: input.clientAuth ?? 'body',
@@ -213,6 +227,7 @@ export type UpdateProviderInput = {
   clientId?: string
   clientSecret?: string
   defaultScopes?: string[]
+  availableScopes?: ProviderScope[]
   scopeSeparator?: string
   tokenRequestFormat?: 'form' | 'json'
   clientAuth?: 'basic' | 'body'
@@ -239,37 +254,22 @@ export async function updateProvider(
     )
   }
 
-  const patch: Partial<typeof oauthProviders.$inferInsert> = {
-    updatedAt: new Date(),
-  }
+  const { clientId, clientSecret, ...columns } = input
 
-  if (input.label !== undefined) patch.label = input.label
-  if (input.authorizeUrl !== undefined) patch.authorizeUrl = input.authorizeUrl
-  if (input.tokenUrl !== undefined) patch.tokenUrl = input.tokenUrl
-  if (input.defaultScopes !== undefined)
-    patch.defaultScopes = input.defaultScopes
-  if (input.scopeSeparator !== undefined)
-    patch.scopeSeparator = input.scopeSeparator
-  if (input.tokenRequestFormat !== undefined)
-    patch.tokenRequestFormat = input.tokenRequestFormat
-  if (input.clientAuth !== undefined) patch.clientAuth = input.clientAuth
-  if (input.usePkce !== undefined) patch.usePkce = input.usePkce
-  if (input.supportsRefresh !== undefined)
-    patch.supportsRefresh = input.supportsRefresh
-  if (input.authorizeParams !== undefined)
-    patch.authorizeParams = input.authorizeParams
-  if (input.accountIdPath !== undefined)
-    patch.accountIdPath = input.accountIdPath
-  if (input.accountLabelPath !== undefined)
-    patch.accountLabelPath = input.accountLabelPath
-  if (input.clientId !== undefined) {
-    patch.clientIdEncrypted = await encryptSecret(encryptionKey, input.clientId)
-  }
-  if (input.clientSecret !== undefined) {
-    patch.clientSecretEncrypted = await encryptSecret(
-      encryptionKey,
-      input.clientSecret,
-    )
+  // The remaining input keys are named after their columns, and drizzle drops
+  // `undefined` values from an update set, so absent fields keep their current
+  // values while an explicit `null` still clears a nullable column.
+  const patch: Partial<typeof oauthProviders.$inferInsert> = {
+    ...columns,
+    updatedAt: new Date(),
+    clientIdEncrypted:
+      clientId === undefined
+        ? undefined
+        : await encryptSecret(encryptionKey, clientId),
+    clientSecretEncrypted:
+      clientSecret === undefined
+        ? undefined
+        : await encryptSecret(encryptionKey, clientSecret),
   }
 
   const [row] = await db

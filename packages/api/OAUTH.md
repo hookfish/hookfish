@@ -18,13 +18,20 @@ cp apps/server/.env.example apps/server/.env
 # Fill in at minimum:
 openssl rand -base64 32   # -> OAUTH_ENCRYPTION_KEY
 openssl rand -base64 32   # -> BROKER_API_KEY
+# ...plus NOTION_CLIENT_ID / NOTION_CLIENT_SECRET
 ```
 
-Register `http://localhost:8787/api/oauth/<provider>/callback` as the redirect
-URI in each provider's developer console.
+Register the callback URL in each provider's developer console. The broker
+always derives it as `{BASE_URL}/api/oauth/{provider}/callback` — see
+[Callback URLs](#callback-urls) for where `BASE_URL` comes from:
+
+```sh
+pnpm portless:url   # e.g. https://my-branch.frontend.localhost
+```
 
 ```sh
 pnpm --filter @template/server dev
+pnpm db:seed   # registers Notion from .env via the API
 ```
 
 That runs the Hono app on Node with PGlite persisting to `apps/server/pgdata`,
@@ -140,6 +147,65 @@ curl -X POST http://localhost:8787/api/oauth/providers \
 
 Client id/secret are encrypted with `OAUTH_ENCRYPTION_KEY` before write and
 never returned by list/get.
+
+To register Notion from env vars without typing the dialect by hand:
+
+```sh
+pnpm db:seed
+```
+
+That boots the same local PGlite as the server, then calls
+`POST /api/oauth/providers` (or `PATCH` if the id already exists) through the
+Hono RPC client. Notion is skipped unless both `NOTION_CLIENT_ID` and
+`NOTION_CLIENT_SECRET` are in `apps/server/.env`; `NOTION_SCOPES` overrides
+`default_scopes` when set.
+
+PGlite is embedded rather than a server, so a dev server that is already
+running holds its own copy of `pgdata` in memory and will not see the seeded
+rows. Restart it afterwards, or seed before starting it.
+
+### Advertising scopes
+
+`available_scopes` is the catalog of every scope a provider can grant, returned
+by list/get so a caller can render a scope picker:
+
+```jsonc
+"available_scopes": [
+  { "value": "workspace:read", "description": "View workspaces" },
+  { "value": "workspace:export", "description": "Export workspaces" }
+]
+```
+
+It is advertisement only. What actually goes on the authorize URL is
+`default_scopes`, or the `scopes` field on the authorize request when that
+overrides it — the broker does not currently check requested scopes against
+this catalog.
+
+## Callback URLs
+
+The broker derives every callback as
+`{BASE_URL}/api/oauth/{provider}/callback`. Callers cannot supply one: whoever
+chooses the redirect URI chooses where the authorization code is delivered, so
+that has to stay server-side.
+
+`BASE_URL` is a Cloudflare `vars` binding read off `c.env`, declared in both
+`wrangler.jsonc` files. Resolution order:
+
+| Where | Value |
+| --- | --- |
+| `pnpm dev` / `pnpm --filter @template/server dev` | your branch's portless origin, injected by `scripts/portless-dev.mjs` |
+| `apps/server/.env` or the shell | whatever you set — this wins over the portless default |
+| Deployed Worker | the `BASE_URL` var, or the request origin when it is empty |
+
+So on branch `my-branch` the URL to register with Notion is:
+
+```
+https://my-branch.frontend.localhost/api/oauth/notion/callback
+```
+
+Run `pnpm portless:url` to print the origin. Because portless derives it from
+the branch name, **the callback changes when you switch branches** — either
+register each branch's URL or pin `BASE_URL` in `apps/server/.env`.
 
 ## Usage
 
