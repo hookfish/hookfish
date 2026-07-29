@@ -1,9 +1,14 @@
 # OAuth broker
 
-Brokers OAuth connections on behalf of your users. You give it a **user id** and
-a **connection source** (`notion`, `linear`, `google`, ...); it runs the consent
-flow, stores the tokens encrypted, and hands back a valid access token on
-demand — refreshing transparently when one is about to expire.
+Brokers OAuth connections you manage under a **connection id**. You give it a
+connection id (or let it mint one) and a **connection source** (`notion`,
+`linear`, `google`, ...); it runs the consent flow, stores the tokens encrypted,
+and hands back a valid access token on demand — refreshing transparently when
+one is about to expire.
+
+Each connection id is **one provider link**. Multiple accounts on the same
+provider are multiple ids. Re-authorizing the same id for the same provider
+upserts the stored tokens; using it for a different provider returns `409`.
 
 ## Setup
 
@@ -16,9 +21,6 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 # ...plus NOTION_CLIENT_ID / NOTION_CLIENT_SECRET
 ```
 
-Register `http://localhost:8787/api/oauth/<provider>/callback` as the redirect
-URI in each provider's developer console.
-
 ```sh
 pnpm --filter @template/server dev
 ```
@@ -28,6 +30,18 @@ applying migrations at startup — no database to provision. Use
 `pnpm --filter @template/server dev:node` without the portless proxy.
 `pnpm dev` does the same for frontend `/api` via a Vite Node middleware (still
 PGlite on disk), so you do not need a separate API process locally.
+
+Then register the redirect URI in each provider's developer console. Ask the
+running broker for the exact string rather than guessing it — the host depends
+on your branch (portless prefixes non-`main` hosts) and on whether you reach
+the API directly or through the frontend, and providers match `redirect_uri`
+byte for byte:
+
+```sh
+curl -H "Authorization: Bearer $BROKER_API_KEY" \
+  https://server.localhost/api/oauth/providers \
+  | jq -r '.providers[] | "\(.id)\t\(.callback_url)"'
+```
 
 ## Why there are two entrypoints
 
@@ -58,48 +72,70 @@ when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/oauth/providers` | Which providers exist and which have credentials |
-| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL for a user |
+| `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, and each `callback_url` to register |
+| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
-| `GET` | `/api/oauth/connections?user_id=` | A user's connections (never tokens) |
-| `GET` | `/api/oauth/connections/{provider}/token?user_id=` | A token valid *right now* |
-| `DELETE` | `/api/oauth/connections/{provider}?user_id=` | Forget a connection |
+| `GET` | `/api/oauth/connections` | List connections (`?provider=` optional) |
+| `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
+| `GET` | `/api/oauth/connections/{connection_id}/token` | A token valid *right now* |
+| `DELETE` | `/api/oauth/connections/{connection_id}` | Forget a connection |
 
 Swagger UI lives at `/api`.
 
 ## Usage
 
-Start a connection:
+Start a connection. Omit `connection_id` to have the broker mint one as
+`word-word-number` (e.g. `swift-orchid-4821`):
 
 ```sh
-curl -X POST http://localhost:8787/api/oauth/notion/authorize \
+curl -X POST https://server.localhost/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"user_id":"user_123","return_to":"http://localhost:3000/settings"}'
+  -d '{"return_to":"https://frontend.localhost/settings"}'
 ```
 
 ```json
 {
+  "connection_id": "swift-orchid-4821",
   "authorize_url": "https://api.notion.com/v1/oauth/authorize?...",
   "state": "Dj9kx_AlpE0...",
   "expires_at": "2026-07-29T04:26:02.024Z"
 }
 ```
 
+Pass your own id to reconnect the same link:
+
+```sh
+curl -X POST https://server.localhost/api/oauth/notion/authorize \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"connection_id":"swift-orchid-4821","return_to":"https://frontend.localhost/settings"}'
+```
+
 Redirect the user to `authorize_url`. When they approve, the broker stores the
-connection and sends them to `return_to?connected=notion`.
+tokens and sends them to `return_to?connected=notion`.
+
+List what you have, or fetch one:
+
+```sh
+curl -H "Authorization: Bearer $BROKER_API_KEY" \
+  "https://server.localhost/api/oauth/connections?provider=notion"
+
+curl -H "Authorization: Bearer $BROKER_API_KEY" \
+  "https://server.localhost/api/oauth/connections/swift-orchid-4821"
+```
 
 Then, whenever you need to call the provider:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "http://localhost:8787/api/oauth/connections/notion/token?user_id=user_123"
+  "https://server.localhost/api/oauth/connections/swift-orchid-4821/token"
 ```
 
 ```json
 {
+  "connection_id": "swift-orchid-4821",
   "provider": "notion",
-  "user_id": "user_123",
   "access_token": "secret_...",
   "token_type": "bearer",
   "scopes": [],

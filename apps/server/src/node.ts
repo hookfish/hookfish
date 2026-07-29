@@ -5,6 +5,7 @@ import { createLocalBrokerEnv } from '@template/api/local-node'
 import {
   type BrokerEnv,
   isProviderConfigured,
+  readEnvString,
 } from '@template/api/oauth/config'
 import { providerIds } from '@template/api/oauth/providers'
 
@@ -49,8 +50,11 @@ serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },
   (info) => {
     const configured = providerIds.filter((id) => isProviderConfigured(env, id))
+    const publicOrigin =
+      readEnvString(env, 'OAUTH_REDIRECT_BASE_URL') ??
+      `http://localhost:${info.port}`
 
-    console.log(`OAuth broker on http://localhost:${info.port}/api`)
+    console.log(`OAuth broker on ${publicOrigin}/api`)
     console.log(`PGlite data directory: ${dataDir}`)
     console.log(
       configured.length > 0

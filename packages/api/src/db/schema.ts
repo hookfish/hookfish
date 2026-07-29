@@ -9,14 +9,16 @@ import {
 } from 'drizzle-orm/pg-core'
 
 /**
- * One row per (user, provider) pair. Tokens are stored encrypted at rest --
- * see `oauth/crypto.ts`. The plaintext never touches the database.
+ * One row per connection. A connection_id is a single provider link -- multiple
+ * accounts on the same provider are multiple connection ids. Tokens are stored
+ * encrypted at rest -- see `oauth/crypto.ts`. The plaintext never touches the
+ * database.
  */
 export const oauthConnections = pgTable(
   'oauth_connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: text('user_id').notNull(),
+    connectionId: text('connection_id').notNull(),
     provider: text('provider').notNull(),
 
     accessToken: text('access_token_encrypted').notNull(),
@@ -47,11 +49,8 @@ export const oauthConnections = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex('oauth_connections_user_provider_idx').on(
-      table.userId,
-      table.provider,
-    ),
-    index('oauth_connections_user_idx').on(table.userId),
+    uniqueIndex('oauth_connections_connection_id_idx').on(table.connectionId),
+    index('oauth_connections_provider_idx').on(table.provider),
   ],
 )
 
@@ -63,7 +62,7 @@ export const oauthStates = pgTable(
   'oauth_states',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
+    connectionId: text('connection_id').notNull(),
     provider: text('provider').notNull(),
     codeVerifier: text('code_verifier'),
     redirectUri: text('redirect_uri').notNull(),
