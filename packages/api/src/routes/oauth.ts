@@ -4,6 +4,7 @@ import {
   completeAuthorization,
   deleteConnection,
   getAccessToken,
+  getConnection,
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
@@ -19,13 +20,14 @@ import { providerIds, providerRegistry } from '../oauth/providers'
 // ---------------------------------------------------------------------------
 // Documentation defaults
 //
-// These describe the standalone `pnpm --filter @template/server dev` setup so
-// Swagger's "Try it out" is runnable without typing anything. They never affect
-// runtime behaviour -- the real redirect URI is derived per-request by
-// `resolveRedirectUri`.
+// These prefill Swagger's "Try it out" so it is runnable without typing
+// anything. They never affect runtime behaviour.
+//
+// Nothing here hard-codes an origin: the callback URL depends on the branch
+// (portless prefixes non-`main` hosts) and on whether the API is reached
+// directly or through the frontend, so it is reported per-request as
+// `callback_url` by `GET /providers` instead.
 // ---------------------------------------------------------------------------
-
-const LOCAL_API_ORIGIN = 'http://localhost:8787'
 
 /**
  * References the `brokerApiKey` scheme registered in `src/index.ts`. Attaching
@@ -37,10 +39,8 @@ const brokerAuth = [{ brokerApiKey: [] }]
 /** Where the browser lands after a successful connection, locally. */
 const DEFAULT_RETURN_TO = 'https://frontend.localhost'
 
-/** The callback URL to register with a provider's developer console. */
-function exampleCallbackUrl(provider: string): string {
-  return `${LOCAL_API_ORIGIN}/api/oauth/${provider}/callback`
-}
+/** Example connection id shown in OpenAPI / Swagger. */
+const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -65,7 +65,8 @@ function errorResponse(description: string) {
 const commonErrors = {
   400: errorResponse('Invalid request'),
   401: errorResponse('Missing API key, or the connection needs reauthorizing'),
-  404: errorResponse('Unknown provider or no connection for this user'),
+  404: errorResponse('Unknown provider or no connection for this id'),
+  409: errorResponse('Connection id is already linked to another provider'),
   500: errorResponse('Broker is misconfigured'),
   502: errorResponse('The provider rejected the token request'),
 }
@@ -76,17 +77,20 @@ const providerParamSchema = z.object({
     .openapi({ param: { name: 'provider', in: 'path' }, example: 'notion' }),
 })
 
-const userIdQuerySchema = z.object({
-  user_id: z
+const connectionIdParamSchema = z.object({
+  connection_id: z
     .string()
     .min(1)
-    .openapi({ param: { name: 'user_id', in: 'query' }, example: 'user_123' }),
+    .openapi({
+      param: { name: 'connection_id', in: 'path' },
+      example: EXAMPLE_CONNECTION_ID,
+    }),
 })
 
 const connectionSchema = z
   .object({
+    connection_id: z.string().openapi({ example: EXAMPLE_CONNECTION_ID }),
     provider: z.string().openapi({ example: 'notion' }),
-    user_id: z.string().openapi({ example: 'user_123' }),
     scopes: z.array(z.string()),
     expires_at: z.string().nullable(),
     external_account_id: z.string().nullable(),
@@ -100,8 +104,8 @@ const connectionSchema = z
 /** Never serialises the encrypted token columns. */
 function serializeConnection(connection: OAuthConnection) {
   return {
+    connection_id: connection.connectionId,
     provider: connection.provider,
-    user_id: connection.userId,
     scopes: connection.scopes,
     expires_at: connection.expiresAt?.toISOString() ?? null,
     external_account_id: connection.externalAccountId,
@@ -120,6 +124,8 @@ const listProvidersRoute = createRoute({
   method: 'get',
   path: '/providers',
   summary: 'List known providers and whether credentials are configured',
+  description:
+    "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
   middleware: [requireApiKey],
   security: brokerAuth,
   responses: {
@@ -133,6 +139,7 @@ const listProvidersRoute = createRoute({
                 id: z.string(),
                 label: z.string(),
                 configured: z.boolean(),
+                callback_url: z.string(),
                 scopes: z.array(z.string()),
                 supports_refresh: z.boolean(),
                 uses_pkce: z.boolean(),
@@ -149,9 +156,9 @@ const listProvidersRoute = createRoute({
 const authorizeRoute = createRoute({
   method: 'post',
   path: '/{provider}/authorize',
-  summary: 'Create a consent URL for a user',
+  summary: 'Create a consent URL for a connection',
   description:
-    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens.',
+    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`). Each connection id is one provider link.',
   middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: {
@@ -160,7 +167,11 @@ const authorizeRoute = createRoute({
       content: {
         'application/json': {
           schema: z.object({
-            user_id: z.string().min(1).openapi({ example: 'user_123' }),
+            connection_id: z.string().min(1).optional().openapi({
+              description:
+                'Opaque id for this provider link. Omit to auto-generate as `word-word-number` (e.g. `swift-orchid-4821`). Re-pass the same id to reconnect the same link; a different provider on an existing id returns 409.',
+              example: EXAMPLE_CONNECTION_ID,
+            }),
             scopes: z.array(z.string()).optional().openapi({
               description:
                 'Overrides the configured scopes for this flow. Leave empty to use the provider defaults from <PROVIDER>_SCOPES or the registry -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
@@ -177,15 +188,6 @@ const authorizeRoute = createRoute({
               default: DEFAULT_RETURN_TO,
               example: DEFAULT_RETURN_TO,
             }),
-            redirect_uri: z
-              .url()
-              .optional()
-              .openapi({
-                description:
-                  'Overrides the derived callback URL. Must match what the provider has registered, byte for byte. Defaults at runtime to `<OAUTH_REDIRECT_BASE_URL, or the request origin>/api/oauth/<provider>/callback`.',
-                default: exampleCallbackUrl('notion'),
-                example: exampleCallbackUrl('notion'),
-              }),
           }),
         },
       },
@@ -197,6 +199,7 @@ const authorizeRoute = createRoute({
       content: {
         'application/json': {
           schema: z.object({
+            connection_id: z.string(),
             authorize_url: z.string(),
             state: z.string(),
             expires_at: z.string(),
@@ -212,7 +215,8 @@ const callbackRoute = createRoute({
   method: 'get',
   path: '/{provider}/callback',
   summary: 'OAuth redirect target (called by the provider, not by your code)',
-  description: `Register this exact URL in the provider's developer console, one per provider -- locally that is \`${exampleCallbackUrl('notion')}\` for Notion, \`${exampleCallbackUrl('linear')}\` for Linear, and so on. Authenticated by the single-use \`state\` parameter rather than the broker API key.`,
+  description:
+    "Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.",
   middleware: [withDatabase],
   request: {
     params: providerParamSchema,
@@ -240,21 +244,73 @@ const callbackRoute = createRoute({
   },
 })
 
+const listConnectionsRoute = createRoute({
+  method: 'get',
+  path: '/connections',
+  summary: 'List connections',
+  description: 'Returns every stored connection. Pass `provider` to filter.',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: {
+    query: z.object({
+      provider: z
+        .string()
+        .min(1)
+        .optional()
+        .openapi({
+          param: { name: 'provider', in: 'query' },
+          example: 'notion',
+        }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Connections',
+      content: {
+        'application/json': {
+          schema: z.object({ connections: z.array(connectionSchema) }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
+const getConnectionRoute = createRoute({
+  method: 'get',
+  path: '/connections/{connection_id}',
+  summary: 'Get a connection by id',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: { params: connectionIdParamSchema },
+  responses: {
+    200: {
+      description: 'Connection',
+      content: {
+        'application/json': {
+          schema: z.object({ connection: connectionSchema }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
 const tokenRoute = createRoute({
   method: 'get',
-  path: '/connections/{provider}/token',
+  path: '/connections/{connection_id}/token',
   summary: 'Get a currently-valid access token, refreshing if needed',
   middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
-  request: { params: providerParamSchema, query: userIdQuerySchema },
+  request: { params: connectionIdParamSchema },
   responses: {
     200: {
       description: 'A token that is valid right now',
       content: {
         'application/json': {
           schema: z.object({
+            connection_id: z.string(),
             provider: z.string(),
-            user_id: z.string(),
             access_token: z.string(),
             token_type: z.string(),
             scopes: z.array(z.string()),
@@ -268,33 +324,13 @@ const tokenRoute = createRoute({
   },
 })
 
-const listConnectionsRoute = createRoute({
-  method: 'get',
-  path: '/connections',
-  summary: "List a user's connections",
-  middleware: [requireApiKey, withDatabase],
-  security: brokerAuth,
-  request: { query: userIdQuerySchema },
-  responses: {
-    200: {
-      description: 'Connections for the user',
-      content: {
-        'application/json': {
-          schema: z.object({ connections: z.array(connectionSchema) }),
-        },
-      },
-    },
-    ...commonErrors,
-  },
-})
-
 const disconnectRoute = createRoute({
   method: 'delete',
-  path: '/connections/{provider}',
+  path: '/connections/{connection_id}',
   summary: 'Forget a stored connection',
   middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
-  request: { params: providerParamSchema, query: userIdQuerySchema },
+  request: { params: connectionIdParamSchema },
   responses: {
     200: {
       description: 'Deletion result',
@@ -324,6 +360,9 @@ oauthRoutes.openapi(listProvidersRoute, (c) => {
           id: definition.id,
           label: definition.label,
           configured: isProviderConfigured(c.env, id),
+          // Derived from this request, so it stays correct across branches,
+          // `pnpm dev` vs. `server dev`, and deployed environments.
+          callback_url: resolveRedirectUri(c.env, c.req.url, id),
           scopes: definition.defaultScopes,
           supports_refresh: definition.supportsRefresh,
           uses_pkce: definition.usePkce,
@@ -338,19 +377,17 @@ oauthRoutes.openapi(authorizeRoute, async (c) => {
   const { provider } = c.req.valid('param')
   const body = c.req.valid('json')
 
-  const redirectUri =
-    body.redirect_uri ?? resolveRedirectUri(c.env, c.req.url, provider)
-
   const result = await startAuthorization(c.get('db'), c.env, {
-    userId: body.user_id,
+    connectionId: body.connection_id,
     provider,
-    redirectUri,
+    redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
     scopes: body.scopes,
     returnTo: body.return_to,
   })
 
   return c.json(
     {
+      connection_id: result.connectionId,
       authorize_url: result.authorizeUrl,
       state: result.state,
       expires_at: result.expiresAt.toISOString(),
@@ -407,16 +444,28 @@ oauthRoutes.openapi(callbackRoute, async (c) => {
   )
 })
 
-oauthRoutes.openapi(tokenRoute, async (c) => {
-  const { provider } = c.req.valid('param')
-  const { user_id: userId } = c.req.valid('query')
+oauthRoutes.openapi(listConnectionsRoute, async (c) => {
+  const { provider } = c.req.valid('query')
+  const connections = await listConnections(c.get('db'), { provider })
 
-  const token = await getAccessToken(c.get('db'), c.env, userId, provider)
+  return c.json({ connections: connections.map(serializeConnection) }, 200)
+})
+
+oauthRoutes.openapi(getConnectionRoute, async (c) => {
+  const { connection_id: connectionId } = c.req.valid('param')
+  const connection = await getConnection(c.get('db'), connectionId)
+
+  return c.json({ connection: serializeConnection(connection) }, 200)
+})
+
+oauthRoutes.openapi(tokenRoute, async (c) => {
+  const { connection_id: connectionId } = c.req.valid('param')
+  const token = await getAccessToken(c.get('db'), c.env, connectionId)
 
   return c.json(
     {
+      connection_id: token.connectionId,
       provider: token.provider,
-      user_id: token.userId,
       access_token: token.accessToken,
       token_type: token.tokenType,
       scopes: token.scopes,
@@ -427,19 +476,11 @@ oauthRoutes.openapi(tokenRoute, async (c) => {
   )
 })
 
-oauthRoutes.openapi(listConnectionsRoute, async (c) => {
-  const { user_id: userId } = c.req.valid('query')
-  const connections = await listConnections(c.get('db'), userId)
-
-  return c.json({ connections: connections.map(serializeConnection) }, 200)
-})
-
 oauthRoutes.openapi(disconnectRoute, async (c) => {
-  const { provider } = c.req.valid('param')
-  const { user_id: userId } = c.req.valid('query')
+  const { connection_id: connectionId } = c.req.valid('param')
 
   return c.json(
-    { deleted: await deleteConnection(c.get('db'), userId, provider) },
+    { deleted: await deleteConnection(c.get('db'), connectionId) },
     200,
   )
 })

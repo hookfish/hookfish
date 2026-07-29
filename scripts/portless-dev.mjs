@@ -53,6 +53,8 @@ run('pnpm', [
 const env = { ...process.env }
 env.PORT = String(appPort)
 env.HOST = env.HOST ?? '127.0.0.1'
+// Providers must redirect to the public HTTPS origin, not localhost:$PORT.
+env.OAUTH_REDIRECT_BASE_URL = env.OAUTH_REDIRECT_BASE_URL ?? url
 
 const child = spawn(command[0], command.slice(1), {
   env,

@@ -11,6 +11,7 @@ import {
   type ProviderConfig,
   resolveProviderConfig,
 } from './config'
+import { generateConnectionId } from './connection-id'
 import {
   createPkcePair,
   decryptSecret,
@@ -65,7 +66,8 @@ function parseScopeValue(
 // ---------------------------------------------------------------------------
 
 export type StartAuthorizationInput = {
-  userId: string
+  /** Omit to mint an id that is not yet in use. */
+  connectionId?: string
   provider: string
   redirectUri: string
   /** Overrides the provider's configured scopes for this one flow. */
@@ -74,13 +76,64 @@ export type StartAuthorizationInput = {
   returnTo?: string
 }
 
+/**
+ * A minted id must land on a free row -- reusing one would silently replace
+ * somebody else's tokens. The id space is ~2e8, so a collision here means the
+ * table is unexpectedly dense rather than that we were unlucky.
+ */
+const MINT_ATTEMPTS = 8
+
+async function mintConnectionId(db: Database): Promise<string> {
+  for (let attempt = 0; attempt < MINT_ATTEMPTS; attempt++) {
+    const candidate = generateConnectionId()
+
+    if (!(await findConnection(db, candidate))) return candidate
+  }
+
+  throw new BrokerError(
+    500,
+    'connection_id_unavailable',
+    `Could not mint an unused connection id in ${MINT_ATTEMPTS} attempts.`,
+  )
+}
+
+/** A connection id is one provider link -- never let a second provider take it. */
+async function assertProviderMatches(
+  db: Database,
+  connectionId: string,
+  provider: string,
+): Promise<void> {
+  const existing = await findConnection(db, connectionId)
+
+  if (existing && existing.provider !== provider) {
+    throw new BrokerError(
+      409,
+      'connection_id_in_use',
+      `Connection "${connectionId}" is already linked to ${existing.provider}. Mint a new id for ${provider}.`,
+    )
+  }
+}
+
 export async function startAuthorization(
   db: Database,
   env: BrokerEnv,
   input: StartAuthorizationInput,
-): Promise<{ authorizeUrl: string; state: string; expiresAt: Date }> {
+): Promise<{
+  authorizeUrl: string
+  state: string
+  expiresAt: Date
+  connectionId: string
+}> {
   const config = resolveProviderConfig(env, input.provider)
   const { definition } = config
+
+  // A minted id is already known to be free; a caller-supplied one may be
+  // linked to another provider.
+  const connectionId = input.connectionId ?? (await mintConnectionId(db))
+
+  if (input.connectionId) {
+    await assertProviderMatches(db, input.connectionId, definition.id)
+  }
 
   const scopes = input.scopes?.length ? input.scopes : config.scopes
   const state = randomToken(32)
@@ -89,7 +142,7 @@ export async function startAuthorization(
 
   await db.insert(oauthStates).values({
     id: state,
-    userId: input.userId,
+    connectionId,
     provider: definition.id,
     codeVerifier: pkce?.verifier ?? null,
     redirectUri: input.redirectUri,
@@ -117,7 +170,7 @@ export async function startAuthorization(
     url.searchParams.set('code_challenge_method', 'S256')
   }
 
-  return { authorizeUrl: url.toString(), state, expiresAt }
+  return { authorizeUrl: url.toString(), state, expiresAt, connectionId }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +322,10 @@ export async function completeAuthorization(
 
   const config = resolveProviderConfig(env, input.provider)
 
+  // The check in `startAuthorization` goes stale as soon as a second flow is
+  // opened on the same id, so re-check before spending the authorization code.
+  await assertProviderMatches(db, pending.connectionId, config.definition.id)
+
   const params: Record<string, string> = {
     grant_type: 'authorization_code',
     code: input.code,
@@ -283,15 +340,28 @@ export async function completeAuthorization(
   const [connection] = await db
     .insert(oauthConnections)
     .values({
-      userId: pending.userId,
+      connectionId: pending.connectionId,
       provider: config.definition.id,
       ...fields,
     })
     .onConflictDoUpdate({
-      target: [oauthConnections.userId, oauthConnections.provider],
+      target: oauthConnections.connectionId,
       set: { ...fields, updatedAt: new Date() },
+      // Reconnecting the same link upserts; a different provider must not take
+      // the id over. Enforced in the statement itself, so two callbacks racing
+      // past the checks above can't rebind it either -- the loser updates no
+      // rows and returns nothing.
+      setWhere: eq(oauthConnections.provider, config.definition.id),
     })
     .returning()
+
+  if (!connection) {
+    throw new BrokerError(
+      409,
+      'connection_id_in_use',
+      `Connection "${pending.connectionId}" was linked to another provider while this flow was in progress. Start again with a new id.`,
+    )
+  }
 
   return { connection, returnTo: pending.returnTo }
 }
@@ -312,7 +382,7 @@ async function refreshConnection(
     throw new BrokerError(
       401,
       'reauthorization_required',
-      `The ${config.definition.label} connection for user "${connection.userId}" expired and has no refresh token. Start the flow again.`,
+      `The ${config.definition.label} connection "${connection.connectionId}" expired and has no refresh token. Start the flow again.`,
     )
   }
 
@@ -351,26 +421,37 @@ function isExpired(connection: OAuthConnection): boolean {
 
 export async function findConnection(
   db: Database,
-  userId: string,
-  provider: string,
+  connectionId: string,
 ): Promise<OAuthConnection | undefined> {
   const [connection] = await db
     .select()
     .from(oauthConnections)
-    .where(
-      and(
-        eq(oauthConnections.userId, userId),
-        eq(oauthConnections.provider, provider),
-      ),
-    )
+    .where(eq(oauthConnections.connectionId, connectionId))
     .limit(1)
+
+  return connection
+}
+
+export async function getConnection(
+  db: Database,
+  connectionId: string,
+): Promise<OAuthConnection> {
+  const connection = await findConnection(db, connectionId)
+
+  if (!connection) {
+    throw new BrokerError(
+      404,
+      'not_connected',
+      `No connection "${connectionId}".`,
+    )
+  }
 
   return connection
 }
 
 export type AccessTokenResult = {
   provider: string
-  userId: string
+  connectionId: string
   accessToken: string
   tokenType: string
   scopes: string[]
@@ -385,18 +466,9 @@ export type AccessTokenResult = {
 export async function getAccessToken(
   db: Database,
   env: BrokerEnv,
-  userId: string,
-  provider: string,
+  connectionId: string,
 ): Promise<AccessTokenResult> {
-  const existing = await findConnection(db, userId, provider)
-
-  if (!existing) {
-    throw new BrokerError(
-      404,
-      'not_connected',
-      `User "${userId}" has no ${provider} connection.`,
-    )
-  }
+  const existing = await getConnection(db, connectionId)
 
   const refreshed = isExpired(existing)
   const connection = refreshed
@@ -405,7 +477,7 @@ export async function getAccessToken(
 
   return {
     provider: connection.provider,
-    userId: connection.userId,
+    connectionId: connection.connectionId,
     accessToken: await decryptSecret(
       requireEncryptionKey(env),
       connection.accessToken,
@@ -419,27 +491,25 @@ export async function getAccessToken(
 
 export async function listConnections(
   db: Database,
-  userId: string,
+  options: { provider?: string } = {},
 ): Promise<OAuthConnection[]> {
-  return db
-    .select()
-    .from(oauthConnections)
-    .where(eq(oauthConnections.userId, userId))
+  if (options.provider) {
+    return db
+      .select()
+      .from(oauthConnections)
+      .where(eq(oauthConnections.provider, options.provider))
+  }
+
+  return db.select().from(oauthConnections)
 }
 
 export async function deleteConnection(
   db: Database,
-  userId: string,
-  provider: string,
+  connectionId: string,
 ): Promise<boolean> {
   const deleted = await db
     .delete(oauthConnections)
-    .where(
-      and(
-        eq(oauthConnections.userId, userId),
-        eq(oauthConnections.provider, provider),
-      ),
-    )
+    .where(eq(oauthConnections.connectionId, connectionId))
     .returning()
 
   return deleted.length > 0
