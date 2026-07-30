@@ -7,4 +7,15 @@
   "observability": {
     "enabled": true
   }
+  // Cloudflare path: uncomment and fill in. Binding name must be HYPERDRIVE.
+  // Create with `wrangler hyperdrive create`; localConnectionString is for `wrangler dev`.
+  // Stock alternative: `wrangler secret put DATABASE_URL` (no Hyperdrive needed).
+  //
+  // , "hyperdrive": [
+  //     {
+  //       "binding": "HYPERDRIVE",
+  //       "id": "<your-hyperdrive-id>",
+  //       "localConnectionString": "postgres://user:pass@127.0.0.1:5432/postgres"
+  //     }
+  //   ]
 }

@@ -1,4 +1,3 @@
-import type { NeonHttpDatabase } from 'drizzle-orm/neon-http'
 import {
   index,
   jsonb,
@@ -9,6 +8,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 /**
  * One row per connection. A connection_id is a single provider link -- multiple
@@ -89,6 +89,7 @@ type Schema = {
 
 /**
  * The broker only ever uses the subset of Drizzle that both drivers implement,
- * so route code is written once and runs on either.
+ * so route code is written once and runs on PGlite (local) or postgres.js
+ * (stock Node / Workers + Hyperdrive or DATABASE_URL).
  */
-export type Database = NeonHttpDatabase<Schema> | PgliteDatabase<Schema>
+export type Database = PostgresJsDatabase<Schema> | PgliteDatabase<Schema>

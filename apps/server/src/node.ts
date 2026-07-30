@@ -12,10 +12,12 @@ import { listProviderIds } from '@template/api/oauth/providers'
 /**
  * Standalone API entrypoint.
  *
- * PGlite cannot persist inside workerd -- its Node FS / IndexedDB / OPFS
- * backends are all unavailable there -- so deployed Workers need HTTP
- * Postgres via DATABASE_URL. Locally, both this process and `pnpm dev`
- * (frontend Vite plugin) run the shared Hono app on Node with PGlite.
+ * Database modes (see `@template/api/local-node` / OAUTH.md):
+ * - Leave DATABASE_URL unset → embedded PGlite under `pgdata` (default local)
+ * - Set DATABASE_URL → stock Node against any Postgres
+ *
+ * Deployed Workers use `env.HYPERDRIVE` (preferred) or `DATABASE_URL` instead;
+ * PGlite cannot persist inside workerd.
  */
 
 /**
@@ -57,7 +59,11 @@ serve(
       `http://localhost:${info.port}`
 
     console.log(`OAuth broker on ${publicOrigin}/api`)
-    console.log(`PGlite data directory: ${dataDir}`)
+    console.log(
+      readEnvString(env, 'DATABASE_URL')
+        ? 'Database: Postgres via DATABASE_URL (stock Node)'
+        : `Database: PGlite at ${dataDir}`,
+    )
     console.log(
       configured.length > 0
         ? `Providers configured: ${configured.join(', ')}`
