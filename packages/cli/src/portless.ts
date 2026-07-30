@@ -1,6 +1,70 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
+import https from 'node:https'
 
 export type PortlessApp = 'frontend' | 'server'
+
+const LIVE_POLL_INTERVAL_MS = 250
+const LIVE_TIMEOUT_MS = 60_000
+
+function openBrowser(url: string) {
+  if (process.platform === 'darwin') {
+    spawn('open', [url], { stdio: 'ignore', detached: true }).unref()
+  } else if (process.platform === 'win32') {
+    spawn('cmd', ['/c', 'start', '', url], {
+      stdio: 'ignore',
+      detached: true,
+    }).unref()
+  } else {
+    spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref()
+  }
+}
+
+/** Probe the portless HTTPS URL (self-signed) until the app answers. */
+function probeUrl(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = https.get(
+      url,
+      { rejectUnauthorized: false, timeout: 1500 },
+      (res) => {
+        res.resume()
+        const code = res.statusCode ?? 0
+        // Proxy 502/503/504 means the alias is up but the app isn't yet.
+        resolve(code > 0 && code < 500)
+      },
+    )
+    req.on('error', () => resolve(false))
+    req.on('timeout', () => {
+      req.destroy()
+      resolve(false)
+    })
+  })
+}
+
+async function waitUntilLive(
+  url: string,
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  const deadline = Date.now() + LIVE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (isCancelled()) return false
+    if (await probeUrl(url)) return true
+    await new Promise((resolve) => setTimeout(resolve, LIVE_POLL_INTERVAL_MS))
+  }
+  return false
+}
+
+async function openWhenLive(url: string, child: ChildProcess) {
+  const isCancelled = () => child.exitCode !== null || child.signalCode !== null
+
+  const live = await waitUntilLive(url, isCancelled)
+  if (isCancelled()) return
+  if (!live) {
+    console.warn(
+      `Timed out waiting for ${url} — opening anyway. If the page fails, refresh once the app is ready.`,
+    )
+  }
+  openBrowser(url)
+}
 
 function gitOutput(args: string[]): string {
   const result = spawnSync('git', args, { encoding: 'utf8' })
@@ -90,19 +154,7 @@ export function runPortlessDev(options: {
   })
 
   if (appName === 'frontend') {
-    // Brief delay so Vite/portless are listening before the browser hits the URL.
-    setTimeout(() => {
-      if (process.platform === 'darwin') {
-        spawn('open', [url], { stdio: 'ignore', detached: true }).unref()
-      } else if (process.platform === 'win32') {
-        spawn('cmd', ['/c', 'start', '', url], {
-          stdio: 'ignore',
-          detached: true,
-        }).unref()
-      } else {
-        spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref()
-      }
-    }, 1500)
+    void openWhenLive(url, child)
   }
 
   function cleanup() {
