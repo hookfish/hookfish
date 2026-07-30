@@ -1,9 +1,11 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
+import { createPgliteDatabase } from '../src/db/pglite'
 import type { Database } from '../src/db/schema'
 import app from '../src/index'
-import { createLocalBrokerEnv } from '../src/local-node'
 import type { BrokerEnv } from '../src/oauth/config'
 import {
   type ProviderDefinition,
@@ -76,14 +78,6 @@ function providerDefinition(
   }
 }
 
-function requireDb(env: BrokerEnv): Database {
-  const db = env.DB
-  if (db === undefined || typeof db === 'string') {
-    throw new Error('expected injected PGlite database')
-  }
-  return db
-}
-
 export async function createHarness(): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'oauth-broker-'))
   const stub = await startOAuthStub()
@@ -112,8 +106,16 @@ export async function createHarness(): Promise<TestHarness> {
     }),
   )
 
+  const { db } = await createPgliteDatabase(dataDir)
+  const migrationsFolder = path.join(
+    path.resolve(fileURLToPath(import.meta.url), '../..'),
+    'drizzle',
+  )
+  await migratePglite(db, { migrationsFolder })
+
   const env: BrokerEnv = {
-    ...(await createLocalBrokerEnv(dataDir)),
+    ...process.env,
+    DB: db,
     NODE_ENV: 'test',
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
@@ -195,7 +197,7 @@ export async function createHarness(): Promise<TestHarness> {
     altProviderId,
     dialectProviderId,
     noscopeProviderId,
-    db: requireDb(env),
+    db,
     fetch: apiFetch,
     authorizeAndCallback,
     close: async () => {

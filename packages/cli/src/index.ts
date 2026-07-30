@@ -85,21 +85,18 @@ program.name('template').description('Template monorepo CLI')
 
 program
   .command('migrate')
-  .description('Run database migrations (POSTGRES_URL or DATABASE_URL)')
+  .description(
+    'Run database migrations (DATABASE_URL / POSTGRES_URL, or local PGlite)',
+  )
   .action(async () => {
     const url =
       process.env.POSTGRES_URL?.trim() || process.env.DATABASE_URL?.trim()
-    if (!url) {
-      console.error(
-        'Missing database URL. Set POSTGRES_URL or DATABASE_URL in the environment.',
-      )
-      await exitWith(1)
+    const env = { ...process.env }
+    if (url) {
+      env.DATABASE_URL = url
     }
     await exitWith(
-      await pnpm(['--filter', '@template/api', 'db:migrate'], {
-        ...process.env,
-        DATABASE_URL: url,
-      }),
+      await pnpm(['--filter', '@template/api', 'db:migrate'], env),
     )
   })
 
