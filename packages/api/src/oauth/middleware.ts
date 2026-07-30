@@ -1,7 +1,8 @@
 import { createMiddleware } from 'hono/factory'
-import { createNeonDatabase } from '../db/neon'
+import { createPostgresDatabase } from '../db/postgres'
+import { resolveDatabaseSource } from '../db/resolve'
 import type { Database } from '../db/schema'
-import { type BrokerEnv, readEnvString, requireBrokerApiKey } from './config'
+import { type BrokerEnv, requireBrokerApiKey } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'
 
@@ -11,30 +12,32 @@ export type BrokerContext = {
 }
 
 /**
- * Resolves the database for the request. Local Node entrypoints (standalone
- * server and the frontend Vite `/api` plugin) inject a live PGlite instance as
- * `env.DB`; deployed Workers build an HTTP client per request from DATABASE_URL.
+ * Resolves the database for the request.
+ *
+ * Configure one of (priority order):
+ * 1. `env.DB` — inject a ready Drizzle instance (local Node + PGlite, or a
+ *    host-built postgres.js pool)
+ * 2. `env.HYPERDRIVE` — Cloudflare Hyperdrive binding (Workers)
+ * 3. `env.DATABASE_URL` — stock Postgres URL (Node or Workers without Hyperdrive)
  */
 export const withDatabase = createMiddleware<BrokerContext>(async (c, next) => {
-  const injected = c.env.DB
+  const source = resolveDatabaseSource(c.env)
 
-  if (injected !== undefined && typeof injected !== 'string') {
-    c.set('db', injected)
-    await next()
-    return
-  }
-
-  const databaseUrl = readEnvString(c.env, 'DATABASE_URL')
-
-  if (!databaseUrl) {
+  if (!source) {
     throw new BrokerError(
       500,
       'missing_configuration',
-      'DATABASE_URL is not set. Set it for deployed Workers. Locally, `pnpm dev` and `pnpm --filter @template/server dev` use PGlite.',
+      'No database configured. Inject env.DB (Node), bind env.HYPERDRIVE (Workers), or set DATABASE_URL.',
     )
   }
 
-  c.set('db', createNeonDatabase(databaseUrl))
+  if (source.kind === 'injected') {
+    c.set('db', source.db)
+  } else {
+    // Hyperdrive and bare DATABASE_URL on Workers share serverless-safe options.
+    c.set('db', createPostgresDatabase(source.connectionString, 'worker'))
+  }
+
   await next()
 })
 

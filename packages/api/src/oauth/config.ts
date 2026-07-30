@@ -1,3 +1,4 @@
+import type { HyperdriveBinding } from '../db/resolve'
 import type { Database } from '../db/schema'
 import { BrokerError } from './errors'
 import {
@@ -6,22 +7,27 @@ import {
   type ProviderDefinition,
 } from './providers'
 
+export type { HyperdriveBinding }
+
 /**
- * Bindings available to the Worker. Provider credentials are read dynamically
- * by name (`NOTION_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, ...) so adding a
- * provider never requires touching this type.
+ * Bindings available to the Worker / Node host. Provider credentials are read
+ * dynamically by name (`NOTION_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, ...) so
+ * adding a provider never requires touching this type.
  *
- * `DB` is only ever populated by the Node entrypoint, which injects a live
- * PGlite-backed Drizzle instance; the Worker builds one from DATABASE_URL.
+ * Database — configure exactly one (see `resolveDatabaseSource`):
+ * - `DB`: injected Drizzle instance (Node + PGlite, or a host-built pool)
+ * - `HYPERDRIVE`: Cloudflare Hyperdrive binding (Workers)
+ * - `DATABASE_URL`: stock Postgres connection string
  */
 export type BrokerEnv = {
   DATABASE_URL?: string
+  HYPERDRIVE?: HyperdriveBinding
   OAUTH_ENCRYPTION_KEY?: string
   BROKER_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
   PGLITE_DATA_DIR?: string
   DB?: Database
-  [key: string]: string | Database | undefined
+  [key: string]: string | Database | HyperdriveBinding | undefined
 }
 
 export function readEnvString(env: BrokerEnv, key: string): string | undefined {

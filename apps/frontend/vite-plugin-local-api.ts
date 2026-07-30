@@ -116,9 +116,9 @@ function readRequestListener(
 }
 
 /**
- * Serves `@template/api` from Node with on-disk PGlite during `vite`/`pnpm
- * dev`, before requests reach the Cloudflare workerd. Production Workers
- * still need DATABASE_URL — PGlite cannot persist there.
+ * Serves `@template/api` from Node during `vite`/`pnpm dev`, before requests
+ * reach Cloudflare workerd. Uses PGlite when DATABASE_URL is unset, or stock
+ * Postgres when it is set. Production Workers use Hyperdrive or DATABASE_URL.
  */
 export function localApiPlugin(): Plugin {
   return {

@@ -655,11 +655,13 @@ describe('OAuth broker integration', () => {
     expect(() => unregisterProvider('notion')).toThrow(/built-in/)
   })
 
-  it('errors when neither DB nor DATABASE_URL is configured', async () => {
+  it('errors when no database source is configured', async () => {
     const previousDb = h.env.DB
     const previousUrl = h.env.DATABASE_URL
+    const previousHyperdrive = h.env.HYPERDRIVE
     h.env.DB = undefined
     h.env.DATABASE_URL = undefined
+    h.env.HYPERDRIVE = undefined
 
     const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
       method: 'POST',
@@ -669,39 +671,72 @@ describe('OAuth broker integration', () => {
 
     h.env.DB = previousDb
     h.env.DATABASE_URL = previousUrl
+    h.env.HYPERDRIVE = previousHyperdrive
 
     expect(res.status).toBe(500)
     const body: { error: { code: string; message: string } } = await res.json()
     expect(body.error.code).toBe('missing_configuration')
-    expect(body.error.message).toContain('DATABASE_URL')
+    expect(body.error.message).toMatch(/HYPERDRIVE|DATABASE_URL|env\.DB/)
   })
 
-  it('builds a Neon HTTP client when DATABASE_URL is set and DB is absent', async () => {
-    const { createNeonDatabase } = await import('../src/db/neon')
-    const client = createNeonDatabase(
-      'postgresql://user:pass@db.example.com/neondb',
+  it('builds a Postgres client when DATABASE_URL is set and DB is absent', async () => {
+    const { createPostgresDatabase } = await import('../src/db/postgres')
+    const client = createPostgresDatabase(
+      'postgresql://user:pass@db.example.com/postgres',
     )
     expect(client).toBeTruthy()
 
     const previousDb = h.env.DB
     const previousUrl = h.env.DATABASE_URL
+    const previousHyperdrive = h.env.HYPERDRIVE
     h.env.DB = undefined
+    h.env.HYPERDRIVE = undefined
     // Point at a non-routable host so we never accidentally hit a real DB; the
     // middleware constructs the client before the handler queries.
-    h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/neondb'
+    h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/postgres'
 
     const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'neon-path' }),
+      body: JSON.stringify({ connection_id: 'postgres-path' }),
     })
 
     h.env.DB = previousDb
     h.env.DATABASE_URL = previousUrl
+    h.env.HYPERDRIVE = previousHyperdrive
 
     // Client was built; the subsequent query fails talking to 127.0.0.1:1.
     // Either a broker error or an unexpected 500 from the driver is fine —
-    // what matters is we exercised createNeonDatabase + the middleware branch.
+    // what matters is we exercised createPostgresDatabase + the middleware branch.
+    expect(res.status).toBeGreaterThanOrEqual(400)
+  })
+
+  it('prefers HYPERDRIVE over DATABASE_URL when DB is absent', async () => {
+    const previousDb = h.env.DB
+    const previousUrl = h.env.DATABASE_URL
+    const previousHyperdrive = h.env.HYPERDRIVE
+    h.env.DB = undefined
+    // Valid-looking but closed port — proves we attempted a TCP connect.
+    h.env.HYPERDRIVE = {
+      connectionString: 'postgresql://user:pass@127.0.0.1:1/hyperdrive',
+    }
+    // If DATABASE_URL were preferred, we'd still fail — but resolveDatabaseSource
+    // must report hyperdrive. Exercise the middleware branch either way.
+    h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/should-not-win'
+
+    const { resolveDatabaseSource } = await import('../src/db/resolve')
+    expect(resolveDatabaseSource(h.env)?.kind).toBe('hyperdrive')
+
+    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: 'hyperdrive-path' }),
+    })
+
+    h.env.DB = previousDb
+    h.env.DATABASE_URL = previousUrl
+    h.env.HYPERDRIVE = previousHyperdrive
+
     expect(res.status).toBeGreaterThanOrEqual(400)
   })
 })

@@ -51,17 +51,39 @@ purely in memory, which loses every token when the isolate recycles. So:
 
 | | runtime | database |
 |---|---|---|
-| `pnpm dev` (frontend `/api`) / `pnpm --filter @template/server dev` / `dev:node` | Node + PGlite | `apps/server/pgdata` |
-| frontend Worker SSR, `dev:worker`, `deploy` | Workers | Postgres over HTTP via `DATABASE_URL` |
-
-Local API-only and frontend-mounted `/api` therefore need no `DATABASE_URL`.
-Set one when exercising the Workers path (or production), which is worth doing
-before deploying since that is the runtime production uses.
+| `pnpm dev` / `pnpm --filter @template/server dev` (no `DATABASE_URL`) | Node + PGlite | `apps/server/pgdata` |
+| same commands **with** `DATABASE_URL` | Node + postgres.js | your Postgres |
+| frontend Worker SSR, `dev:worker`, `deploy` | Workers | Hyperdrive binding **or** `DATABASE_URL` |
 
 Same Hono app (`@template/api`), same Drizzle schema, same migrations.
 `src/db/pglite.ts` / `local-node` are imported only from Node entrypoints, so
-PGlite never enters the Worker bundle. For the Workers path, set `DATABASE_URL`
-to a Neon-protocol Postgres and push secrets with `pnpm wrangler secret put <NAME>`.
+PGlite never enters the Worker bundle.
+
+### Configuring the database
+
+`withDatabase` resolves in this order (first match wins):
+
+1. **`env.DB`** — inject a ready Drizzle instance. Local Node does this for you
+   (PGlite, or a pooled postgres.js client when `DATABASE_URL` is set).
+2. **`env.HYPERDRIVE`** — Cloudflare Hyperdrive binding. Uncomment the
+   `hyperdrive` block in `apps/server/wrangler.jsonc` /
+   `apps/frontend/wrangler.jsonc`, set the config id from
+   `wrangler hyperdrive create`, and optionally `localConnectionString` for
+   `wrangler dev`.
+3. **`env.DATABASE_URL`** — stock Postgres URL. On Workers:
+   `pnpm wrangler secret put DATABASE_URL`. On Node, set it in `.env` and the
+   local entrypoint injects a pooled client as `env.DB` instead.
+
+```sh
+# Stock Node against real Postgres
+DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
+  pnpm --filter @template/server dev:node
+```
+
+```sh
+# Workers without Hyperdrive
+pnpm wrangler secret put DATABASE_URL
+```
 
 ## Endpoints
 
