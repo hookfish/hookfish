@@ -105,4 +105,32 @@ export function getProviderDefinition(
   return providerRegistry[providerId]
 }
 
-export const providerIds = Object.keys(providerRegistry)
+export function listProviderIds(): string[] {
+  return Object.keys(providerRegistry)
+}
+
+/** Built-in providers cannot be replaced or removed via `registerProvider`. */
+const builtinProviderIds = new Set(listProviderIds())
+
+/**
+ * Register a provider at runtime. Used by integration tests to point a
+ * throwaway provider at a local OAuth stub. Built-in ids are reserved.
+ */
+export function registerProvider(definition: ProviderDefinition): void {
+  if (builtinProviderIds.has(definition.id)) {
+    throw new Error(
+      `Cannot replace built-in provider "${definition.id}". Pick a different id.`,
+    )
+  }
+
+  providerRegistry[definition.id] = definition
+}
+
+/** Remove a provider previously added with `registerProvider`. */
+export function unregisterProvider(providerId: string): void {
+  if (builtinProviderIds.has(providerId)) {
+    throw new Error(`Cannot unregister built-in provider "${providerId}".`)
+  }
+
+  delete providerRegistry[providerId]
+}

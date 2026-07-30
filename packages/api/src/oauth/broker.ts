@@ -1,11 +1,11 @@
 import { z } from '@hono/zod-openapi'
 import { and, eq, lt } from 'drizzle-orm'
 import {
+  type Database,
   type OAuthConnection,
   oauthConnections,
   oauthStates,
 } from '../db/schema'
-import type { Database } from '../db/types'
 import {
   type BrokerEnv,
   type ProviderConfig,

@@ -7,7 +7,7 @@ import {
   isProviderConfigured,
   readEnvString,
 } from '@template/api/oauth/config'
-import { providerIds } from '@template/api/oauth/providers'
+import { listProviderIds } from '@template/api/oauth/providers'
 
 /**
  * Standalone API entrypoint.
@@ -49,7 +49,9 @@ const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
 serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },
   (info) => {
-    const configured = providerIds.filter((id) => isProviderConfigured(env, id))
+    const configured = listProviderIds().filter((id) =>
+      isProviderConfigured(env, id),
+    )
     const publicOrigin =
       readEnvString(env, 'OAUTH_REDIRECT_BASE_URL') ??
       `http://localhost:${info.port}`

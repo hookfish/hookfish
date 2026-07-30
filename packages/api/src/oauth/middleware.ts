@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import { createNeonDatabase } from '../db/neon'
-import type { Database } from '../db/types'
+import type { Database } from '../db/schema'
 import { type BrokerEnv, readEnvString, requireBrokerApiKey } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'

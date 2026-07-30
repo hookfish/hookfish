@@ -15,7 +15,7 @@ import {
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
-import { providerIds, providerRegistry } from '../oauth/providers'
+import { listProviderIds, providerRegistry } from '../oauth/providers'
 
 // ---------------------------------------------------------------------------
 // Documentation defaults
@@ -353,7 +353,7 @@ export const oauthRoutes = new OpenAPIHono<BrokerContext>()
 oauthRoutes.openapi(listProvidersRoute, (c) => {
   return c.json(
     {
-      providers: providerIds.map((id) => {
+      providers: listProviderIds().map((id) => {
         const definition = providerRegistry[id]
 
         return {
