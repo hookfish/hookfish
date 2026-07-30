@@ -9,7 +9,7 @@
     "build": "vite build && tsc -b",
     "typecheck": "tsc -b",
     "preview": "vite preview",
-    "deploy": "pnpm build && wrangler deploy --config ./wrangler.jsonc",
+    "deploy": "pnpm build && node ../../scripts/wrangler-deploy.mjs ./dist/server/wrangler.json",
     "cf-typegen": "wrangler types --config ./wrangler.jsonc"
   },
   "dependencies": {

@@ -71,11 +71,7 @@ Exercise the Workers runtime against Postgres. PGlite cannot persist in workerd.
 
 ```sh
 cp apps/server/.env.example apps/server/.env
-# Prefer Hyperdrive for the CF path:
-#   1. wrangler hyperdrive create <name> --connection-string="postgres://..."
-#   2. Uncomment the hyperdrive block in apps/server/wrangler.jsonc
-#      (binding must be named HYPERDRIVE; set id + localConnectionString)
-# Or skip Hyperdrive and put DATABASE_URL in apps/server/.dev.vars
+# Put DATABASE_URL in apps/server/.dev.vars so workerd can reach Postgres.
 
 pnpm --filter @template/server dev:worker
 ```
@@ -86,24 +82,77 @@ path locally, use `dev:worker` above (or point the frontend at that origin).
 
 ### 4. Production — Cloudflare Workers
 
+Nothing account-specific is committed. The `wrangler.jsonc` files hold only
+portable settings; your Hyperdrive id, Worker names, and secrets stay local.
+
 ```sh
-# Create Hyperdrive against your Postgres, then uncomment + fill the hyperdrive
-# block in both:
-#   apps/frontend/wrangler.jsonc
-#   apps/server/wrangler.jsonc
-# Binding name must be HYPERDRIVE.
-#
-# Or, without Hyperdrive:
-#   pnpm --filter @template/frontend exec wrangler secret put DATABASE_URL
-#   pnpm --filter @template/server exec wrangler secret put DATABASE_URL
-
-# Push the rest of the secrets (encryption key, broker key, provider creds, …):
-pnpm --filter @template/frontend exec wrangler secret put OAUTH_ENCRYPTION_KEY
-pnpm --filter @template/frontend exec wrangler secret put BROKER_API_KEY
-# …same for apps/server if you deploy that Worker too
-
-pnpm deploy
+wrangler login
+cp .env.example .env    # gitignored
 ```
+
+**Database.** Either Hyperdrive (pooling + caching at the edge):
+
+```sh
+pnpm --filter @template/server exec wrangler hyperdrive create my-db \
+  --connection-string="postgres://user:pass@host:5432/dbname"
+# Put the returned id in .env as HYPERDRIVE_ID.
+```
+
+Deploying merges it into a gitignored `wrangler.deploy.json` and ships that —
+see [scripts/wrangler-deploy.mjs](scripts/wrangler-deploy.mjs). Wrangler does not
+interpolate environment variables inside its own config, which is why the merge
+happens outside it.
+
+Or skip Hyperdrive and leave `HYPERDRIVE_ID` unset:
+
+```sh
+pnpm --filter @template/frontend exec wrangler secret put DATABASE_URL
+pnpm --filter @template/server exec wrangler secret put DATABASE_URL
+```
+
+**Secrets.** Deploying uploads `apps/<app>/.env` with the version, so the
+Worker's runtime config is whatever that app's `.env` says — fill in
+`OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`, and any provider credentials there and
+they ship on the next deploy. Uploads are additive: keys you leave out keep
+their current value rather than being deleted.
+
+The two `.env` layers are not interchangeable:
+
+| File | Holds | Uploaded? |
+| --- | --- | --- |
+| `<repo>/.env` | `HYPERDRIVE_ID`, `CLOUDFLARE_*` | never |
+| `apps/<app>/.env` | the Worker's runtime secrets | yes, with each deploy |
+
+`HYPERDRIVE_ID`, `WORKER_NAME`, `SKIP_SECRET_UPLOAD`, and `CLOUDFLARE_*` are
+stripped before upload wherever they appear — they configure the deploy, not the
+Worker, and an uploaded `CLOUDFLARE_API_TOKEN` would hand the Worker your
+account. To ship code without touching live secrets:
+
+```sh
+SKIP_SECRET_UPLOAD=1 pnpm --filter @template/frontend run deploy
+```
+
+**Names and routes.** Set `WORKER_NAME` in `apps/frontend/.env` /
+`apps/server/.env` to override the placeholder names, and pass routes through as
+flags rather than committing them.
+
+**Deploy.** Note the `run` — `pnpm deploy` without it hits pnpm's built-in
+`deploy` command instead of this script:
+
+```sh
+pnpm run deploy                                 # both Workers, via turbo
+
+pnpm --filter @template/frontend run deploy      # just the frontend
+pnpm --filter @template/server run deploy        # just the API Worker
+
+# Extra wrangler flags pass straight through:
+pnpm --filter @template/frontend run deploy -- --domains app.example.com
+pnpm --filter @template/frontend run deploy -- --dry-run
+```
+
+In CI, set the same names as repository secrets — real environment variables win
+over `.env`, so no file is needed. `CLOUDFLARE_API_TOKEN` (Workers Scripts:
+Edit) and `CLOUDFLARE_ACCOUNT_ID` replace `wrangler login`.
 
 Run migrations against the production database from your machine before or after
 deploy:
@@ -124,8 +173,8 @@ pnpm build
 pnpm typecheck
 pnpm lint
 pnpm fmt
-pnpm deploy
 pnpm test
+pnpm run deploy   # `run` is required -- `pnpm deploy` is a pnpm builtin
 ```
 
 Regenerate Worker environment types after changing either app's `wrangler.jsonc`:
