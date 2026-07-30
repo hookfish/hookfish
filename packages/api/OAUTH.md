@@ -25,9 +25,9 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 pnpm --filter @template/server dev
 ```
 
-That runs the Hono app on Node with PGlite persisting to `apps/server/pgdata`,
-applying migrations at startup — no database to provision. Use
-`pnpm --filter @template/server dev:node` without the portless proxy.
+That runs the Hono app on Node with PGlite persisting to `apps/server/pgdata` —
+no database to provision. Run `pnpm migrate` first so the schema is applied.
+Use `pnpm --filter @template/server dev:node` without the portless proxy.
 `pnpm dev` does the same for frontend `/api` via a Vite Node middleware (still
 PGlite on disk), so you do not need a separate API process locally.
 

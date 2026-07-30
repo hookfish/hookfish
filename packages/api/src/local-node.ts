@@ -1,7 +1,3 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
-import { migrate as migratePostgres } from 'drizzle-orm/postgres-js/migrator'
 import { createPgliteDatabase } from './db/pglite'
 import { createPostgresDatabase } from './db/postgres'
 import type { BrokerEnv } from './oauth/config'
@@ -11,14 +7,13 @@ import type { BrokerEnv } from './oauth/config'
  * Must never be imported from a Worker entrypoint.
  *
  * Stock Node (real Postgres): set `DATABASE_URL` — builds a pooled postgres.js
- * client, applies migrations, injects it as `env.DB`.
+ * client and injects it as `env.DB`.
  *
  * Embedded (no Postgres to provision): leave `DATABASE_URL` unset — PGlite
  * persists under `dataDir` and is injected as `env.DB`.
+ *
+ * Run migrations separately (`pnpm migrate` / `db:migrate`) before starting.
  */
-const apiPackageRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
-const migrationsFolder = path.join(apiPackageRoot, 'drizzle')
-
 export type LocalBrokerOptions = {
   /** Override `process.env.DATABASE_URL`. Empty / omitted falls back to PGlite. */
   databaseUrl?: string
@@ -32,11 +27,9 @@ export async function createLocalBrokerEnv(
 
   if (databaseUrl) {
     const db = createPostgresDatabase(databaseUrl, 'node')
-    await migratePostgres(db, { migrationsFolder })
     return { ...process.env, DB: db }
   }
 
   const { db } = await createPgliteDatabase(dataDir)
-  await migratePglite(db, { migrationsFolder })
   return { ...process.env, DB: db }
 }

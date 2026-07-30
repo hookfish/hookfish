@@ -25,6 +25,7 @@ cp apps/server/.env.example apps/server/.env
 # Fill OAUTH_ENCRYPTION_KEY / BROKER_API_KEY (and provider creds if you need them).
 # Leave DATABASE_URL unset.
 
+pnpm migrate   # apply schema to local PGlite (apps/server/pgdata)
 pnpm dev
 # → https://frontend.localhost
 #    /api is served by Node + PGlite via the Vite plugin
@@ -33,13 +34,14 @@ pnpm dev
 API only:
 
 ```sh
+pnpm migrate
 pnpm --filter @template/server dev
 ```
 
 ### 2. Production — Node + Postgres
 
 Point at any Postgres with `DATABASE_URL`. The Node entrypoint builds a pooled
-client, applies migrations, and injects it as `env.DB`.
+client and injects it as `env.DB`. Run migrations before starting:
 
 ```sh
 cp apps/server/.env.example apps/server/.env
@@ -50,17 +52,11 @@ cp apps/server/.env.example apps/server/.env
 #   OAUTH_REDIRECT_BASE_URL=https://your.api.host   # if not inferable from the request
 
 pnpm install
+DATABASE_URL=postgres://user:pass@host:5432/dbname pnpm migrate
 pnpm --filter @template/server build
 pnpm --filter @template/server dev:node
 # Or run the built Node process under your process manager the same way —
 # createLocalBrokerEnv reads DATABASE_URL from the environment.
-```
-
-Apply migrations on their own (optional; startup also migrates):
-
-```sh
-DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  pnpm --filter @template/api db:migrate
 ```
 
 ### 3. Local — Cloudflare Workers
@@ -168,6 +164,7 @@ More detail on the OAuth broker, providers, and DB resolution:
 ## Commands
 
 ```sh
+pnpm migrate      # drizzle-kit against DATABASE_URL or local PGlite
 pnpm dev
 pnpm build
 pnpm typecheck
