@@ -27,13 +27,8 @@
       "outputs": []
     },
     "dev": {
-      "dependsOn": ["//#portless:urls"],
       "cache": false,
       "persistent": true
-    },
-    "//#portless:urls": {
-      "cache": false,
-      "outputs": []
     },
     "preview": {
       "cache": false,

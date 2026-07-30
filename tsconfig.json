@@ -10,6 +10,7 @@
   "references": [
     { "path": "./apps/frontend" },
     { "path": "./apps/server" },
-    { "path": "./packages/api" }
+    { "path": "./packages/api" },
+    { "path": "./packages/cli" }
   ]
 }

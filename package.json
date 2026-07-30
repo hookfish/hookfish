@@ -5,9 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "turbo dev --filter=@template/frontend",
-    "portless:url": "turbo run //#portless:urls",
-    "portless:urls": "node scripts/portless-url.mjs",
+    "dev": "template dev",
     "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
@@ -18,10 +16,14 @@
     "preview": "turbo preview",
     "deploy": "turbo deploy",
     "cf-typegen": "turbo cf-typegen",
-    "db:studio": "pnpm --filter @template/api db:studio"
+    "db:studio": "pnpm --filter @template/api db:studio",
+    "cli": "template",
+    "migrate": "template migrate",
+    "dev:server": "template dev:server"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@template/cli": "workspace:*",
     "biome-plugin-no-type-assertion": "^1.1.1",
     "portless": "^0.14.0",
     "turbo": "^2.6.1"

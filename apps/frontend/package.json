@@ -4,8 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/portless-dev.mjs frontend -- sh -c 'exec vite --host \"${HOST:-127.0.0.1}\" --port \"$PORT\"'",
-    "dev:app": "vite --host ${HOST:-127.0.0.1} --port ${PORT:-5173}",
+    "dev": "vite --host ${HOST:-127.0.0.1} --port ${PORT:-5173}",
     "build": "vite build && tsc -b",
     "typecheck": "tsc -b",
     "preview": "vite preview",
