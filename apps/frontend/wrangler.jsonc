@@ -7,15 +7,12 @@
   "observability": {
     "enabled": true
   }
-  // Cloudflare path: uncomment and fill in. Binding name must be HYPERDRIVE.
-  // Create with `wrangler hyperdrive create`; localConnectionString is for `wrangler dev`.
-  // Stock alternative: `wrangler secret put DATABASE_URL` (no Hyperdrive needed).
+  // No Hyperdrive block here on purpose: the id is account-specific. Put it in
+  // a gitignored .env as HYPERDRIVE_ID and `pnpm run deploy` binds it as
+  // HYPERDRIVE (see .env.example and scripts/wrangler-deploy.mjs).
   //
-  // , "hyperdrive": [
-  //     {
-  //       "binding": "HYPERDRIVE",
-  //       "id": "<your-hyperdrive-id>",
-  //       "localConnectionString": "postgres://user:pass@127.0.0.1:5432/postgres"
-  //     }
-  //   ]
+  // Without it, the Worker connects over a DATABASE_URL secret instead:
+  //   wrangler secret put DATABASE_URL
+  //
+  // For `wrangler dev`, put DATABASE_URL in .dev.vars.
 }
