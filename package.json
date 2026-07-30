@@ -8,6 +8,7 @@
     "dev": "turbo dev --filter=@template/frontend",
     "portless:url": "turbo run //#portless:urls",
     "portless:urls": "node scripts/portless-url.mjs",
+    "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "test": "turbo test --filter=@template/api",
