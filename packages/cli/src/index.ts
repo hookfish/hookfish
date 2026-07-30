@@ -95,9 +95,7 @@ program
     if (url) {
       env.DATABASE_URL = url
     }
-    await exitWith(
-      await pnpm(['--filter', '@template/api', 'db:migrate'], env),
-    )
+    await exitWith(await pnpm(['--filter', '@template/api', 'db:migrate'], env))
   })
 
 program
