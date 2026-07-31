@@ -18,7 +18,7 @@ cp apps/server/.env.example apps/server/.env
 # Fill in at minimum:
 openssl rand -base64 32   # -> OAUTH_ENCRYPTION_KEY
 openssl rand -base64 32   # -> BROKER_API_KEY
-# ...plus NOTION_CLIENT_ID / NOTION_CLIENT_SECRET
+# Then configure provider credentials (see Adding a provider below)
 ```
 
 ```sh
@@ -95,8 +95,12 @@ when unset.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, and each `callback_url` to register |
-| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
-| `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
+| `GET` | `/api/oauth/providers/{provider}` | One provider's non-secret config |
+| `POST` | `/api/oauth/providers` | Create a provider (encrypts `client_id` / `client_secret` when sent) |
+| `PATCH` | `/api/oauth/providers/{provider}` | Update dialect and/or credentials |
+| `DELETE` | `/api/oauth/providers/{provider}` | Delete a provider (409 if connections still reference it) |
+| `POST` | `/api/oauth/provider/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
+| `GET` | `/api/oauth/provider/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
 | `GET` | `/api/oauth/connections/{connection_id}/token` | A token valid *right now* |
@@ -110,7 +114,7 @@ Start a connection. Omit `connection_id` to have the broker mint one as
 `word-word-number` (e.g. `swift-orchid-4821`):
 
 ```sh
-curl -X POST https://server.localhost/api/oauth/notion/authorize \
+curl -X POST https://server.localhost/api/oauth/provider/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"return_to":"https://frontend.localhost/settings"}'
@@ -128,7 +132,7 @@ curl -X POST https://server.localhost/api/oauth/notion/authorize \
 Pass your own id to reconnect the same link:
 
 ```sh
-curl -X POST https://server.localhost/api/oauth/notion/authorize \
+curl -X POST https://server.localhost/api/oauth/provider/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"connection_id":"swift-orchid-4821","return_to":"https://frontend.localhost/settings"}'
@@ -172,42 +176,63 @@ reauthorization_required` — send the user through `authorize` again.
 
 ## Adding a provider
 
-Append an entry to `providerRegistry` in `src/oauth/providers.ts` and set
-`<ID>_CLIENT_ID` / `<ID>_CLIENT_SECRET`. Nothing else changes. The registry
-captures the per-provider dialect differences:
+Providers live in the `oauth_providers` table. Notion, Linear, and Google are
+seeded by migration (metadata only). Set credentials with PATCH:
 
-```ts
-slack: {
-  id: 'slack',
-  label: 'Slack',
-  authorizeUrl: 'https://slack.com/oauth/v2/authorize',
-  tokenUrl: 'https://slack.com/api/oauth.v2.access',
-  defaultScopes: ['channels:read'],
-  scopeSeparator: ',',
-  tokenRequestFormat: 'form',
-  clientAuth: 'body',
-  usePkce: false,
-  supportsRefresh: true,
-}
+```sh
+curl -X PATCH https://server.localhost/api/oauth/providers/notion \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"client_id":"...","client_secret":"..."}'
 ```
 
-`<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
-on the authorize request overrides it per flow.
+Or create a wholly new provider:
 
-The three shipped providers differ in exactly the ways the registry models:
+```sh
+curl -X POST https://server.localhost/api/oauth/providers \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "id": "slack",
+    "label": "Slack",
+    "authorize_url": "https://slack.com/oauth/v2/authorize",
+    "token_url": "https://slack.com/api/oauth.v2.access",
+    "default_scopes": ["channels:read"],
+    "scope_separator": ",",
+    "token_request_format": "form",
+    "client_auth": "body",
+    "use_pkce": false,
+    "supports_refresh": true,
+    "client_id": "...",
+    "client_secret": "..."
+  }'
+```
+
+Optional `account_id_field` / `account_label_field` name top-level keys on the
+token response used to populate `external_account_id` / `external_account_label`
+(e.g. Notion uses `workspace_id` / `workspace_name`).
+
+The `scopes` field on the authorize request overrides `default_scopes` per flow.
+
+The three shipped providers differ in exactly the ways the table models:
 Notion uses HTTP Basic auth with a JSON body and issues non-expiring tokens with
 no scope parameter; Linear separates scopes with commas; Google needs PKCE plus
 `access_type=offline&prompt=consent` to return a refresh token at all.
 
+During cutover, if a seeded row still has no secrets and matching
+`<ID>_CLIENT_ID` / `_SECRET` env vars exist, `createLocalBrokerEnv` (Node server
+and Vite local `/api`) copies them into the database once on startup. The OAuth
+resolve path never reads those env vars.
+
 ## Security notes
 
-- Access and refresh tokens are encrypted with AES-GCM (`OAUTH_ENCRYPTION_KEY`)
-  before being written. **Rotating that key makes existing tokens
-  unreadable.** The plaintext is never stored or logged.
+- Access/refresh tokens **and** provider client secrets are encrypted with
+  AES-GCM (`OAUTH_ENCRYPTION_KEY`) before being written. **Rotating that key
+  makes existing secrets unreadable.** The plaintext is never stored or logged.
 - `metadata` retains the provider's token payload minus `access_token`,
   `refresh_token`, and `id_token`.
 - `state` rows are single-use and expire after 10 minutes; the callback deletes
   the row as it consumes it, so a replayed code is rejected.
 - The API key is compared without early exit to keep it off the timing side
   channel.
-- Connection-listing responses never include token columns.
+- Connection-listing and provider-listing responses never include secret columns.

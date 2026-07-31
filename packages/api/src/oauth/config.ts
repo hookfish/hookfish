@@ -1,23 +1,27 @@
 import type { HyperdriveBinding } from '../db/resolve'
 import type { Database } from '../db/schema'
+import { decryptSecret } from './crypto'
 import { BrokerError } from './errors'
 import {
-  getProviderDefinition,
-  listProviderIds,
+  isProviderRowConfigured,
+  requireProviderRow,
+  rowToDefinition,
   type ProviderDefinition,
 } from './providers'
 
 export type { HyperdriveBinding }
 
 /**
- * Bindings available to the Worker / Node host. Provider credentials are read
- * dynamically by name (`NOTION_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, ...) so
- * adding a provider never requires touching this type.
+ * Bindings available to the Worker / Node host.
  *
  * Database — configure exactly one (see `resolveDatabaseSource`):
  * - `DB`: injected Drizzle instance (Node + PGlite, or a host-built pool)
  * - `HYPERDRIVE`: Cloudflare Hyperdrive binding (Workers)
  * - `DATABASE_URL`: stock Postgres connection string
+ *
+ * Provider credentials live encrypted on `oauth_providers` rows. Optional
+ * `<ID>_CLIENT_ID` / `_SECRET` env vars are only used by the Node bootstrap
+ * helper to seed empty rows during cutover.
  */
 export type BrokerEnv = {
   DATABASE_URL?: string
@@ -60,50 +64,38 @@ export type ProviderConfig = {
   scopes: string[]
 }
 
-function envPrefix(providerId: string): string {
-  return providerId.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-}
-
-/** True when both halves of the provider's credentials are present. */
 export function isProviderConfigured(
-  env: BrokerEnv,
-  providerId: string,
+  row: Parameters<typeof isProviderRowConfigured>[0],
 ): boolean {
-  const prefix = envPrefix(providerId)
-
-  return (
-    readEnvString(env, `${prefix}_CLIENT_ID`) !== undefined &&
-    readEnvString(env, `${prefix}_CLIENT_SECRET`) !== undefined
-  )
+  return isProviderRowConfigured(row)
 }
 
-export function resolveProviderConfig(
+export async function resolveProviderConfig(
+  db: Database,
   env: BrokerEnv,
   providerId: string,
-): ProviderConfig {
-  const definition = getProviderDefinition(providerId)
+): Promise<ProviderConfig> {
+  const row = await requireProviderRow(db, providerId, { requireEnabled: true })
+  const definition = rowToDefinition(row)
 
-  if (!definition) {
+  if (!isProviderRowConfigured(row)) {
     throw new BrokerError(
-      404,
-      'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${listProviderIds().join(', ')}.`,
+      500,
+      'missing_configuration',
+      `Provider "${providerId}" has no credentials. PATCH /api/oauth/providers/${providerId} with client_id and client_secret.`,
     )
   }
 
-  const prefix = envPrefix(definition.id)
-  const scopeOverride = readEnvString(env, `${prefix}_SCOPES`)
+  const encryptionKey = requireEnvString(env, 'OAUTH_ENCRYPTION_KEY')
 
   return {
     definition,
-    clientId: requireEnvString(env, `${prefix}_CLIENT_ID`),
-    clientSecret: requireEnvString(env, `${prefix}_CLIENT_SECRET`),
-    scopes: scopeOverride
-      ? scopeOverride
-          .split(/[\s,]+/)
-          .map((scope) => scope.trim())
-          .filter((scope) => scope.length > 0)
-      : definition.defaultScopes,
+    clientId: await decryptSecret(encryptionKey, row.clientIdEncrypted!),
+    clientSecret: await decryptSecret(
+      encryptionKey,
+      row.clientSecretEncrypted!,
+    ),
+    scopes: definition.defaultScopes,
   }
 }
 
@@ -119,7 +111,7 @@ export function resolveRedirectUri(
   const configuredBase = readEnvString(env, 'OAUTH_REDIRECT_BASE_URL')
   const base = configuredBase ?? new URL(requestUrl).origin
 
-  return `${base.replace(/\/$/, '')}/api/oauth/${providerId}/callback`
+  return `${base.replace(/\/$/, '')}/api/oauth/provider/${providerId}/callback`
 }
 
 function readAmbientNodeEnv(): string | undefined {

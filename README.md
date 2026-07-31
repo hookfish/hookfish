@@ -22,7 +22,9 @@ Default local path. No Postgres to provision; data lands in `apps/server/pgdata`
 ```sh
 pnpm install
 cp apps/server/.env.example apps/server/.env
-# Fill OAUTH_ENCRYPTION_KEY / BROKER_API_KEY (and provider creds if you need them).
+# Fill OAUTH_ENCRYPTION_KEY / BROKER_API_KEY.
+# Configure provider credentials via PATCH /api/oauth/providers/{id}
+# (or leave NOTION_CLIENT_ID/etc. in .env for one-time Node bootstrap).
 # Leave DATABASE_URL unset.
 
 pnpm migrate   # apply schema to local PGlite (apps/server/pgdata)
@@ -108,8 +110,10 @@ pnpm --filter @template/server exec wrangler secret put DATABASE_URL
 
 **Secrets.** Deploying uploads `apps/<app>/.env` with the version, so the
 Worker's runtime config is whatever that app's `.env` says — fill in
-`OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`, and any provider credentials there and
-they ship on the next deploy. Uploads are additive: keys you leave out keep
+`OAUTH_ENCRYPTION_KEY` and `BROKER_API_KEY` there and they ship on the next
+deploy. Provider client id/secret belong in the `oauth_providers` table
+(configure via the admin API after deploy, or bootstrap from env on Node).
+Uploads are additive: keys you leave out keep
 their current value rather than being deleted.
 
 The two `.env` layers are not interchangeable:

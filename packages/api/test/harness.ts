@@ -1,16 +1,16 @@
+import { eq } from 'drizzle-orm'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
 import { createPgliteDatabase } from '../src/db/pglite'
-import type { Database } from '../src/db/schema'
+import { type Database, oauthProviders } from '../src/db/schema'
 import app from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import {
   type ProviderDefinition,
-  registerProvider,
-  unregisterProvider,
+  createProvider,
 } from '../src/oauth/providers'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
@@ -66,16 +66,37 @@ function providerDefinition(
     clientAuth: 'body',
     usePkce: false,
     supportsRefresh: true,
-    describeAccount: (payload) => ({
-      id:
-        typeof payload.account_id === 'string' ? payload.account_id : undefined,
-      label:
-        typeof payload.account_label === 'string'
-          ? payload.account_label
-          : undefined,
-    }),
+    authorizeParams: {},
+    accountIdField: 'account_id',
+    accountLabelField: 'account_label',
     ...overrides,
   }
+}
+
+async function insertProvider(
+  db: Database,
+  env: BrokerEnv,
+  definition: ProviderDefinition,
+  clientId: string,
+  clientSecret: string,
+): Promise<void> {
+  await createProvider(db, env, {
+    id: definition.id,
+    label: definition.label,
+    authorizeUrl: definition.authorizeUrl,
+    tokenUrl: definition.tokenUrl,
+    defaultScopes: definition.defaultScopes,
+    scopeSeparator: definition.scopeSeparator,
+    tokenRequestFormat: definition.tokenRequestFormat,
+    clientAuth: definition.clientAuth,
+    usePkce: definition.usePkce,
+    supportsRefresh: definition.supportsRefresh,
+    authorizeParams: definition.authorizeParams,
+    accountIdField: definition.accountIdField ?? null,
+    accountLabelField: definition.accountLabelField ?? null,
+    clientId,
+    clientSecret,
+  })
 }
 
 export async function createHarness(): Promise<TestHarness> {
@@ -86,25 +107,6 @@ export async function createHarness(): Promise<TestHarness> {
   const altProviderId = 'stub-alt'
   const dialectProviderId = 'stub-dialect'
   const noscopeProviderId = 'stub-noscope'
-
-  registerProvider(providerDefinition(providerId, stub, 'Stub'))
-  registerProvider(providerDefinition(altProviderId, stub, 'Stub Alt'))
-  registerProvider(
-    providerDefinition(dialectProviderId, stub, 'Stub Dialect', {
-      tokenRequestFormat: 'json',
-      clientAuth: 'basic',
-      usePkce: true,
-      authorizeParams: { access_type: 'offline', prompt: 'consent' },
-      scopeSeparator: ',',
-      defaultScopes: ['read', 'write'],
-    }),
-  )
-  registerProvider(
-    providerDefinition(noscopeProviderId, stub, 'Stub Noscope', {
-      defaultScopes: [],
-      supportsRefresh: false,
-    }),
-  )
 
   const { db } = await createPgliteDatabase(dataDir)
   const migrationsFolder = path.join(
@@ -120,15 +122,46 @@ export async function createHarness(): Promise<TestHarness> {
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
     BROKER_API_KEY: 'test',
-    STUB_CLIENT_ID: 'stub-client',
-    STUB_CLIENT_SECRET: 'stub-secret',
-    STUB_ALT_CLIENT_ID: 'stub-alt-client',
-    STUB_ALT_CLIENT_SECRET: 'stub-alt-secret',
-    STUB_DIALECT_CLIENT_ID: 'stub-dialect-client',
-    STUB_DIALECT_CLIENT_SECRET: 'stub-dialect-secret',
-    STUB_NOSCOPE_CLIENT_ID: 'stub-noscope-client',
-    STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
+
+  await insertProvider(
+    db,
+    env,
+    providerDefinition(providerId, stub, 'Stub'),
+    'stub-client',
+    'stub-secret',
+  )
+  await insertProvider(
+    db,
+    env,
+    providerDefinition(altProviderId, stub, 'Stub Alt'),
+    'stub-alt-client',
+    'stub-alt-secret',
+  )
+  await insertProvider(
+    db,
+    env,
+    providerDefinition(dialectProviderId, stub, 'Stub Dialect', {
+      tokenRequestFormat: 'json',
+      clientAuth: 'basic',
+      usePkce: true,
+      authorizeParams: { access_type: 'offline', prompt: 'consent' },
+      scopeSeparator: ',',
+      defaultScopes: ['read', 'write'],
+    }),
+    'stub-dialect-client',
+    'stub-dialect-secret',
+  )
+  await insertProvider(
+    db,
+    env,
+    providerDefinition(noscopeProviderId, stub, 'Stub Noscope', {
+      defaultScopes: [],
+      supportsRefresh: false,
+    }),
+    'stub-noscope-client',
+    'stub-noscope-secret',
+  )
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers)
@@ -150,11 +183,14 @@ export async function createHarness(): Promise<TestHarness> {
     if (options.returnTo) body.return_to = options.returnTo
     if (options.scopes) body.scopes = options.scopes
 
-    const authorizeRes = await apiFetch(`/api/oauth/${provider}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    const authorizeRes = await apiFetch(
+      `/api/oauth/provider/${provider}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
 
     if (!authorizeRes.ok) {
       throw new Error(
@@ -201,12 +237,23 @@ export async function createHarness(): Promise<TestHarness> {
     fetch: apiFetch,
     authorizeAndCallback,
     close: async () => {
-      unregisterProvider(providerId)
-      unregisterProvider(altProviderId)
-      unregisterProvider(dialectProviderId)
-      unregisterProvider(noscopeProviderId)
       await stub.close()
       await rm(dataDir, { recursive: true, force: true })
     },
   }
+}
+
+/** Helper for tests that need to clear credentials on a provider row. */
+export async function clearProviderCredentials(
+  db: Database,
+  providerId: string,
+): Promise<void> {
+  await db
+    .update(oauthProviders)
+    .set({
+      clientIdEncrypted: null,
+      clientSecretEncrypted: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(oauthProviders.id, providerId))
 }
