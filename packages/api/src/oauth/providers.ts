@@ -172,7 +172,10 @@ export async function getProviderRow(
     .from(oauthProviders)
     .where(
       requireEnabled
-        ? and(eq(oauthProviders.id, providerId), eq(oauthProviders.enabled, true))
+        ? and(
+            eq(oauthProviders.id, providerId),
+            eq(oauthProviders.enabled, true),
+          )
         : eq(oauthProviders.id, providerId),
     )
     .limit(1)
@@ -299,7 +302,8 @@ export async function updateProvider(
   if (input.label !== undefined) patch.label = input.label
   if (input.authorizeUrl !== undefined) patch.authorizeUrl = input.authorizeUrl
   if (input.tokenUrl !== undefined) patch.tokenUrl = input.tokenUrl
-  if (input.defaultScopes !== undefined) patch.defaultScopes = input.defaultScopes
+  if (input.defaultScopes !== undefined)
+    patch.defaultScopes = input.defaultScopes
   if (input.scopeSeparator !== undefined) {
     patch.scopeSeparator = input.scopeSeparator
   }

@@ -8,10 +8,7 @@ import { createPgliteDatabase } from '../src/db/pglite'
 import { type Database, oauthProviders } from '../src/db/schema'
 import app from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
-import {
-  type ProviderDefinition,
-  createProvider,
-} from '../src/oauth/providers'
+import { type ProviderDefinition, createProvider } from '../src/oauth/providers'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
 /** 32 zero bytes, base64 — valid AES-GCM key for tests only. */

@@ -150,11 +150,14 @@ describe('OAuth broker integration', () => {
     const first = await h.authorizeAndCallback({ connectionId })
     expect(first.callback.status).toBe(200)
 
-    const conflict = await h.fetch(`/api/oauth/provider/${h.altProviderId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: connectionId }),
-    })
+    const conflict = await h.fetch(
+      `/api/oauth/provider/${h.altProviderId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: connectionId }),
+      },
+    )
 
     expect(conflict.status).toBe(409)
     const body: { error: { code: string; message: string } } =
@@ -171,11 +174,14 @@ describe('OAuth broker integration', () => {
     const { connectionId, callback } = await h.authorizeAndCallback()
     expect(callback.status).toBe(200)
 
-    const authorizeRes = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
+      },
+    )
     const authorizeJson: {
       authorize_url: string
       state: string
@@ -255,11 +261,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the provider token endpoint fails', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'token-fail' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'token-fail' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
 
     const consentRes = await fetch(authorizeJson.authorize_url, {
@@ -309,28 +318,36 @@ describe('OAuth broker integration', () => {
       await deniedDefault.json()
     expect(deniedBody.error.message).toContain('denied')
 
-    const missing = await h.fetch(`/api/oauth/provider/${h.providerId}/callback`)
+    const missing = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/callback`,
+    )
     expect(missing.status).toBe(400)
     const missingBody: { error: { code: string } } = await missing.json()
     expect(missingBody.error.code).toBe('invalid_callback')
   })
 
   it('rejects unknown providers and missing credentials', async () => {
-    const unknown = await h.fetch('/api/oauth/provider/not-a-provider/authorize', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const unknown = await h.fetch(
+      '/api/oauth/provider/not-a-provider/authorize',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
     expect(unknown.status).toBe(404)
     const unknownBody: { error: { code: string } } = await unknown.json()
     expect(unknownBody.error.code).toBe('unknown_provider')
 
     await clearProviderCredentials(h.db, h.providerId)
-    const missingCreds = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const missingCreds = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
 
     expect(missingCreds.status).toBe(500)
     const credsBody: { error: { code: string } } = await missingCreds.json()
@@ -365,14 +382,17 @@ describe('OAuth broker integration', () => {
     const url = new URL(body.authorize_url)
     expect(url.searchParams.get('scope')).toBe('alpha beta')
 
-    const override = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        connection_id: 'scope-override',
-        scopes: ['only-this'],
-      }),
-    })
+    const override = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: 'scope-override',
+          scopes: ['only-this'],
+        }),
+      },
+    )
     expect(override.status).toBe(200)
     const overrideBody: { authorize_url: string } = await override.json()
     expect(new URL(overrideBody.authorize_url).searchParams.get('scope')).toBe(
@@ -450,11 +470,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('rejects expired authorization state', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'expired-state' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'expired-state' }),
+      },
+    )
     const authorizeJson: { authorize_url: string; state: string } =
       await authorizeRes.json()
 
@@ -509,11 +532,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the token endpoint returns non-JSON', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'non-json-token' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'non-json-token' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -536,11 +562,14 @@ describe('OAuth broker integration', () => {
   it('rejects a missing or invalid encryption key', async () => {
     const previous = h.env.OAUTH_ENCRYPTION_KEY
 
-    const authorizeRes = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'missing-enc-key' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'missing-enc-key' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -754,11 +783,14 @@ describe('OAuth broker integration', () => {
     })
     expect(again).toEqual([])
 
-    const authorize = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'bootstrapped-creds' }),
-    })
+    const authorize = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'bootstrapped-creds' }),
+      },
+    )
     expect(authorize.status).toBe(200)
 
     // Restore known stub credentials for later tests.
