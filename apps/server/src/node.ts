@@ -2,12 +2,8 @@ import path from 'node:path'
 import { serve } from '@hono/node-server'
 import app from '@template/api'
 import { createLocalBrokerEnv } from '@template/api/local-node'
-import {
-  type BrokerEnv,
-  isProviderConfigured,
-  readEnvString,
-} from '@template/api/oauth/config'
-import { listProviderIds } from '@template/api/oauth/providers'
+import { type BrokerEnv, readEnvString } from '@template/api/oauth/config'
+import { listConfiguredProviderIds } from '@template/api/oauth/providers'
 
 /**
  * Standalone API entrypoint.
@@ -50,10 +46,8 @@ const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
 
 serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },
-  (info) => {
-    const configured = listProviderIds().filter((id) =>
-      isProviderConfigured(env, id),
-    )
+  async (info) => {
+    const configured = env.DB ? await listConfiguredProviderIds(env.DB) : []
     const publicOrigin =
       readEnvString(env, 'OAUTH_REDIRECT_BASE_URL') ??
       `http://localhost:${info.port}`
@@ -67,7 +61,7 @@ serve(
     console.log(
       configured.length > 0
         ? `Providers configured: ${configured.join(', ')}`
-        : 'Providers configured: none -- set <PROVIDER>_CLIENT_ID and _CLIENT_SECRET in .env',
+        : 'Providers configured: none -- PATCH /api/oauth/providers/{id} with client_id and client_secret',
     )
   },
 )

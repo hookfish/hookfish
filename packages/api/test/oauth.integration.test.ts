@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { oauthConnections, oauthStates } from '../src/db/schema'
+import { oauthConnections, oauthProviders, oauthStates } from '../src/db/schema'
 import { purgeExpiredStates } from '../src/oauth/broker'
-import { registerProvider, unregisterProvider } from '../src/oauth/providers'
 import {
   API_ORIGIN,
+  clearProviderCredentials,
   createHarness,
   OTHER_ENCRYPTION_KEY,
   TEST_ENCRYPTION_KEY,
@@ -37,7 +37,7 @@ describe('OAuth broker integration', () => {
     const stub = body.providers.find((p) => p.id === h.providerId)
     expect(stub).toMatchObject({
       configured: true,
-      callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
+      callback_url: `http://127.0.0.1:8787/api/oauth/provider/${h.providerId}/callback`,
     })
   })
 
@@ -150,11 +150,14 @@ describe('OAuth broker integration', () => {
     const first = await h.authorizeAndCallback({ connectionId })
     expect(first.callback.status).toBe(200)
 
-    const conflict = await h.fetch(`/api/oauth/${h.altProviderId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: connectionId }),
-    })
+    const conflict = await h.fetch(
+      `/api/oauth/provider/${h.altProviderId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: connectionId }),
+      },
+    )
 
     expect(conflict.status).toBe(409)
     const body: { error: { code: string; message: string } } =
@@ -171,11 +174,14 @@ describe('OAuth broker integration', () => {
     const { connectionId, callback } = await h.authorizeAndCallback()
     expect(callback.status).toBe(200)
 
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
+      },
+    )
     const authorizeJson: {
       authorize_url: string
       state: string
@@ -255,11 +261,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the provider token endpoint fails', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'token-fail' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'token-fail' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
 
     const consentRes = await fetch(authorizeJson.authorize_url, {
@@ -294,7 +303,7 @@ describe('OAuth broker integration', () => {
 
   it('returns provider denial and invalid callback errors', async () => {
     const denied = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied&error_description=nope`,
+      `/api/oauth/provider/${h.providerId}/callback?error=access_denied&error_description=nope`,
     )
     expect(denied.status).toBe(400)
     expect(await denied.json()).toEqual({
@@ -302,56 +311,99 @@ describe('OAuth broker integration', () => {
     })
 
     const deniedDefault = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied`,
+      `/api/oauth/provider/${h.providerId}/callback?error=access_denied`,
     )
     expect(deniedDefault.status).toBe(400)
     const deniedBody: { error: { message: string } } =
       await deniedDefault.json()
     expect(deniedBody.error.message).toContain('denied')
 
-    const missing = await h.fetch(`/api/oauth/${h.providerId}/callback`)
+    const missing = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/callback`,
+    )
     expect(missing.status).toBe(400)
     const missingBody: { error: { code: string } } = await missing.json()
     expect(missingBody.error.code).toBe('invalid_callback')
   })
 
   it('rejects unknown providers and missing credentials', async () => {
-    const unknown = await h.fetch('/api/oauth/not-a-provider/authorize', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
+    const unknown = await h.fetch(
+      '/api/oauth/provider/not-a-provider/authorize',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
     expect(unknown.status).toBe(404)
     const unknownBody: { error: { code: string } } = await unknown.json()
     expect(unknownBody.error.code).toBe('unknown_provider')
 
-    const previous = h.env.STUB_CLIENT_ID
-    h.env.STUB_CLIENT_ID = undefined
-    const missingCreds = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    h.env.STUB_CLIENT_ID = previous
+    await clearProviderCredentials(h.db, h.providerId)
+    const missingCreds = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
 
     expect(missingCreds.status).toBe(500)
     const credsBody: { error: { code: string } } = await missingCreds.json()
     expect(credsBody.error.code).toBe('missing_configuration')
+
+    // Restore credentials for later tests.
+    await h.fetch(`/api/oauth/providers/${h.providerId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_id: 'stub-client',
+        client_secret: 'stub-secret',
+      }),
+    })
   })
 
-  it('applies STUB_SCOPES env overrides on authorize', async () => {
-    h.env.STUB_SCOPES = 'alpha, beta'
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+  it('applies stored default_scopes on authorize unless overridden', async () => {
+    await h.fetch(`/api/oauth/providers/${h.providerId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ default_scopes: ['alpha', 'beta'] }),
+    })
+
+    const res = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'scope-override' }),
+      body: JSON.stringify({ connection_id: 'scope-default' }),
     })
-    h.env.STUB_SCOPES = undefined
 
     expect(res.status).toBe(200)
     const body: { authorize_url: string } = await res.json()
     const url = new URL(body.authorize_url)
     expect(url.searchParams.get('scope')).toBe('alpha beta')
+
+    const override = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: 'scope-override',
+          scopes: ['only-this'],
+        }),
+      },
+    )
+    expect(override.status).toBe(200)
+    const overrideBody: { authorize_url: string } = await override.json()
+    expect(new URL(overrideBody.authorize_url).searchParams.get('scope')).toBe(
+      'only-this',
+    )
+
+    await h.fetch(`/api/oauth/providers/${h.providerId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ default_scopes: ['read', 'write'] }),
+    })
   })
 
   it('exercises PKCE, Basic auth, JSON token body, and authorizeParams', async () => {
@@ -418,11 +470,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('rejects expired authorization state', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'expired-state' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'expired-state' }),
+      },
+    )
     const authorizeJson: { authorize_url: string; state: string } =
       await authorizeRes.json()
 
@@ -477,11 +532,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the token endpoint returns non-JSON', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'non-json-token' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'non-json-token' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -504,11 +562,14 @@ describe('OAuth broker integration', () => {
   it('rejects a missing or invalid encryption key', async () => {
     const previous = h.env.OAUTH_ENCRYPTION_KEY
 
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'missing-enc-key' }),
-    })
+    const authorizeRes = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'missing-enc-key' }),
+      },
+    )
     const authorizeJson: { authorize_url: string } = await authorizeRes.json()
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -525,7 +586,7 @@ describe('OAuth broker integration', () => {
 
     h.env.OAUTH_ENCRYPTION_KEY = previous
     const authorizeRes2 = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
+      `/api/oauth/provider/${h.providerId}/authorize`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -616,7 +677,7 @@ describe('OAuth broker integration', () => {
     } = await res.json()
     const stub = body.providers.find((p) => p.id === h.providerId)
     expect(stub?.callback_url).toBe(
-      `${API_ORIGIN}/api/oauth/${h.providerId}/callback`,
+      `${API_ORIGIN}/api/oauth/provider/${h.providerId}/callback`,
     )
   })
 
@@ -626,7 +687,7 @@ describe('OAuth broker integration', () => {
       connectionId: 'housekeeping',
       provider: h.providerId,
       codeVerifier: null,
-      redirectUri: `${API_ORIGIN}/api/oauth/${h.providerId}/callback`,
+      redirectUri: `${API_ORIGIN}/api/oauth/provider/${h.providerId}/callback`,
       returnTo: null,
       scopes: [],
       expiresAt: new Date(Date.now() - 60_000),
@@ -636,23 +697,140 @@ describe('OAuth broker integration', () => {
     expect(purged).toBeGreaterThanOrEqual(1)
   })
 
-  it('refuses to replace or unregister built-in providers', () => {
-    expect(() =>
-      registerProvider({
-        id: 'notion',
-        label: 'Nope',
-        authorizeUrl: 'http://example.com',
-        tokenUrl: 'http://example.com',
-        defaultScopes: [],
-        scopeSeparator: ' ',
-        tokenRequestFormat: 'json',
-        clientAuth: 'basic',
-        usePkce: false,
-        supportsRefresh: false,
+  it('creates, updates, and deletes providers via the admin API', async () => {
+    const created = await h.fetch('/api/oauth/providers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'slack-test',
+        label: 'Slack Test',
+        authorize_url: 'https://slack.example/authorize',
+        token_url: 'https://slack.example/token',
+        default_scopes: ['channels:read'],
+        client_id: 'slack-client',
+        client_secret: 'slack-secret',
       }),
-    ).toThrow(/built-in/)
+    })
+    expect(created.status).toBe(201)
+    const createdBody: {
+      provider: { id: string; configured: boolean; label: string }
+    } = await created.json()
+    expect(createdBody.provider).toMatchObject({
+      id: 'slack-test',
+      configured: true,
+      label: 'Slack Test',
+    })
 
-    expect(() => unregisterProvider('notion')).toThrow(/built-in/)
+    const got = await h.fetch('/api/oauth/providers/slack-test')
+    expect(got.status).toBe(200)
+    const gotBody: {
+      provider: {
+        id: string
+        authorize_url: string
+        configured: boolean
+      }
+    } = await got.json()
+    expect(gotBody.provider).toMatchObject({
+      id: 'slack-test',
+      authorize_url: 'https://slack.example/authorize',
+      configured: true,
+    })
+    expect(JSON.stringify(gotBody)).not.toContain('slack-secret')
+
+    const listed = await h.fetch('/api/oauth/providers')
+    const listBody: { providers: Array<{ id: string }> } = await listed.json()
+    expect(listBody.providers.some((p) => p.id === 'slack-test')).toBe(true)
+
+    const patched = await h.fetch('/api/oauth/providers/slack-test', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ label: 'Slack Renamed' }),
+    })
+    expect(patched.status).toBe(200)
+    const patchedBody: { provider: { label: string } } = await patched.json()
+    expect(patchedBody.provider.label).toBe('Slack Renamed')
+
+    const deleted = await h.fetch('/api/oauth/providers/slack-test', {
+      method: 'DELETE',
+    })
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ deleted: true })
+  })
+
+  it('bootstraps missing credentials from env once', async () => {
+    const { bootstrapProviderCredentialsFromEnv } = await import(
+      '../src/oauth/providers'
+    )
+
+    await clearProviderCredentials(h.db, h.providerId)
+
+    const none = await bootstrapProviderCredentialsFromEnv(h.db, {
+      OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+    })
+    expect(none).toEqual([])
+
+    const bootstrapped = await bootstrapProviderCredentialsFromEnv(h.db, {
+      OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+      STUB_CLIENT_ID: 'from-env-client',
+      STUB_CLIENT_SECRET: 'from-env-secret',
+    })
+    expect(bootstrapped).toEqual([h.providerId])
+
+    const again = await bootstrapProviderCredentialsFromEnv(h.db, {
+      OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+      STUB_CLIENT_ID: 'ignored',
+      STUB_CLIENT_SECRET: 'ignored',
+    })
+    expect(again).toEqual([])
+
+    const authorize = await h.fetch(
+      `/api/oauth/provider/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'bootstrapped-creds' }),
+      },
+    )
+    expect(authorize.status).toBe(200)
+
+    // Restore known stub credentials for later tests.
+    await h.fetch(`/api/oauth/providers/${h.providerId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_id: 'stub-client',
+        client_secret: 'stub-secret',
+      }),
+    })
+  })
+
+  it('refuses to delete a provider that still has connections', async () => {
+    const { connectionId } = await h.authorizeAndCallback({
+      connectionId: 'provider-in-use',
+    })
+
+    const deleted = await h.fetch(`/api/oauth/providers/${h.providerId}`, {
+      method: 'DELETE',
+    })
+    expect(deleted.status).toBe(409)
+    const body: { error: { code: string } } = await deleted.json()
+    expect(body.error.code).toBe('provider_in_use')
+
+    await h.fetch(`/api/oauth/connections/${connectionId}`, {
+      method: 'DELETE',
+    })
+  })
+
+  it('seeds notion, linear, and google metadata without credentials', async () => {
+    const [notion] = await h.db
+      .select()
+      .from(oauthProviders)
+      .where(eq(oauthProviders.id, 'notion'))
+      .limit(1)
+
+    expect(notion).toBeTruthy()
+    expect(notion.clientIdEncrypted).toBeNull()
+    expect(notion.accountIdField).toBe('workspace_id')
   })
 
   it('errors when no database source is configured', async () => {
@@ -663,7 +841,7 @@ describe('OAuth broker integration', () => {
     h.env.DATABASE_URL = undefined
     h.env.HYPERDRIVE = undefined
 
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const res = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
@@ -695,7 +873,7 @@ describe('OAuth broker integration', () => {
     // middleware constructs the client before the handler queries.
     h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/postgres'
 
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const res = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'postgres-path' }),
@@ -727,7 +905,7 @@ describe('OAuth broker integration', () => {
     const { resolveDatabaseSource } = await import('../src/db/resolve')
     expect(resolveDatabaseSource(h.env)?.kind).toBe('hyperdrive')
 
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const res = await h.fetch(`/api/oauth/provider/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'hyperdrive-path' }),

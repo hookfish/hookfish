@@ -19,6 +19,7 @@ import {
   randomToken,
 } from './crypto'
 import { BrokerError } from './errors'
+import { describeAccountFromFields } from './providers'
 
 /** How long a pending authorization stays valid. */
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -124,7 +125,7 @@ export async function startAuthorization(
   expiresAt: Date
   connectionId: string
 }> {
-  const config = resolveProviderConfig(env, input.provider)
+  const config = await resolveProviderConfig(db, env, input.provider)
   const { definition } = config
 
   // A minted id is already known to be free; a caller-supplied one may be
@@ -258,7 +259,7 @@ async function toStoredFields(
   // Providers commonly omit refresh_token on refresh; keep the one we hold.
   const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null
 
-  const account = config.definition.describeAccount?.(raw) ?? {}
+  const account = describeAccountFromFields(config.definition, raw)
 
   // Keep the provider payload, minus anything credential-shaped. Tokens live
   // in the encrypted columns; `id_token` is a signed identity assertion we
@@ -320,7 +321,7 @@ export async function completeAuthorization(
     )
   }
 
-  const config = resolveProviderConfig(env, input.provider)
+  const config = await resolveProviderConfig(db, env, input.provider)
 
   // The check in `startAuthorization` goes stale as soon as a second flow is
   // opened on the same id, so re-check before spending the authorization code.
@@ -375,7 +376,7 @@ async function refreshConnection(
   env: BrokerEnv,
   connection: OAuthConnection,
 ): Promise<OAuthConnection> {
-  const config = resolveProviderConfig(env, connection.provider)
+  const config = await resolveProviderConfig(db, env, connection.provider)
   const encryptionKey = requireEncryptionKey(env)
 
   if (!connection.refreshToken || !config.definition.supportsRefresh) {

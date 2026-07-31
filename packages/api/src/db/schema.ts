@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   jsonb,
   pgTable,
@@ -9,6 +10,44 @@ import {
 } from 'drizzle-orm/pg-core'
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+
+/**
+ * OAuth provider dialect + credentials. Metadata is plain; client id/secret
+ * are encrypted at rest with `OAUTH_ENCRYPTION_KEY` (same as connection tokens).
+ */
+export const oauthProviders = pgTable(
+  'oauth_providers',
+  {
+    id: text('id').primaryKey(),
+    label: text('label').notNull(),
+    authorizeUrl: text('authorize_url').notNull(),
+    tokenUrl: text('token_url').notNull(),
+    defaultScopes: text('default_scopes').array().notNull().default([]),
+    scopeSeparator: text('scope_separator').notNull().default(' '),
+    tokenRequestFormat: text('token_request_format').notNull().default('form'),
+    clientAuth: text('client_auth').notNull().default('body'),
+    usePkce: boolean('use_pkce').notNull().default(false),
+    supportsRefresh: boolean('supports_refresh').notNull().default(true),
+    authorizeParams: jsonb('authorize_params')
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    /** Top-level token-response field used as external_account_id. */
+    accountIdField: text('account_id_field'),
+    /** Top-level token-response field used as external_account_label. */
+    accountLabelField: text('account_label_field'),
+    clientIdEncrypted: text('client_id_encrypted'),
+    clientSecretEncrypted: text('client_secret_encrypted'),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('oauth_providers_enabled_idx').on(table.enabled)],
+)
 
 /**
  * One row per connection. A connection_id is a single provider link -- multiple
@@ -79,10 +118,12 @@ export const oauthStates = pgTable(
   (table) => [index('oauth_states_expires_idx').on(table.expiresAt)],
 )
 
+export type OAuthProvider = typeof oauthProviders.$inferSelect
 export type OAuthConnection = typeof oauthConnections.$inferSelect
 export type OAuthState = typeof oauthStates.$inferSelect
 
 type Schema = {
+  oauthProviders: typeof oauthProviders
   oauthConnections: typeof oauthConnections
   oauthStates: typeof oauthStates
 }

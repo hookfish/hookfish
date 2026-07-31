@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import type { OAuthConnection } from '../db/schema'
+import type { OAuthConnection, OAuthProvider } from '../db/schema'
 import {
   completeAuthorization,
   deleteConnection,
@@ -15,7 +15,14 @@ import {
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
-import { listProviderIds, providerRegistry } from '../oauth/providers'
+import {
+  createProvider,
+  deleteProvider,
+  listProviderRows,
+  requireProviderRow,
+  rowToDefinition,
+  updateProvider,
+} from '../oauth/providers'
 
 // ---------------------------------------------------------------------------
 // Documentation defaults
@@ -116,6 +123,125 @@ function serializeConnection(connection: OAuthConnection) {
   }
 }
 
+const providerIdSchema = z
+  .string()
+  .regex(
+    /^[a-z][a-z0-9_-]*$/,
+    'Provider id must start with a letter and contain only lowercase letters, digits, hyphens, and underscores.',
+  )
+  .openapi({ example: 'notion' })
+
+const providerSummarySchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    configured: z.boolean(),
+    enabled: z.boolean(),
+    callback_url: z.string(),
+    scopes: z.array(z.string()),
+    supports_refresh: z.boolean(),
+    uses_pkce: z.boolean(),
+  })
+  .openapi('OAuthProviderSummary')
+
+const providerDetailSchema = providerSummarySchema
+  .extend({
+    authorize_url: z.string(),
+    token_url: z.string(),
+    scope_separator: z.string(),
+    token_request_format: z.enum(['form', 'json']),
+    client_auth: z.enum(['basic', 'body']),
+    authorize_params: z.record(z.string(), z.string()),
+    account_id_field: z.string().nullable(),
+    account_label_field: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .openapi('OAuthProvider')
+
+const providerWriteBodySchema = z.object({
+  id: providerIdSchema,
+  label: z.string().min(1).openapi({ example: 'Notion' }),
+  authorize_url: z.url().openapi({
+    example: 'https://api.notion.com/v1/oauth/authorize',
+  }),
+  token_url: z.url().openapi({
+    example: 'https://api.notion.com/v1/oauth/token',
+  }),
+  default_scopes: z.array(z.string()).optional().default([]),
+  scope_separator: z.string().optional().default(' '),
+  token_request_format: z.enum(['form', 'json']).optional().default('form'),
+  client_auth: z.enum(['basic', 'body']).optional().default('body'),
+  use_pkce: z.boolean().optional().default(false),
+  supports_refresh: z.boolean().optional().default(true),
+  authorize_params: z.record(z.string(), z.string()).optional().default({}),
+  account_id_field: z.string().nullable().optional(),
+  account_label_field: z.string().nullable().optional(),
+  client_id: z.string().min(1).optional(),
+  client_secret: z.string().min(1).optional(),
+  enabled: z.boolean().optional().default(true),
+})
+
+const providerPatchBodySchema = z.object({
+  label: z.string().min(1).optional(),
+  authorize_url: z.url().optional(),
+  token_url: z.url().optional(),
+  default_scopes: z.array(z.string()).optional(),
+  scope_separator: z.string().optional(),
+  token_request_format: z.enum(['form', 'json']).optional(),
+  client_auth: z.enum(['basic', 'body']).optional(),
+  use_pkce: z.boolean().optional(),
+  supports_refresh: z.boolean().optional(),
+  authorize_params: z.record(z.string(), z.string()).optional(),
+  account_id_field: z.string().nullable().optional(),
+  account_label_field: z.string().nullable().optional(),
+  client_id: z.string().min(1).optional(),
+  client_secret: z.string().min(1).optional(),
+  enabled: z.boolean().optional(),
+})
+
+function serializeProviderSummary(
+  row: OAuthProvider,
+  env: BrokerContext['Bindings'],
+  requestUrl: string,
+) {
+  const definition = rowToDefinition(row)
+
+  return {
+    id: definition.id,
+    label: definition.label,
+    configured: isProviderConfigured(row),
+    enabled: row.enabled,
+    callback_url: resolveRedirectUri(env, requestUrl, definition.id),
+    scopes: definition.defaultScopes,
+    supports_refresh: definition.supportsRefresh,
+    uses_pkce: definition.usePkce,
+  }
+}
+
+/** Never serialises encrypted credential columns. */
+function serializeProviderDetail(
+  row: OAuthProvider,
+  env: BrokerContext['Bindings'],
+  requestUrl: string,
+) {
+  const definition = rowToDefinition(row)
+
+  return {
+    ...serializeProviderSummary(row, env, requestUrl),
+    authorize_url: definition.authorizeUrl,
+    token_url: definition.tokenUrl,
+    scope_separator: definition.scopeSeparator,
+    token_request_format: definition.tokenRequestFormat,
+    client_auth: definition.clientAuth,
+    authorize_params: definition.authorizeParams,
+    account_id_field: definition.accountIdField ?? null,
+    account_label_field: definition.accountLabelField ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -126,26 +252,115 @@ const listProvidersRoute = createRoute({
   summary: 'List known providers and whether credentials are configured',
   description:
     "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
-  middleware: [requireApiKey],
+  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   responses: {
     200: {
-      description: 'Provider registry',
+      description: 'Provider list',
       content: {
         'application/json': {
           schema: z.object({
-            providers: z.array(
-              z.object({
-                id: z.string(),
-                label: z.string(),
-                configured: z.boolean(),
-                callback_url: z.string(),
-                scopes: z.array(z.string()),
-                supports_refresh: z.boolean(),
-                uses_pkce: z.boolean(),
-              }),
-            ),
+            providers: z.array(providerSummarySchema),
           }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
+const getProviderRoute = createRoute({
+  method: 'get',
+  path: '/providers/{provider}',
+  summary: 'Get one provider (never returns secrets)',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: { params: providerParamSchema },
+  responses: {
+    200: {
+      description: 'Provider detail',
+      content: {
+        'application/json': {
+          schema: z.object({ provider: providerDetailSchema }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
+const createProviderRoute = createRoute({
+  method: 'post',
+  path: '/providers',
+  summary: 'Create a provider',
+  description:
+    'Stores dialect metadata in the database. Pass `client_id` and `client_secret` together to mark the provider configured; they are encrypted at rest.',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': { schema: providerWriteBodySchema },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Provider created',
+      content: {
+        'application/json': {
+          schema: z.object({ provider: providerDetailSchema }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
+const updateProviderRoute = createRoute({
+  method: 'patch',
+  path: '/providers/{provider}',
+  summary: 'Update a provider',
+  description:
+    'Partial update. When rotating credentials, send both `client_id` and `client_secret`.',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: {
+    params: providerParamSchema,
+    body: {
+      content: {
+        'application/json': { schema: providerPatchBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Provider updated',
+      content: {
+        'application/json': {
+          schema: z.object({ provider: providerDetailSchema }),
+        },
+      },
+    },
+    ...commonErrors,
+  },
+})
+
+const deleteProviderRoute = createRoute({
+  method: 'delete',
+  path: '/providers/{provider}',
+  summary: 'Delete a provider',
+  description:
+    'Fails with 409 if any connections still reference the provider.',
+  middleware: [requireApiKey, withDatabase],
+  security: brokerAuth,
+  request: { params: providerParamSchema },
+  responses: {
+    200: {
+      description: 'Provider deleted',
+      content: {
+        'application/json': {
+          schema: z.object({ deleted: z.boolean() }),
         },
       },
     },
@@ -155,7 +370,7 @@ const listProvidersRoute = createRoute({
 
 const authorizeRoute = createRoute({
   method: 'post',
-  path: '/{provider}/authorize',
+  path: '/provider/{provider}/authorize',
   summary: 'Create a consent URL for a connection',
   description:
     'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`). Each connection id is one provider link.',
@@ -174,7 +389,7 @@ const authorizeRoute = createRoute({
             }),
             scopes: z.array(z.string()).optional().openapi({
               description:
-                'Overrides the configured scopes for this flow. Leave empty to use the provider defaults from <PROVIDER>_SCOPES or the registry -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
+                'Overrides the provider default_scopes for this flow. Leave empty to use the stored defaults -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
               default: [],
               example: [],
             }),
@@ -213,7 +428,7 @@ const authorizeRoute = createRoute({
 
 const callbackRoute = createRoute({
   method: 'get',
-  path: '/{provider}/callback',
+  path: '/provider/{provider}/callback',
   summary: 'OAuth redirect target (called by the provider, not by your code)',
   description:
     "Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.",
@@ -350,27 +565,88 @@ const disconnectRoute = createRoute({
 
 export const oauthRoutes = new OpenAPIHono<BrokerContext>()
 
-oauthRoutes.openapi(listProvidersRoute, (c) => {
+oauthRoutes.openapi(listProvidersRoute, async (c) => {
+  const rows = await listProviderRows(c.get('db'))
+
   return c.json(
     {
-      providers: listProviderIds().map((id) => {
-        const definition = providerRegistry[id]
-
-        return {
-          id: definition.id,
-          label: definition.label,
-          configured: isProviderConfigured(c.env, id),
-          // Derived from this request, so it stays correct across branches,
-          // `pnpm dev` vs. `server dev`, and deployed environments.
-          callback_url: resolveRedirectUri(c.env, c.req.url, id),
-          scopes: definition.defaultScopes,
-          supports_refresh: definition.supportsRefresh,
-          uses_pkce: definition.usePkce,
-        }
-      }),
+      providers: rows.map((row) =>
+        serializeProviderSummary(row, c.env, c.req.url),
+      ),
     },
     200,
   )
+})
+
+oauthRoutes.openapi(getProviderRoute, async (c) => {
+  const { provider } = c.req.valid('param')
+  const row = await requireProviderRow(c.get('db'), provider)
+
+  return c.json(
+    { provider: serializeProviderDetail(row, c.env, c.req.url) },
+    200,
+  )
+})
+
+oauthRoutes.openapi(createProviderRoute, async (c) => {
+  const body = c.req.valid('json')
+  const row = await createProvider(c.get('db'), c.env, {
+    id: body.id,
+    label: body.label,
+    authorizeUrl: body.authorize_url,
+    tokenUrl: body.token_url,
+    defaultScopes: body.default_scopes,
+    scopeSeparator: body.scope_separator,
+    tokenRequestFormat: body.token_request_format,
+    clientAuth: body.client_auth,
+    usePkce: body.use_pkce,
+    supportsRefresh: body.supports_refresh,
+    authorizeParams: body.authorize_params,
+    accountIdField: body.account_id_field,
+    accountLabelField: body.account_label_field,
+    clientId: body.client_id,
+    clientSecret: body.client_secret,
+    enabled: body.enabled,
+  })
+
+  return c.json(
+    { provider: serializeProviderDetail(row, c.env, c.req.url) },
+    201,
+  )
+})
+
+oauthRoutes.openapi(updateProviderRoute, async (c) => {
+  const { provider } = c.req.valid('param')
+  const body = c.req.valid('json')
+  const row = await updateProvider(c.get('db'), c.env, provider, {
+    label: body.label,
+    authorizeUrl: body.authorize_url,
+    tokenUrl: body.token_url,
+    defaultScopes: body.default_scopes,
+    scopeSeparator: body.scope_separator,
+    tokenRequestFormat: body.token_request_format,
+    clientAuth: body.client_auth,
+    usePkce: body.use_pkce,
+    supportsRefresh: body.supports_refresh,
+    authorizeParams: body.authorize_params,
+    accountIdField: body.account_id_field,
+    accountLabelField: body.account_label_field,
+    clientId: body.client_id,
+    clientSecret: body.client_secret,
+    enabled: body.enabled,
+  })
+
+  return c.json(
+    { provider: serializeProviderDetail(row, c.env, c.req.url) },
+    200,
+  )
+})
+
+oauthRoutes.openapi(deleteProviderRoute, async (c) => {
+  const { provider } = c.req.valid('param')
+  await deleteProvider(c.get('db'), provider)
+
+  return c.json({ deleted: true }, 200)
 })
 
 oauthRoutes.openapi(authorizeRoute, async (c) => {
