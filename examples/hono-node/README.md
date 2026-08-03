@@ -12,4 +12,4 @@ pnpm dev
 ```
 
 From the repository root, run
-`pnpm --filter @template/example-hono-node dev` instead.
+`pnpm --filter @hookfish/example-hono-node dev` instead.

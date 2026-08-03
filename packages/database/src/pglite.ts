@@ -5,8 +5,8 @@ import {
   defineDatabase,
   oauthConnections,
   oauthStates,
-} from '@template/api/database'
-import { migrationsFolder as bundledMigrations } from '@template/api/migrations'
+} from '@hookfish/api/database'
+import { migrationsFolder as bundledMigrations } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 

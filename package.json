@@ -1,11 +1,11 @@
 {
-  "name": "template",
+  "name": "hookfish",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "node ./packages/cli/bin/template.mjs serve",
+    "dev": "node ./packages/cli/bin/hookfish.mjs serve",
     "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck && turbo cf-typecheck",
@@ -17,17 +17,17 @@
     "deploy": "turbo deploy",
     "cf-typegen": "turbo cf-typegen",
     "cf-typecheck": "turbo cf-typecheck",
-    "db:studio": "pnpm --filter @template/api db:studio",
-    "cli": "node ./packages/cli/bin/template.mjs",
-    "migrate": "node ./packages/cli/bin/template.mjs migrate"
+    "db:studio": "pnpm --filter @hookfish/api db:studio",
+    "cli": "node ./packages/cli/bin/hookfish.mjs",
+    "migrate": "node ./packages/cli/bin/hookfish.mjs migrate"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
-    "@template/api": "workspace:*",
-    "@template/cli": "workspace:*",
-    "@template/database": "workspace:*",
-    "@template/provider": "workspace:*",
-    "@template/providers": "workspace:*",
+    "@hookfish/api": "workspace:*",
+    "@hookfish/cli": "workspace:*",
+    "@hookfish/database": "workspace:*",
+    "@hookfish/provider": "workspace:*",
+    "@hookfish/providers": "workspace:*",
     "biome-plugin-no-type-assertion": "^1.1.1",
     "turbo": "^2.6.1"
   }

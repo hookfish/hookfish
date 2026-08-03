@@ -1,5 +1,5 @@
 {
-  "name": "@template/example-cloudflare-worker",
+  "name": "@hookfish/example-cloudflare-worker",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,9 +12,9 @@
     "cf-typecheck": "wrangler types --env-file wrangler-typegen.env --check"
   },
   "dependencies": {
-    "@template/api": "workspace:*",
-    "@template/database": "workspace:*",
-    "@template/providers": "workspace:*"
+    "@hookfish/api": "workspace:*",
+    "@hookfish/database": "workspace:*",
+    "@hookfish/providers": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",

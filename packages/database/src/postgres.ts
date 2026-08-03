@@ -3,8 +3,8 @@ import {
   defineDatabase,
   oauthConnections,
   oauthStates,
-} from '@template/api/database'
-import { migrationsFolder } from '@template/api/migrations'
+} from '@hookfish/api/database'
+import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'

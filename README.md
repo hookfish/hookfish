@@ -23,7 +23,7 @@ cp apps/frontend/.env.example apps/frontend/.env
 # Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
 
 pnpm dev
-# Equivalent: pnpm exec template serve
+# Equivalent: pnpm exec hookfish serve
 # → http://127.0.0.1:5173
 ```
 
@@ -37,7 +37,7 @@ frontend and examples all import the same Hookfish instance.
 The standalone example reads the same `apps/frontend/.env` file:
 
 ```sh
-pnpm --filter @template/example-hono-node dev
+pnpm --filter @hookfish/example-hono-node dev
 ```
 
 ## Cloudflare Worker example
@@ -48,8 +48,8 @@ Before running the Worker, replace the active PGlite database in
 Authenticate Wrangler and create a Hyperdrive configuration for Postgres:
 
 ```sh
-pnpm --filter @template/example-cloudflare-worker exec wrangler login
-pnpm --filter @template/example-cloudflare-worker exec wrangler hyperdrive create hookfish-db \
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler login
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler hyperdrive create hookfish-db \
   --connection-string="postgres://user:pass@host:5432/dbname"
 ```
 
@@ -72,7 +72,7 @@ need Postgres, so add the local Hyperdrive connection string to that file:
 # apps/frontend/.env
 CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@127.0.0.1:5432/dbname
 
-pnpm --filter @template/example-cloudflare-worker dev
+pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
 Run migrations before deployment. The CLI loads `hookfish.config.ts` and uses
@@ -87,14 +87,14 @@ Store deployed credentials with Wrangler, repeating for each provider used by
 the Worker:
 
 ```sh
-pnpm --filter @template/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
-pnpm --filter @template/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
 ```
 
 Deploy the Worker example:
 
 ```sh
-pnpm --filter @template/example-cloudflare-worker deploy
+pnpm --filter @hookfish/example-cloudflare-worker deploy
 # Equivalent root command; only this example defines a deploy task.
 pnpm deploy
 ```
@@ -105,7 +105,7 @@ Build the Nitro Node server and start its generated entrypoint:
 
 ```sh
 pnpm build
-pnpm --filter @template/frontend start
+pnpm --filter @hookfish/frontend start
 ```
 
 Provide secrets as process environment variables. The root Hookfish config uses
@@ -135,7 +135,7 @@ The product CLI intentionally exposes only the mounted frontend, migrations,
 and help:
 
 ```sh
-pnpm exec template serve
-pnpm exec template migrate
-pnpm exec template help
+pnpm exec hookfish serve
+pnpm exec hookfish migrate
+pnpm exec hookfish help
 ```

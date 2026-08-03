@@ -5,7 +5,7 @@ import {
   ProviderRequestError,
   type ProviderRegistry,
   type ProviderTokenResponse,
-} from '@template/provider'
+} from '@hookfish/provider'
 import { and, eq, lt } from 'drizzle-orm'
 import {
   type Database,

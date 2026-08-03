@@ -5,7 +5,7 @@ import {
   isProviderRegistry,
   type OAuthProvider,
   type ProviderRegistry,
-} from '@template/provider'
+} from '@hookfish/provider'
 import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 

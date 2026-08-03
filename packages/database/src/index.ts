@@ -4,4 +4,4 @@ export {
   type DatabaseInput,
   defineDatabase,
   migrateDatabase,
-} from '@template/api/database'
+} from '@hookfish/api/database'

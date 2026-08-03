@@ -22,7 +22,7 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 ```
 
 ```sh
-pnpm exec template serve
+pnpm exec hookfish serve
 ```
 
 The CLI runs the TanStack Start Node frontend, with Hookfish mounted directly at
@@ -46,9 +46,9 @@ Each host imports the `Hookfish` instance from the root `hookfish.config.ts`:
 
 | command | process | default database |
 |---|---|---|
-| `pnpm exec template serve` | TanStack Start Node SSR + Hookfish | `pgdata` |
-| `pnpm --filter @template/example-hono-node dev` | standalone Hono API | `pgdata` |
-| `pnpm --filter @template/example-cloudflare-worker dev` | Cloudflare Worker API | Switch config to Hyperdrive first |
+| `pnpm exec hookfish serve` | TanStack Start Node SSR + Hookfish | `pgdata` |
+| `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono API | `pgdata` |
+| `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker API | Switch config to Hyperdrive first |
 
 Set `PGLITE_DATA_DIR` to move the embedded database. The root config contains
 commented alternatives for Postgres and Cloudflare Hyperdrive.
@@ -61,9 +61,9 @@ a request-aware database binding. The stock config currently uses PGlite:
 
 ```ts
 // hookfish.config.ts
-import { Hookfish } from '@template/api'
-import { pglite } from '@template/database/pglite'
-import { NotionProvider } from '@template/provider-notion'
+import { Hookfish } from '@hookfish/api'
+import { pglite } from '@hookfish/database/pglite'
+import { NotionProvider } from '@hookfish/provider-notion'
 
 const db = pglite('./pgdata')
 
@@ -99,7 +99,7 @@ binding. It fails explicitly when the file or database configuration is absent.
 ```sh
 # After switching hookfish.config.ts to the Postgres example
 DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
-  pnpm --filter @template/example-hono-node dev
+  pnpm --filter @hookfish/example-hono-node dev
 ```
 
 ## Endpoints
@@ -193,16 +193,16 @@ Provider slugs belong to the application, not to provider classes. Add the
 providers you want in the root `hookfish.config.ts`:
 
 ```sh
-pnpm add @template/api @template/database @template/provider \
-  @template/provider-github @template/provider-notion @acme/provider-slack
-pnpm add --save-dev @template/cli
+pnpm add @hookfish/api @hookfish/database @hookfish/provider \
+  @hookfish/provider-github @hookfish/provider-notion @acme/provider-slack
+pnpm add --save-dev @hookfish/cli
 ```
 
 ```ts
-import { Hookfish } from '@template/api'
-import { postgres } from '@template/database/postgres'
-import { GitHubProvider } from '@template/provider-github'
-import { NotionProvider } from '@template/provider-notion'
+import { Hookfish } from '@hookfish/api'
+import { postgres } from '@hookfish/database/postgres'
+import { GitHubProvider } from '@hookfish/provider-github'
+import { NotionProvider } from '@hookfish/provider-notion'
 import { SlackProvider } from '@acme/provider-slack'
 
 const hookfish = new Hookfish({
@@ -230,7 +230,7 @@ later registration for the same slug replaces the earlier one, so an app can
 override a built-in without editing broker code.
 
 To publish a custom provider, create an ordinary package that depends only on
-`@template/provider` plus the provider's official SDK. The contract has two
+`@hookfish/provider` plus the provider's official SDK. The contract has two
 required lifecycle methods and one optional refresh method; protocol details
 stay inside the class:
 
@@ -241,7 +241,7 @@ import type {
   OAuthProvider,
   ProviderTokenResponse,
   RefreshTokenInput,
-} from '@template/provider'
+} from '@hookfish/provider'
 
 export class SlackProvider implements OAuthProvider {
   readonly label = 'Slack'
@@ -293,7 +293,7 @@ but should test URL construction, token parsing, error mapping, and refresh when
 supported. Run everything with `pnpm test`, or one package with:
 
 ```sh
-pnpm --filter @template/provider-github test
+pnpm --filter @hookfish/provider-github test
 ```
 
 ## Security notes

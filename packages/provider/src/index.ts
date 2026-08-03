@@ -66,7 +66,7 @@ export interface OAuthProvider {
   refreshToken?(input: RefreshTokenInput): Promise<ProviderTokenResponse>
 }
 
-const registryKey = Symbol.for('@template/provider/registry')
+const registryKey = Symbol.for('@hookfish/provider/registry')
 
 export class ProviderRegistry {
   private readonly providers = new Map<string, OAuthProvider>()

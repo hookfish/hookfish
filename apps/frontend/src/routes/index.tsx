@@ -60,7 +60,7 @@ function Dashboard() {
         </h1>
         <p className="text-muted-foreground">
           Health and message creation run through TanStack server functions. The
-          shared Hono app from `@template/api` is mounted at `/api/*` and
+          shared Hono app from `@hookfish/api` is mounted at `/api/*` and
           exposes one stats endpoint read by the frontend.
         </p>
       </section>

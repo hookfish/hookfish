@@ -1,5 +1,5 @@
 {
-  "name": "@template/api",
+  "name": "@hookfish/api",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -37,13 +37,13 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.4.0",
-    "@template/provider": "workspace:*",
+    "@hookfish/provider": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@template/providers": "workspace:*",
+    "@hookfish/providers": "workspace:*",
     "@types/node": "^24.12.3",
     "@vitest/coverage-v8": "^3.2.4",
     "drizzle-kit": "^0.31.10",

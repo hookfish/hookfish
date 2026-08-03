@@ -7,12 +7,12 @@ import {
   type OAuthProvider,
   type ProviderRegistry,
   ProviderRequestError,
-} from '@template/provider'
+} from '@hookfish/provider'
 import {
   GitHubProvider,
   LinearProvider,
   NotionProvider,
-} from '@template/providers'
+} from '@hookfish/providers'
 import { pglite } from '../../database/src/pglite'
 import type { Database } from '../src/db/schema'
 import { Hookfish } from '../src/index'

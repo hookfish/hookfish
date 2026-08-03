@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import { readEnvString } from '@template/api/oauth/config'
+import { readEnvString } from '@hookfish/api/oauth/config'
 
 const packageRoot = path.resolve(import.meta.dirname, '..')
 const envPath = path.resolve(packageRoot, '../../apps/frontend/.env')

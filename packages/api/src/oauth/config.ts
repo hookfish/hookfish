@@ -1,4 +1,4 @@
-import type { OAuthProvider, ProviderRegistry } from '@template/provider'
+import type { OAuthProvider, ProviderRegistry } from '@hookfish/provider'
 import { BrokerError } from './errors'
 
 /**
