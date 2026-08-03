@@ -1,5 +1,5 @@
 {
-  "name": "@template/provider",
+  "name": "@hookfish/provider",
   "version": "0.0.0",
   "type": "module",
   "files": [

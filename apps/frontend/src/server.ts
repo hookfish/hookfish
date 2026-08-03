@@ -1,13 +1,13 @@
 import path from 'node:path'
 import handler, { createServerEntry } from '@tanstack/react-start/server-entry'
-import { Hookfish } from '@template/api'
-import { pglite } from '@template/database/pglite'
-import { postgres } from '@template/database/postgres'
+import { Hookfish } from '@hookfish/api'
+import { pglite } from '@hookfish/database/pglite'
+import { postgres } from '@hookfish/database/postgres'
 import {
   GitHubProvider,
   LinearProvider,
   NotionProvider,
-} from '@template/providers'
+} from '@hookfish/providers'
 
 const databaseUrl = process.env.DATABASE_URL?.trim()
 const projectRoot = path.resolve(import.meta.dirname, '../../..')

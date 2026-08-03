@@ -4,7 +4,7 @@ import {
   defineDatabase,
   oauthConnections,
   oauthStates,
-} from '@template/api/database'
+} from '@hookfish/api/database'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgresClient from 'postgres'
 

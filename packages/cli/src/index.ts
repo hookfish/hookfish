@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 
 /**
- * Resolve the project root from the caller's cwd first so `npx @template/cli`
+ * Resolve the project root from the caller's cwd first so `npx @hookfish/cli`
  * works when the package lives in the npm cache / node_modules. Fall back to
  * walking from this file for local monorepo checkouts.
  */
@@ -66,13 +66,13 @@ async function exitWith(code: number): Promise<never> {
 
 const program = new Command()
 
-program.name('template').description('OAuth broker CLI')
+program.name('hookfish').description('OAuth broker CLI')
 
 program
   .command('serve')
   .description('Run the frontend with the Hookfish API mounted at /api')
   .action(async () => {
-    await exitWith(await run('pnpm', ['--filter', '@template/frontend', 'dev']))
+    await exitWith(await run('pnpm', ['--filter', '@hookfish/frontend', 'dev']))
   })
 
 program
@@ -86,7 +86,7 @@ program
     const env = { ...process.env }
     if (url) env.DATABASE_URL = url
     await exitWith(
-      await run('pnpm', ['--filter', '@template/api', 'db:migrate'], env),
+      await run('pnpm', ['--filter', '@hookfish/api', 'db:migrate'], env),
     )
   })
 

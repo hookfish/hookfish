@@ -1,10 +1,10 @@
 {
-  "name": "@template/cli",
+  "name": "@hookfish/cli",
   "version": "0.0.0",
-  "description": "CLI for the template monorepo",
+  "description": "CLI for Hookfish",
   "type": "module",
   "bin": {
-    "template": "./bin/template.mjs"
+    "hookfish": "./bin/hookfish.mjs"
   },
   "files": [
     "bin",
@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit",
-    "start": "node ./bin/template.mjs"
+    "start": "node ./bin/hookfish.mjs"
   },
   "dependencies": {
     "commander": "^14.0.3"

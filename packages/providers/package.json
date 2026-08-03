@@ -1,5 +1,5 @@
 {
-  "name": "@template/providers",
+  "name": "@hookfish/providers",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -16,10 +16,10 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@template/provider": "workspace:*",
-    "@template/provider-github": "workspace:*",
-    "@template/provider-linear": "workspace:*",
-    "@template/provider-notion": "workspace:*"
+    "@hookfish/provider": "workspace:*",
+    "@hookfish/provider-github": "workspace:*",
+    "@hookfish/provider-linear": "workspace:*",
+    "@hookfish/provider-notion": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

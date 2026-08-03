@@ -1,5 +1,5 @@
 {
-  "name": "@template/provider-github",
+  "name": "@hookfish/provider-github",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@octokit/oauth-app": "^8.0.4",
-    "@template/provider": "workspace:*",
+    "@hookfish/provider": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

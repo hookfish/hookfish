@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import type { ProviderRegistry } from '@template/provider'
+import type { ProviderRegistry } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
 import type { OAuthConnection } from '../db/schema'
 import {

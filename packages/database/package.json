@@ -1,5 +1,5 @@
 {
-  "name": "@template/database",
+  "name": "@hookfish/database",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
-    "@template/api": "workspace:*",
+    "@hookfish/api": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.7"
   },

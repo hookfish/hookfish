@@ -1,5 +1,5 @@
 {
-  "name": "@template/provider-linear",
+  "name": "@hookfish/provider-linear",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@template/provider": "workspace:*",
+    "@hookfish/provider": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

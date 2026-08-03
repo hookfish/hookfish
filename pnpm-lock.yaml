@@ -11,13 +11,13 @@ importers:
       '@biomejs/biome':
         specifier: ^2.4.16
         version: 2.4.16
-      '@template/cli':
+      '@hookfish/cli':
         specifier: workspace:*
         version: link:packages/cli
-      '@template/provider':
+      '@hookfish/provider':
         specifier: workspace:*
         version: link:packages/provider
-      '@template/providers':
+      '@hookfish/providers':
         specifier: workspace:*
         version: link:packages/providers
       biome-plugin-no-type-assertion:
@@ -38,6 +38,18 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.9
         version: 5.2.9
+      '@hookfish/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@hookfish/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@hookfish/provider':
+        specifier: workspace:*
+        version: link:../../packages/provider
+      '@hookfish/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@tanstack/react-query':
         specifier: ^5.100.14
         version: 5.100.14(react@19.2.6)
@@ -50,18 +62,6 @@ importers:
       '@tanstack/react-start':
         specifier: ^1.168.25
         version: 1.168.25(crossws@0.4.10(srvx@0.11.22))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.14(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
-      '@template/api':
-        specifier: workspace:*
-        version: link:../../packages/api
-      '@template/database':
-        specifier: workspace:*
-        version: link:../../packages/database
-      '@template/provider':
-        specifier: workspace:*
-        version: link:../../packages/provider
-      '@template/providers':
-        specifier: workspace:*
-        version: link:../../packages/providers
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -156,13 +156,13 @@ importers:
 
   examples/cloudflare-worker:
     dependencies:
-      '@template/api':
+      '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@template/database':
+      '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@template/providers':
+      '@hookfish/providers':
         specifier: workspace:*
         version: link:../../packages/providers
     devDependencies:
@@ -181,13 +181,13 @@ importers:
       '@hono/node-server':
         specifier: ^2.0.12
         version: 2.0.12(hono@4.12.23)
-      '@template/api':
+      '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@template/database':
+      '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@template/providers':
+      '@hookfish/providers':
         specifier: workspace:*
         version: link:../../packages/providers
     devDependencies:
@@ -209,7 +209,7 @@ importers:
       '@hono/zod-openapi':
         specifier: ^1.4.0
         version: 1.4.0(hono@4.12.23)(zod@4.4.3)
-      '@template/provider':
+      '@hookfish/provider':
         specifier: workspace:*
         version: link:../provider
       drizzle-orm:
@@ -222,7 +222,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@template/providers':
+      '@hookfish/providers':
         specifier: workspace:*
         version: link:../providers
       '@types/node':
@@ -259,7 +259,7 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
-      '@template/api':
+      '@hookfish/api':
         specifier: workspace:*
         version: link:../api
       drizzle-orm:
@@ -284,16 +284,16 @@ importers:
 
   packages/providers:
     dependencies:
-      '@template/provider':
+      '@hookfish/provider':
         specifier: workspace:*
         version: link:../provider
-      '@template/provider-github':
+      '@hookfish/provider-github':
         specifier: workspace:*
         version: link:github
-      '@template/provider-linear':
+      '@hookfish/provider-linear':
         specifier: workspace:*
         version: link:linear
-      '@template/provider-notion':
+      '@hookfish/provider-notion':
         specifier: workspace:*
         version: link:notion
     devDependencies:
@@ -303,12 +303,12 @@ importers:
 
   packages/providers/github:
     dependencies:
+      '@hookfish/provider':
+        specifier: workspace:*
+        version: link:../../provider
       '@octokit/oauth-app':
         specifier: ^8.0.4
         version: 8.0.4
-      '@template/provider':
-        specifier: workspace:*
-        version: link:../../provider
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -322,7 +322,7 @@ importers:
 
   packages/providers/linear:
     dependencies:
-      '@template/provider':
+      '@hookfish/provider':
         specifier: workspace:*
         version: link:../../provider
       zod:
@@ -338,12 +338,12 @@ importers:
 
   packages/providers/notion:
     dependencies:
+      '@hookfish/provider':
+        specifier: workspace:*
+        version: link:../../provider
       '@notionhq/client':
         specifier: ^5.23.3
         version: 5.23.3
-      '@template/provider':
-        specifier: workspace:*
-        version: link:../../provider
       zod:
         specifier: ^4.4.3
         version: 4.4.3

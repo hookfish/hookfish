@@ -6,51 +6,51 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".output/**", ".vinxi/**"]
     },
-    "@template/api#build": {
+    "@hookfish/api#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/database#build": {
+    "@hookfish/database#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/providers#build": {
+    "@hookfish/providers#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider#build": {
+    "@hookfish/provider#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-github#build": {
+    "@hookfish/provider-github#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-linear#build": {
+    "@hookfish/provider-linear#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-notion#build": {
+    "@hookfish/provider-notion#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-github#test": {
+    "@hookfish/provider-github#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-linear#test": {
+    "@hookfish/provider-linear#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/provider-notion#test": {
+    "@hookfish/provider-notion#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/example-cloudflare-worker#build": {
+    "@hookfish/example-cloudflare-worker#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@template/example-hono-node#build": {
+    "@hookfish/example-hono-node#build": {
       "dependsOn": ["^build"],
       "outputs": []
     },

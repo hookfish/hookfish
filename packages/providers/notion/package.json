@@ -1,5 +1,5 @@
 {
-  "name": "@template/provider-notion",
+  "name": "@hookfish/provider-notion",
   "version": "0.0.0",
   "type": "module",
   "files": [
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@notionhq/client": "^5.23.3",
-    "@template/provider": "workspace:*",
+    "@hookfish/provider": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

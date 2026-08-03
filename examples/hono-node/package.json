@@ -1,5 +1,5 @@
 {
-  "name": "@template/example-hono-node",
+  "name": "@hookfish/example-hono-node",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.12",
-    "@template/api": "workspace:*",
-    "@template/database": "workspace:*",
-    "@template/providers": "workspace:*"
+    "@hookfish/api": "workspace:*",
+    "@hookfish/database": "workspace:*",
+    "@hookfish/providers": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",

@@ -8,7 +8,7 @@ import {
   type ProviderTokenResponse,
   requireProviderCredentials,
   resolveProviderCredentials,
-} from '@template/provider'
+} from '@hookfish/provider'
 import { z } from 'zod'
 
 const tokenSchema = z.looseObject({

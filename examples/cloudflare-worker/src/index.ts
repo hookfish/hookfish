@@ -1,10 +1,10 @@
-import { Hookfish } from '@template/api'
-import { postgres } from '@template/database/postgres'
+import { Hookfish } from '@hookfish/api'
+import { postgres } from '@hookfish/database/postgres'
 import {
   GitHubProvider,
   LinearProvider,
   NotionProvider,
-} from '@template/providers'
+} from '@hookfish/providers'
 
 const hookfish = new Hookfish<Env>({
   db: postgres((bindings: Env) => bindings.HYPERDRIVE.connectionString, {

@@ -3,4 +3,4 @@ export {
   type DatabaseBinding,
   type DatabaseInput,
   defineDatabase,
-} from '@template/api/database'
+} from '@hookfish/api/database'

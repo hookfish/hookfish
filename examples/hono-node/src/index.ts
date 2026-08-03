@@ -1,14 +1,14 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import { Hookfish } from '@template/api'
-import { readEnvString } from '@template/api/oauth/config'
-import { pglite } from '@template/database/pglite'
-import { postgres } from '@template/database/postgres'
+import { Hookfish } from '@hookfish/api'
+import { readEnvString } from '@hookfish/api/oauth/config'
+import { pglite } from '@hookfish/database/pglite'
+import { postgres } from '@hookfish/database/postgres'
 import {
   GitHubProvider,
   LinearProvider,
   NotionProvider,
-} from '@template/providers'
+} from '@hookfish/providers'
 
 const packageRoot = path.resolve(import.meta.dirname, '..')
 const envPath = path.resolve(packageRoot, '../../apps/frontend/.env')
