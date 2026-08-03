@@ -6,23 +6,19 @@
   "scripts": {
     "dev": "tsx watch src/node.ts",
     "dev:node": "tsx watch src/node.ts",
-    "dev:worker": "pnpm --workspace-root run cli -- portless server -- sh -c 'exec wrangler dev --config ./wrangler.jsonc --ip \"${HOST:-127.0.0.1}\" --port \"$PORT\" --inspector-port 0 --var OAUTH_REDIRECT_BASE_URL:\"$OAUTH_REDIRECT_BASE_URL\"'",
-    "dev:worker:app": "wrangler dev --config ./wrangler.jsonc --ip ${HOST:-127.0.0.1} --port ${PORT:-8787} --inspector-port 0",
     "build": "tsc -b",
-    "typecheck": "tsc -b",
-    "deploy": "pnpm build && node ../../scripts/wrangler-deploy.mjs ./wrangler.jsonc",
-    "cf-typegen": "wrangler types --config ./wrangler.jsonc"
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@template/api": "workspace:*",
+    "@template/provider": "workspace:*",
+    "@template/providers": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260528.1",
     "@hono/node-server": "^2.0.12",
     "@types/node": "^24.12.3",
     "tsx": "^4.23.1",
-    "typescript": "~5.9.3",
-    "wrangler": "^4.95.0"
+    "typescript": "~5.9.3"
   }
 }

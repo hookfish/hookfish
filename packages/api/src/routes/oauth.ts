@@ -1,4 +1,8 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import {
+  defaultProviderRegistry,
+  type ProviderRegistry,
+} from '@template/provider'
 import type { OAuthConnection } from '../db/schema'
 import {
   completeAuthorization,
@@ -8,14 +12,13 @@ import {
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
-import { isProviderConfigured, resolveRedirectUri } from '../oauth/config'
+import { resolveRedirectUri } from '../oauth/config'
 import { isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
-import { listProviderIds, providerRegistry } from '../oauth/providers'
 
 // ---------------------------------------------------------------------------
 // Documentation defaults
@@ -349,156 +352,175 @@ const disconnectRoute = createRoute({
 // Handlers
 // ---------------------------------------------------------------------------
 
-export const oauthRoutes = new OpenAPIHono<BrokerContext>()
+export function createOAuthRoutes(
+  providers: ProviderRegistry = defaultProviderRegistry,
+) {
+  const oauthRoutes = new OpenAPIHono<BrokerContext>()
 
-oauthRoutes.openapi(listProvidersRoute, (c) => {
-  return c.json(
-    {
-      providers: listProviderIds().map((id) => {
-        const definition = providerRegistry[id]
-
-        return {
-          id: definition.id,
-          label: definition.label,
-          configured: isProviderConfigured(c.env, id),
-          // Derived from this request, so it stays correct across branches,
-          // `pnpm dev` vs. `server dev`, and deployed environments.
-          callback_url: resolveRedirectUri(c.env, c.req.url, id),
-          scopes: definition.defaultScopes,
-          available_scopes: definition.availableScopes,
-          supports_refresh: definition.supportsRefresh,
-          uses_pkce: definition.usePkce,
-        }
-      }),
-    },
-    200,
-  )
-})
-
-oauthRoutes.openapi(authorizeRoute, async (c) => {
-  const { provider } = c.req.valid('param')
-  const body = c.req.valid('json')
-
-  const result = await startAuthorization(c.get('db'), c.env, {
-    connectionId: body.connection_id,
-    provider,
-    redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
-    scopes: body.scopes,
-    returnTo: body.return_to,
+  oauthRoutes.openapi(listProvidersRoute, (c) => {
+    return c.json(
+      {
+        providers: providers.listProviders().map(([slug, provider]) => {
+          return {
+            id: slug,
+            label: provider.label ?? slug,
+            configured: providers.isProviderConfigured(slug),
+            // Derived from this request, so it stays correct across branches,
+            // `pnpm dev` vs. `server dev`, and deployed environments.
+            callback_url: resolveRedirectUri(c.env, c.req.url, slug),
+            scopes: [...(provider.defaultScopes ?? [])],
+            available_scopes: [...(provider.availableScopes ?? [])],
+            supports_refresh: provider.refreshToken !== undefined,
+            uses_pkce: provider.usesPkce ?? false,
+          }
+        }),
+      },
+      200,
+    )
   })
 
-  return c.json(
-    {
-      connection_id: result.connectionId,
-      authorize_url: result.authorizeUrl,
-      state: result.state,
-      expires_at: result.expiresAt.toISOString(),
-    },
-    200,
-  )
-})
+  oauthRoutes.openapi(authorizeRoute, async (c) => {
+    const { provider } = c.req.valid('param')
+    const body = c.req.valid('json')
 
-oauthRoutes.openapi(callbackRoute, async (c) => {
-  const { provider } = c.req.valid('param')
-  const query = c.req.valid('query')
+    const result = await startAuthorization(
+      c.get('db'),
+      c.env,
+      {
+        connectionId: body.connection_id,
+        provider,
+        redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
+        scopes: body.scopes,
+        returnTo: body.return_to,
+      },
+      providers,
+    )
 
-  if (query.error) {
     return c.json(
       {
-        error: {
-          code: query.error,
-          message:
-            query.error_description ??
-            `${provider} denied the authorization request.`,
-        },
+        connection_id: result.connectionId,
+        authorize_url: result.authorizeUrl,
+        state: result.state,
+        expires_at: result.expiresAt.toISOString(),
       },
-      400,
+      200,
     )
-  }
+  })
 
-  if (!query.code || !query.state) {
+  oauthRoutes.openapi(callbackRoute, async (c) => {
+    const { provider } = c.req.valid('param')
+    const query = c.req.valid('query')
+
+    if (query.error) {
+      return c.json(
+        {
+          error: {
+            code: query.error,
+            message:
+              query.error_description ??
+              `${provider} denied the authorization request.`,
+          },
+        },
+        400,
+      )
+    }
+
+    if (!query.code || !query.state) {
+      return c.json(
+        {
+          error: {
+            code: 'invalid_callback',
+            message: 'The callback is missing the `code` or `state` parameter.',
+          },
+        },
+        400,
+      )
+    }
+
+    const { connection, returnTo } = await completeAuthorization(
+      c.get('db'),
+      c.env,
+      { provider, code: query.code, state: query.state },
+      providers,
+    )
+
+    if (returnTo) {
+      const destination = new URL(returnTo)
+      destination.searchParams.set('connected', provider)
+      return c.redirect(destination.toString(), 302)
+    }
+
+    return c.json(
+      { connected: true, connection: serializeConnection(connection) },
+      200,
+    )
+  })
+
+  oauthRoutes.openapi(listConnectionsRoute, async (c) => {
+    const { provider } = c.req.valid('query')
+    const connections = await listConnections(c.get('db'), { provider })
+
+    return c.json({ connections: connections.map(serializeConnection) }, 200)
+  })
+
+  oauthRoutes.openapi(getConnectionRoute, async (c) => {
+    const { connection_id: connectionId } = c.req.valid('param')
+    const connection = await getConnection(c.get('db'), connectionId)
+
+    return c.json({ connection: serializeConnection(connection) }, 200)
+  })
+
+  oauthRoutes.openapi(tokenRoute, async (c) => {
+    const { connection_id: connectionId } = c.req.valid('param')
+    const token = await getAccessToken(
+      c.get('db'),
+      c.env,
+      connectionId,
+      providers,
+    )
+
     return c.json(
       {
-        error: {
-          code: 'invalid_callback',
-          message: 'The callback is missing the `code` or `state` parameter.',
-        },
+        connection_id: token.connectionId,
+        provider: token.provider,
+        access_token: token.accessToken,
+        token_type: token.tokenType,
+        scopes: token.scopes,
+        expires_at: token.expiresAt?.toISOString() ?? null,
+        refreshed: token.refreshed,
       },
-      400,
+      200,
     )
-  }
+  })
 
-  const { connection, returnTo } = await completeAuthorization(
-    c.get('db'),
-    c.env,
-    { provider, code: query.code, state: query.state },
-  )
+  oauthRoutes.openapi(disconnectRoute, async (c) => {
+    const { connection_id: connectionId } = c.req.valid('param')
 
-  if (returnTo) {
-    const destination = new URL(returnTo)
-    destination.searchParams.set('connected', provider)
-    return c.redirect(destination.toString(), 302)
-  }
-
-  return c.json(
-    { connected: true, connection: serializeConnection(connection) },
-    200,
-  )
-})
-
-oauthRoutes.openapi(listConnectionsRoute, async (c) => {
-  const { provider } = c.req.valid('query')
-  const connections = await listConnections(c.get('db'), { provider })
-
-  return c.json({ connections: connections.map(serializeConnection) }, 200)
-})
-
-oauthRoutes.openapi(getConnectionRoute, async (c) => {
-  const { connection_id: connectionId } = c.req.valid('param')
-  const connection = await getConnection(c.get('db'), connectionId)
-
-  return c.json({ connection: serializeConnection(connection) }, 200)
-})
-
-oauthRoutes.openapi(tokenRoute, async (c) => {
-  const { connection_id: connectionId } = c.req.valid('param')
-  const token = await getAccessToken(c.get('db'), c.env, connectionId)
-
-  return c.json(
-    {
-      connection_id: token.connectionId,
-      provider: token.provider,
-      access_token: token.accessToken,
-      token_type: token.tokenType,
-      scopes: token.scopes,
-      expires_at: token.expiresAt?.toISOString() ?? null,
-      refreshed: token.refreshed,
-    },
-    200,
-  )
-})
-
-oauthRoutes.openapi(disconnectRoute, async (c) => {
-  const { connection_id: connectionId } = c.req.valid('param')
-
-  return c.json(
-    { deleted: await deleteConnection(c.get('db'), connectionId) },
-    200,
-  )
-})
-
-oauthRoutes.onError((error, c) => {
-  if (isBrokerError(error)) {
     return c.json(
-      { error: { code: error.code, message: error.message } },
-      error.status,
+      { deleted: await deleteConnection(c.get('db'), connectionId) },
+      200,
     )
-  }
+  })
 
-  console.error('oauth broker error', error)
+  oauthRoutes.onError((error, c) => {
+    if (isBrokerError(error)) {
+      return c.json(
+        { error: { code: error.code, message: error.message } },
+        error.status,
+      )
+    }
 
-  return c.json(
-    { error: { code: 'internal_error', message: 'Unexpected broker error.' } },
-    500,
-  )
-})
+    console.error('oauth broker error', error)
+
+    return c.json(
+      {
+        error: { code: 'internal_error', message: 'Unexpected broker error.' },
+      },
+      500,
+    )
+  })
+
+  return oauthRoutes
+}
+
+export const oauthRoutes = createOAuthRoutes()

@@ -1,8 +1,7 @@
 import { BrokerError } from './errors'
 
 /**
- * WebCrypto is available in both workerd and Node 18+, so this module works
- * unchanged on either entrypoint.
+ * WebCrypto is available in supported Node versions.
  */
 
 const IV_BYTES = 12

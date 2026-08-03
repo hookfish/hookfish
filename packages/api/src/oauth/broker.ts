@@ -1,4 +1,11 @@
 import { z } from '@hono/zod-openapi'
+import {
+  defaultProviderRegistry,
+  ProviderConfigurationError,
+  ProviderRequestError,
+  type ProviderRegistry,
+  type ProviderTokenResponse,
+} from '@template/provider'
 import { and, eq, lt } from 'drizzle-orm'
 import {
   type Database,
@@ -6,18 +13,9 @@ import {
   oauthConnections,
   oauthStates,
 } from '../db/schema'
-import {
-  type BrokerEnv,
-  type ProviderConfig,
-  resolveProviderConfig,
-} from './config'
+import { type BrokerEnv, resolveProviderConfig } from './config'
 import { generateConnectionId } from './connection-id'
-import {
-  createPkcePair,
-  decryptSecret,
-  encryptSecret,
-  randomToken,
-} from './crypto'
+import { decryptSecret, encryptSecret, randomToken } from './crypto'
 import { BrokerError } from './errors'
 
 /** How long a pending authorization stays valid. */
@@ -120,117 +118,69 @@ export async function startAuthorization(
   db: Database,
   env: BrokerEnv,
   input: StartAuthorizationInput,
+  providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{
   authorizeUrl: string
   state: string
   expiresAt: Date
   connectionId: string
 }> {
-  const config = resolveProviderConfig(env, input.provider)
-  const { definition } = config
+  const config = resolveProviderConfig(env, input.provider, providers)
+  const { provider } = config
 
   // A minted id is already known to be free; a caller-supplied one may be
   // linked to another provider.
   const connectionId = input.connectionId ?? (await mintConnectionId(db))
 
   if (input.connectionId) {
-    await assertProviderMatches(db, input.connectionId, definition.id)
+    await assertProviderMatches(db, input.connectionId, input.provider)
   }
 
   const scopes = input.scopes?.length ? input.scopes : config.scopes
   const state = randomToken(32)
-  const pkce = definition.usePkce ? await createPkcePair() : undefined
   const expiresAt = new Date(Date.now() + STATE_TTL_MS)
+  const authorization = await callProvider(() =>
+    provider.createAuthorization({
+      redirectUri: input.redirectUri,
+      state,
+      scopes,
+    }),
+  )
 
   await db.insert(oauthStates).values({
     id: state,
     connectionId,
-    provider: definition.id,
-    codeVerifier: pkce?.verifier ?? null,
+    provider: input.provider,
+    codeVerifier: authorization.codeVerifier ?? null,
     redirectUri: input.redirectUri,
     returnTo: input.returnTo ?? null,
     scopes,
     expiresAt,
   })
 
-  const url = new URL(definition.authorizeUrl)
-  url.searchParams.set('client_id', config.clientId)
-  url.searchParams.set('redirect_uri', input.redirectUri)
-  url.searchParams.set('response_type', 'code')
-  url.searchParams.set('state', state)
-
-  if (scopes.length > 0) {
-    url.searchParams.set('scope', scopes.join(definition.scopeSeparator))
+  return {
+    authorizeUrl: authorization.url,
+    state,
+    expiresAt,
+    connectionId,
   }
-
-  for (const [key, value] of Object.entries(definition.authorizeParams ?? {})) {
-    url.searchParams.set(key, value)
-  }
-
-  if (pkce) {
-    url.searchParams.set('code_challenge', pkce.challenge)
-    url.searchParams.set('code_challenge_method', 'S256')
-  }
-
-  return { authorizeUrl: url.toString(), state, expiresAt, connectionId }
 }
 
 // ---------------------------------------------------------------------------
 // Token endpoint plumbing
 // ---------------------------------------------------------------------------
 
-async function callTokenEndpoint(
-  config: ProviderConfig,
-  params: Record<string, string>,
-): Promise<Record<string, unknown>> {
-  const { definition } = config
-  const headers = new Headers({ Accept: 'application/json' })
-  const body = { ...params }
-
-  if (definition.clientAuth === 'basic') {
-    headers.set(
-      'Authorization',
-      `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`,
-    )
-  } else {
-    body.client_id = config.clientId
-    body.client_secret = config.clientSecret
-  }
-
-  let payload: string
-
-  if (definition.tokenRequestFormat === 'json') {
-    headers.set('Content-Type', 'application/json')
-    payload = JSON.stringify(body)
-  } else {
-    headers.set('Content-Type', 'application/x-www-form-urlencoded')
-    payload = new URLSearchParams(body).toString()
-  }
-
-  const response = await fetch(definition.tokenUrl, {
-    method: 'POST',
-    headers,
-    body: payload,
-  })
-
-  const text = await response.text()
-
-  if (!response.ok) {
-    throw new BrokerError(
-      502,
-      'token_exchange_failed',
-      `${definition.label} token endpoint returned ${response.status}: ${text.slice(0, 500)}`,
-    )
-  }
-
+async function callProvider<T>(operation: () => T | Promise<T>): Promise<T> {
   try {
-    return JSON.parse(text)
-  } catch {
-    throw new BrokerError(
-      502,
-      'token_exchange_failed',
-      `${definition.label} token endpoint returned a non-JSON body: ${text.slice(0, 200)}`,
-    )
+    return await operation()
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw new BrokerError(500, 'missing_configuration', error.message)
+    }
+    if (error instanceof ProviderRequestError) {
+      throw new BrokerError(502, 'token_exchange_failed', error.message)
+    }
+    throw error
   }
 }
 
@@ -247,11 +197,11 @@ type StoredTokenFields = {
 
 async function toStoredFields(
   env: BrokerEnv,
-  config: ProviderConfig,
-  raw: Record<string, unknown>,
+  response: ProviderTokenResponse,
   fallbackScopes: string[],
   previousRefreshToken?: string | null,
 ): Promise<StoredTokenFields> {
+  const raw = response.payload
   const parsed = tokenResponseSchema.parse(raw)
   const encryptionKey = requireEncryptionKey(env)
 
@@ -260,7 +210,7 @@ async function toStoredFields(
   // Providers commonly omit refresh_token on refresh; keep the one we hold.
   const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null
 
-  const account = config.definition.describeAccount?.(raw) ?? {}
+  const account = response.account ?? {}
 
   // Keep the provider payload, minus anything credential-shaped. Tokens live
   // in the encrypted columns; `id_token` is a signed identity assertion we
@@ -294,6 +244,7 @@ export async function completeAuthorization(
   db: Database,
   env: BrokerEnv,
   input: { provider: string; code: string; state: string },
+  providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{ connection: OAuthConnection; returnTo: string | null }> {
   // Single-use: delete-and-return so a replayed code can't be redeemed twice.
   const [pending] = await db
@@ -322,28 +273,26 @@ export async function completeAuthorization(
     )
   }
 
-  const config = resolveProviderConfig(env, input.provider)
+  const config = resolveProviderConfig(env, input.provider, providers)
 
   // The check in `startAuthorization` goes stale as soon as a second flow is
   // opened on the same id, so re-check before spending the authorization code.
-  await assertProviderMatches(db, pending.connectionId, config.definition.id)
+  await assertProviderMatches(db, pending.connectionId, input.provider)
 
-  const params: Record<string, string> = {
-    grant_type: 'authorization_code',
-    code: input.code,
-    redirect_uri: pending.redirectUri,
-  }
-
-  if (pending.codeVerifier) params.code_verifier = pending.codeVerifier
-
-  const raw = await callTokenEndpoint(config, params)
-  const fields = await toStoredFields(env, config, raw, pending.scopes)
+  const response = await callProvider(() =>
+    config.provider.exchangeCode({
+      code: input.code,
+      redirectUri: pending.redirectUri,
+      codeVerifier: pending.codeVerifier ?? undefined,
+    }),
+  )
+  const fields = await toStoredFields(env, response, pending.scopes)
 
   const [connection] = await db
     .insert(oauthConnections)
     .values({
       connectionId: pending.connectionId,
-      provider: config.definition.id,
+      provider: input.provider,
       ...fields,
     })
     .onConflictDoUpdate({
@@ -353,7 +302,7 @@ export async function completeAuthorization(
       // the id over. Enforced in the statement itself, so two callbacks racing
       // past the checks above can't rebind it either -- the loser updates no
       // rows and returns nothing.
-      setWhere: eq(oauthConnections.provider, config.definition.id),
+      setWhere: eq(oauthConnections.provider, input.provider),
     })
     .returning()
 
@@ -376,32 +325,35 @@ async function refreshConnection(
   db: Database,
   env: BrokerEnv,
   connection: OAuthConnection,
+  providers: ProviderRegistry,
 ): Promise<OAuthConnection> {
-  const config = resolveProviderConfig(env, connection.provider)
+  const config = resolveProviderConfig(env, connection.provider, providers)
   const encryptionKey = requireEncryptionKey(env)
 
-  if (!connection.refreshToken || !config.definition.supportsRefresh) {
+  if (!connection.refreshToken || !config.provider.refreshToken) {
     throw new BrokerError(
       401,
       'reauthorization_required',
-      `The ${config.definition.label} connection "${connection.connectionId}" expired and has no refresh token. Start the flow again.`,
+      `The ${config.provider.label ?? connection.provider} connection "${connection.connectionId}" expired and has no refresh token. Start the flow again.`,
     )
   }
+
+  const refresh = config.provider.refreshToken.bind(config.provider)
 
   const refreshToken = await decryptSecret(
     encryptionKey,
     connection.refreshToken,
   )
 
-  const raw = await callTokenEndpoint(config, {
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-  })
+  const response = await callProvider(() =>
+    refresh({
+      refreshToken,
+    }),
+  )
 
   const fields = await toStoredFields(
     env,
-    config,
-    raw,
+    response,
     connection.scopes,
     refreshToken,
   )
@@ -469,12 +421,13 @@ export async function getAccessToken(
   db: Database,
   env: BrokerEnv,
   connectionId: string,
+  providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<AccessTokenResult> {
   const existing = await getConnection(db, connectionId)
 
   const refreshed = isExpired(existing)
   const connection = refreshed
-    ? await refreshConnection(db, env, existing)
+    ? await refreshConnection(db, env, existing, providers)
     : existing
 
   return {

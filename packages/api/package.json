@@ -1,8 +1,12 @@
 {
   "name": "@template/api",
-  "private": true,
   "version": "0.0.0",
   "type": "module",
+  "files": [
+    "src",
+    "drizzle",
+    "OAUTH.md"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -23,10 +27,6 @@
     "./oauth/config": {
       "types": "./src/oauth/config.ts",
       "default": "./src/oauth/config.ts"
-    },
-    "./oauth/providers": {
-      "types": "./src/oauth/providers.ts",
-      "default": "./src/oauth/providers.ts"
     }
   },
   "scripts": {
@@ -42,13 +42,14 @@
     "@electric-sql/pglite": "^0.5.4",
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.4.0",
+    "@template/provider": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",
     "postgres": "^3.4.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260528.1",
+    "@template/providers": "workspace:*",
     "@types/node": "^24.12.3",
     "@vitest/coverage-v8": "^3.2.4",
     "drizzle-kit": "^0.31.10",

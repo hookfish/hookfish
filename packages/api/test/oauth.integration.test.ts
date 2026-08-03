@@ -1,13 +1,11 @@
+import {
+  type OAuthProvider,
+  ProviderConfigurationError,
+} from '@template/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { oauthConnections, oauthStates } from '../src/db/schema'
 import { purgeExpiredStates } from '../src/oauth/broker'
-import {
-  getProviderDefinition,
-  listProviderIds,
-  registerProvider,
-  unregisterProvider,
-} from '../src/oauth/providers'
 import {
   API_ORIGIN,
   createHarness,
@@ -51,17 +49,56 @@ describe('OAuth broker integration', () => {
   })
 
   it('ships GitHub with its selectable scopes and does not ship Google', () => {
-    const github = getProviderDefinition('github')
+    const github = h.providers.getProvider('github')
 
     expect(github).toMatchObject({
-      id: 'github',
       defaultScopes: [],
-      usePkce: false,
-      supportsRefresh: false,
+      usesPkce: false,
     })
+    expect(github?.refreshToken).toBeUndefined()
     expect(github?.availableScopes).toContain('repo')
     expect(github?.availableScopes).toContain('read:user')
-    expect(listProviderIds()).not.toContain('google')
+    expect(h.providers.listProviderIds()).not.toContain('google')
+  })
+
+  it('keeps provider-specific authorization details inside providers', async () => {
+    const common = {
+      redirectUri: 'https://broker.example/callback',
+      state: 'state',
+    }
+    const linear = h.providers.getProvider('linear')
+    const github = h.providers.getProvider('github')
+    const notion = h.providers.getProvider('notion')
+
+    if (!linear || !github || !notion) {
+      throw new Error('Expected built-in providers to be registered')
+    }
+
+    const linearUrl = new URL(
+      (
+        await linear.createAuthorization({
+          ...common,
+          scopes: ['read', 'write'],
+        })
+      ).url,
+    )
+    const githubUrl = new URL(
+      (
+        await github.createAuthorization({
+          ...common,
+          scopes: ['repo', 'gist'],
+        })
+      ).url,
+    )
+    const notionUrl = new URL(
+      (await notion.createAuthorization({ ...common, scopes: [] })).url,
+    )
+
+    expect(linearUrl.searchParams.get('scope')).toBe('read,write')
+    // Octokit owns GitHub's wire format; callers only pass a scope array.
+    expect(githubUrl.searchParams.get('scope')).toBe('repo,gist')
+    expect(notionUrl.searchParams.has('scope')).toBe(false)
+    expect(notionUrl.searchParams.get('owner')).toBe('user')
   })
 
   it('serves /api/stats', async () => {
@@ -348,14 +385,29 @@ describe('OAuth broker integration', () => {
     const unknownBody: { error: { code: string } } = await unknown.json()
     expect(unknownBody.error.code).toBe('unknown_provider')
 
-    const previous = h.env.STUB_CLIENT_ID
-    h.env.STUB_CLIENT_ID = undefined
-    const missingCreds = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+    const unconfiguredSlug = 'unconfigured'
+    h.providers.register({
+      [unconfiguredSlug]: {
+        label: 'Unconfigured',
+        defaultScopes: [],
+        availableScopes: [],
+        usesPkce: false,
+        isConfigured: () => false,
+        createAuthorization: () => {
+          throw new ProviderConfigurationError('Missing provider credentials.')
+        },
+        exchangeCode: async () => ({ payload: {} }),
+      },
     })
-    h.env.STUB_CLIENT_ID = previous
+    const missingCreds = await h.fetch(
+      `/api/oauth/${unconfiguredSlug}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
+    h.providers.unregister(unconfiguredSlug)
 
     expect(missingCreds.status).toBe(500)
     const credsBody: { error: { code: string } } = await missingCreds.json()
@@ -682,33 +734,28 @@ describe('OAuth broker integration', () => {
     expect(purged).toBeGreaterThanOrEqual(1)
   })
 
-  it('refuses to replace or unregister built-in providers', () => {
-    expect(() =>
-      registerProvider({
-        id: 'notion',
-        label: 'Nope',
-        authorizeUrl: 'http://example.com',
-        tokenUrl: 'http://example.com',
-        defaultScopes: [],
-        availableScopes: [],
-        scopeSeparator: ' ',
-        tokenRequestFormat: 'json',
-        clientAuth: 'basic',
-        usePkce: false,
-        supportsRefresh: false,
-      }),
-    ).toThrow(/built-in/)
+  it('uses registration keys as slugs and allows application overrides', () => {
+    const original = h.providers.getProvider('notion')
+    const replacement: OAuthProvider = {
+      label: 'Nope',
+      defaultScopes: [],
+      availableScopes: [],
+      usesPkce: false,
+      createAuthorization: () => ({ url: 'http://example.com' }),
+      exchangeCode: async () => ({ payload: {} }),
+    }
 
-    expect(() => unregisterProvider('notion')).toThrow(/built-in/)
+    h.providers.register({ notion: replacement })
+    expect(h.providers.getProvider('notion')).toBe(replacement)
+
+    if (original) h.providers.register({ notion: original })
   })
 
   it('errors when no database source is configured', async () => {
     const previousDb = h.env.DB
     const previousUrl = h.env.DATABASE_URL
-    const previousHyperdrive = h.env.HYPERDRIVE
     h.env.DB = undefined
     h.env.DATABASE_URL = undefined
-    h.env.HYPERDRIVE = undefined
 
     const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
       method: 'POST',
@@ -718,12 +765,11 @@ describe('OAuth broker integration', () => {
 
     h.env.DB = previousDb
     h.env.DATABASE_URL = previousUrl
-    h.env.HYPERDRIVE = previousHyperdrive
 
     expect(res.status).toBe(500)
     const body: { error: { code: string; message: string } } = await res.json()
     expect(body.error.code).toBe('missing_configuration')
-    expect(body.error.message).toMatch(/HYPERDRIVE|DATABASE_URL|env\.DB/)
+    expect(body.error.message).toMatch(/DATABASE_URL|env\.DB/)
   })
 
   it('builds a Postgres client when DATABASE_URL is set and DB is absent', async () => {
@@ -735,9 +781,7 @@ describe('OAuth broker integration', () => {
 
     const previousDb = h.env.DB
     const previousUrl = h.env.DATABASE_URL
-    const previousHyperdrive = h.env.HYPERDRIVE
     h.env.DB = undefined
-    h.env.HYPERDRIVE = undefined
     // Point at a non-routable host so we never accidentally hit a real DB; the
     // middleware constructs the client before the handler queries.
     h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/postgres'
@@ -750,40 +794,10 @@ describe('OAuth broker integration', () => {
 
     h.env.DB = previousDb
     h.env.DATABASE_URL = previousUrl
-    h.env.HYPERDRIVE = previousHyperdrive
 
     // Client was built; the subsequent query fails talking to 127.0.0.1:1.
     // Either a broker error or an unexpected 500 from the driver is fine —
     // what matters is we exercised createPostgresDatabase + the middleware branch.
-    expect(res.status).toBeGreaterThanOrEqual(400)
-  })
-
-  it('prefers HYPERDRIVE over DATABASE_URL when DB is absent', async () => {
-    const previousDb = h.env.DB
-    const previousUrl = h.env.DATABASE_URL
-    const previousHyperdrive = h.env.HYPERDRIVE
-    h.env.DB = undefined
-    // Valid-looking but closed port — proves we attempted a TCP connect.
-    h.env.HYPERDRIVE = {
-      connectionString: 'postgresql://user:pass@127.0.0.1:1/hyperdrive',
-    }
-    // If DATABASE_URL were preferred, we'd still fail — but resolveDatabaseSource
-    // must report hyperdrive. Exercise the middleware branch either way.
-    h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/should-not-win'
-
-    const { resolveDatabaseSource } = await import('../src/db/resolve')
-    expect(resolveDatabaseSource(h.env)?.kind).toBe('hyperdrive')
-
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'hyperdrive-path' }),
-    })
-
-    h.env.DB = previousDb
-    h.env.DATABASE_URL = previousUrl
-    h.env.HYPERDRIVE = previousHyperdrive
-
     expect(res.status).toBeGreaterThanOrEqual(400)
   })
 })

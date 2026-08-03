@@ -1,0 +1,27 @@
+{
+  "name": "@template/providers",
+  "version": "0.0.0",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@template/provider": "workspace:*",
+    "@template/provider-github": "workspace:*",
+    "@template/provider-linear": "workspace:*",
+    "@template/provider-notion": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

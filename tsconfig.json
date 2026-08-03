@@ -11,6 +11,11 @@
     { "path": "./apps/frontend" },
     { "path": "./apps/server" },
     { "path": "./packages/api" },
-    { "path": "./packages/cli" }
+    { "path": "./packages/cli" },
+    { "path": "./packages/provider" },
+    { "path": "./packages/providers" },
+    { "path": "./packages/providers/github" },
+    { "path": "./packages/providers/linear" },
+    { "path": "./packages/providers/notion" }
   ]
 }

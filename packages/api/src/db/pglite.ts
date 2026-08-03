@@ -4,9 +4,7 @@ import * as schema from './schema'
 
 /**
  * Node-only. PGlite's persistent filesystems (Node FS, IndexedDB, OPFS) are all
- * unavailable inside workerd, so this module must never be pulled into the
- * Worker bundle -- it is imported from Node entrypoints only
- * (`apps/server/src/node.ts`, `@template/api/local-node`, frontend Vite plugin).
+ * Used by Node entrypoints for a zero-configuration local database.
  */
 export async function createPgliteDatabase(dataDir: string) {
   const client = new PGlite(dataDir)

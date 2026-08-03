@@ -1,13 +1,9 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import app from '@template/api'
+import { createApi } from '@template/api'
 import { createLocalBrokerEnv } from '@template/api/local-node'
-import {
-  type BrokerEnv,
-  isProviderConfigured,
-  readEnvString,
-} from '@template/api/oauth/config'
-import { listProviderIds } from '@template/api/oauth/providers'
+import { type BrokerEnv, readEnvString } from '@template/api/oauth/config'
+import { providers } from '../../../index.ts'
 
 /**
  * Standalone API entrypoint.
@@ -16,8 +12,8 @@ import { listProviderIds } from '@template/api/oauth/providers'
  * - Leave DATABASE_URL unset → embedded PGlite under `pgdata` (default local)
  * - Set DATABASE_URL → stock Node against any Postgres
  *
- * Deployed Workers use `env.HYPERDRIVE` (preferred) or `DATABASE_URL` instead;
- * PGlite cannot persist inside workerd.
+ * Production Node deployments use `DATABASE_URL`; local development defaults
+ * to PGlite.
  */
 
 /**
@@ -38,6 +34,8 @@ try {
   )
 }
 
+const app = createApi({ providers })
+
 const dataDir = process.env.PGLITE_DATA_DIR ?? path.join(packageRoot, 'pgdata')
 const port = Number(process.env.PORT ?? 8787)
 
@@ -51,8 +49,9 @@ const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
 serve(
   { fetch: (request: Request) => app.fetch(request, env), port, hostname },
   (info) => {
-    const configured = listProviderIds().filter((id) =>
-      isProviderConfigured(env, id),
+    const providerIds = providers.listProviderIds()
+    const configured = providerIds.filter((id) =>
+      providers.isProviderConfigured(id),
     )
     const publicOrigin =
       readEnvString(env, 'OAUTH_REDIRECT_BASE_URL') ??

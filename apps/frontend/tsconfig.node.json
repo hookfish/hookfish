@@ -12,6 +12,7 @@
     "allowImportingTsExtensions": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "strictNullChecks": true,
 
     /* Linting */
     "noUnusedLocals": true,
@@ -19,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "vite-plugin-local-api.ts"]
+  "include": ["vite.config.ts"]
 }

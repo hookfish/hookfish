@@ -1,13 +1,13 @@
 {
   "name": "@template/cli",
-  "private": true,
   "version": "0.0.0",
   "description": "CLI for the template monorepo",
   "type": "module",
   "bin": {
-    "template": "./dist/index.js"
+    "template": "./bin/template.mjs"
   },
   "files": [
+    "bin",
     "dist"
   ],
   "exports": {
@@ -16,10 +16,14 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --noEmit",
-    "start": "node ./dist/index.js"
+    "start": "node ./bin/template.mjs"
   },
   "dependencies": {
-    "commander": "^14.0.3"
+    "@hono/node-server": "^2.0.12",
+    "@template/api": "workspace:*",
+    "@template/provider": "workspace:*",
+    "commander": "^14.0.3",
+    "tsx": "^4.23.1"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",

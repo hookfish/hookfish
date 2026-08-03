@@ -2,16 +2,24 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { z } from '@hono/zod-openapi'
+import {
+  createProviderRegistry,
+  type OAuthProvider,
+  type ProviderRegistry,
+  ProviderRequestError,
+} from '@template/provider'
+import {
+  GitHubProvider,
+  LinearProvider,
+  NotionProvider,
+} from '@template/providers'
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
 import { createPgliteDatabase } from '../src/db/pglite'
 import type { Database } from '../src/db/schema'
-import app from '../src/index'
+import { createApi } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
-import {
-  type ProviderDefinition,
-  registerProvider,
-  unregisterProvider,
-} from '../src/oauth/providers'
+import { createPkcePair } from '../src/oauth/crypto'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
 /** 32 zero bytes, base64 — valid AES-GCM key for tests only. */
@@ -34,6 +42,7 @@ export type TestHarness = {
   /** Empty default scopes (no `scope` query param). */
   noscopeProviderId: string
   db: Database
+  providers: ProviderRegistry
   fetch: (path: string, init?: RequestInit) => Promise<Response>
   authorizeAndCallback: (options?: {
     provider?: string
@@ -49,34 +58,144 @@ export type TestHarness = {
   close: () => Promise<void>
 }
 
+type StubProviderOptions = {
+  defaultScopes?: string[]
+  formatScopes?: (scopes: string[]) => string
+  tokenRequest?: 'form-body' | 'json-basic'
+  usesPkce?: boolean
+  authorizeParams?: Record<string, string>
+  supportsRefresh?: boolean
+}
+
+const stubTokenSchema = z.looseObject({})
+
+function basicAuthorization(clientId: string, clientSecret: string) {
+  return `Basic ${btoa(`${clientId}:${clientSecret}`)}`
+}
+
+async function readTokenPayload(
+  response: Response,
+  providerLabel: string,
+): Promise<Record<string, unknown>> {
+  const text = await response.text()
+
+  if (!response.ok) {
+    throw new ProviderRequestError(
+      `${providerLabel} token endpoint returned ${response.status}: ${text.slice(0, 500)}`,
+    )
+  }
+
+  try {
+    return stubTokenSchema.parse(JSON.parse(text))
+  } catch (error) {
+    throw new ProviderRequestError(
+      `${providerLabel} token endpoint returned a non-JSON body: ${text.slice(0, 200)}`,
+      { cause: error },
+    )
+  }
+}
+
 function providerDefinition(
   id: string,
   stub: OAuthStub,
   label: string,
-  overrides: Partial<ProviderDefinition> = {},
-): ProviderDefinition {
-  return {
-    id,
-    label,
-    authorizeUrl: stub.authorizeUrl,
-    tokenUrl: stub.tokenUrl,
-    defaultScopes: ['read', 'write'],
-    availableScopes: ['read', 'write'],
-    scopeSeparator: ' ',
-    tokenRequestFormat: 'form',
-    clientAuth: 'body',
-    usePkce: false,
-    supportsRefresh: true,
-    describeAccount: (payload) => ({
-      id:
-        typeof payload.account_id === 'string' ? payload.account_id : undefined,
-      label:
-        typeof payload.account_label === 'string'
-          ? payload.account_label
-          : undefined,
-    }),
-    ...overrides,
+  options: StubProviderOptions = {},
+): OAuthProvider {
+  const credentials = {
+    clientId: `${id}-client`,
+    clientSecret: `${id}-secret`,
   }
+  const requestToken = async (params: Record<string, string>) => {
+    const headers = new Headers({ Accept: 'application/json' })
+    let body: string
+
+    if (options.tokenRequest === 'json-basic') {
+      headers.set(
+        'Authorization',
+        basicAuthorization(credentials.clientId, credentials.clientSecret),
+      )
+      headers.set('Content-Type', 'application/json')
+      body = JSON.stringify(params)
+    } else {
+      headers.set('Content-Type', 'application/x-www-form-urlencoded')
+      body = new URLSearchParams({
+        ...params,
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
+      }).toString()
+    }
+
+    const payload = await readTokenPayload(
+      await fetch(stub.tokenUrl, { method: 'POST', headers, body }),
+      label,
+    )
+
+    return {
+      payload,
+      account: {
+        id:
+          typeof payload.account_id === 'string'
+            ? payload.account_id
+            : undefined,
+        label:
+          typeof payload.account_label === 'string'
+            ? payload.account_label
+            : undefined,
+      },
+    }
+  }
+
+  const provider: OAuthProvider = {
+    label,
+    defaultScopes: options.defaultScopes ?? ['read', 'write'],
+    availableScopes: ['read', 'write'],
+    usesPkce: options.usesPkce ?? false,
+
+    async createAuthorization({ redirectUri, state, scopes }) {
+      const url = new URL(stub.authorizeUrl)
+      url.searchParams.set('client_id', credentials.clientId)
+      url.searchParams.set('redirect_uri', redirectUri)
+      url.searchParams.set('response_type', 'code')
+      url.searchParams.set('state', state)
+      if (scopes.length > 0) {
+        url.searchParams.set(
+          'scope',
+          options.formatScopes?.(scopes) ?? scopes.join(' '),
+        )
+      }
+      for (const [key, value] of Object.entries(
+        options.authorizeParams ?? {},
+      )) {
+        url.searchParams.set(key, value)
+      }
+
+      if (!options.usesPkce) return { url: url.toString() }
+
+      const pkce = await createPkcePair()
+      url.searchParams.set('code_challenge', pkce.challenge)
+      url.searchParams.set('code_challenge_method', 'S256')
+      return { url: url.toString(), codeVerifier: pkce.verifier }
+    },
+
+    exchangeCode({ code, redirectUri, codeVerifier }) {
+      return requestToken({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
+      })
+    },
+  }
+
+  if (options.supportsRefresh !== false) {
+    provider.refreshToken = ({ refreshToken }) =>
+      requestToken({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      })
+  }
+
+  return provider
 }
 
 export async function createHarness(): Promise<TestHarness> {
@@ -88,24 +207,43 @@ export async function createHarness(): Promise<TestHarness> {
   const dialectProviderId = 'stub-dialect'
   const noscopeProviderId = 'stub-noscope'
 
-  registerProvider(providerDefinition(providerId, stub, 'Stub'))
-  registerProvider(providerDefinition(altProviderId, stub, 'Stub Alt'))
-  registerProvider(
-    providerDefinition(dialectProviderId, stub, 'Stub Dialect', {
-      tokenRequestFormat: 'json',
-      clientAuth: 'basic',
-      usePkce: true,
-      authorizeParams: { access_type: 'offline', prompt: 'consent' },
-      scopeSeparator: ',',
-      defaultScopes: ['read', 'write'],
+  const providers = createProviderRegistry({
+    notion: new NotionProvider({
+      clientId: 'notion-client',
+      clientSecret: 'notion-secret',
     }),
-  )
-  registerProvider(
-    providerDefinition(noscopeProviderId, stub, 'Stub Noscope', {
-      defaultScopes: [],
-      supportsRefresh: false,
+    linear: new LinearProvider({
+      clientId: 'linear-client',
+      clientSecret: 'linear-secret',
     }),
-  )
+    github: new GitHubProvider({
+      clientId: 'github-client',
+      clientSecret: 'github-secret',
+    }),
+    [providerId]: providerDefinition(providerId, stub, 'Stub'),
+    [altProviderId]: providerDefinition(altProviderId, stub, 'Stub Alt'),
+    [dialectProviderId]: providerDefinition(
+      dialectProviderId,
+      stub,
+      'Stub Dialect',
+      {
+        tokenRequest: 'json-basic',
+        usesPkce: true,
+        authorizeParams: { access_type: 'offline', prompt: 'consent' },
+        formatScopes: (scopes) => scopes.join(','),
+      },
+    ),
+    [noscopeProviderId]: providerDefinition(
+      noscopeProviderId,
+      stub,
+      'Stub Noscope',
+      {
+        defaultScopes: [],
+        supportsRefresh: false,
+      },
+    ),
+  })
+  const app = createApi({ providers })
 
   const { db } = await createPgliteDatabase(dataDir)
   const migrationsFolder = path.join(
@@ -199,13 +337,10 @@ export async function createHarness(): Promise<TestHarness> {
     dialectProviderId,
     noscopeProviderId,
     db,
+    providers,
     fetch: apiFetch,
     authorizeAndCallback,
     close: async () => {
-      unregisterProvider(providerId)
-      unregisterProvider(altProviderId)
-      unregisterProvider(dialectProviderId)
-      unregisterProvider(noscopeProviderId)
       await stub.close()
       await rm(dataDir, { recursive: true, force: true })
     },

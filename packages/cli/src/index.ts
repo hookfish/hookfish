@@ -9,6 +9,7 @@ import {
   type PortlessApp,
   runPortlessDev,
 } from './portless.js'
+import { serveBroker } from './serve.js'
 
 /**
  * Resolve the project root from the caller's cwd first so `npx @template/cli`
@@ -35,16 +36,15 @@ function findWorkspaceRoot(): string {
   )
 }
 
-const workspaceRoot = findWorkspaceRoot()
-
 function run(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  cwd = findWorkspaceRoot(),
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: workspaceRoot,
+      cwd,
       env,
       stdio: 'inherit',
       shell: process.platform === 'win32',
@@ -81,7 +81,17 @@ async function exitWith(code: number): Promise<never> {
 
 const program = new Command()
 
-program.name('template').description('Template monorepo CLI')
+program
+  .name('template')
+  .description('OAuth broker and template development CLI')
+
+program
+  .command('serve')
+  .description('Load a TypeScript provider config and run the OAuth broker')
+  .argument('[entry]', 'provider config file', 'index.ts')
+  .action(async (entry: string) => {
+    await serveBroker({ entry })
+  })
 
 program
   .command('migrate')
@@ -102,6 +112,7 @@ program
   .command('dev')
   .description('Run the frontend behind portless')
   .action(async () => {
+    const workspaceRoot = findWorkspaceRoot()
     await exitWith(
       await runPortlessDev({
         appName: 'frontend',
@@ -123,13 +134,19 @@ program
 program
   .command('dev:server')
   .description('Run the server behind portless')
-  .action(async () => {
+  .argument('[entry]', 'provider config file', 'index.ts')
+  .action(async (entry: string) => {
+    const workspaceRoot = findWorkspaceRoot()
     await exitWith(
       await runPortlessDev({
         appName: 'server',
         cwd: path.join(workspaceRoot, 'apps/server'),
         workspaceRoot,
         command: ['pnpm', 'exec', 'tsx', 'watch', 'src/node.ts'],
+        env: {
+          ...process.env,
+          PROVIDER_CONFIG: path.resolve(process.cwd(), entry),
+        },
       }),
     )
   })
@@ -140,6 +157,7 @@ program
   .argument('<app>', 'frontend or server')
   .argument('<command...>', 'command to run')
   .action(async (app: string, command: string[]) => {
+    const workspaceRoot = findWorkspaceRoot()
     const appName = parseApp(app)
     if (command.length === 0) {
       console.error('Missing command to run behind portless.')

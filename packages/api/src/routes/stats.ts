@@ -5,7 +5,7 @@ const statsResponseSchema = z
     region: z.string().openapi({ example: 'SJC' }),
     uptimeMode: z.string().openapi({ example: 'per-request isolate' }),
     features: z.array(z.string()).openapi({
-      example: ['Hono API', 'React Query', 'TanStack Start', 'Workers SSR'],
+      example: ['Hono API', 'React Query', 'TanStack Start', 'Node SSR'],
     }),
   })
   .openapi('StatsResponse')
@@ -13,7 +13,7 @@ const statsResponseSchema = z
 const statsRoute = createRoute({
   method: 'get',
   path: '/',
-  summary: 'Read Worker runtime stats',
+  summary: 'Read Node runtime stats',
   responses: {
     200: {
       description: 'Runtime metadata',
@@ -27,14 +27,11 @@ const statsRoute = createRoute({
 })
 
 export const statsRoutes = new OpenAPIHono().openapi(statsRoute, (c) => {
-  const region =
-    typeof c.req.raw.cf?.colo === 'string' ? c.req.raw.cf.colo : 'local'
-
   return c.json(
     {
-      region,
-      uptimeMode: 'per-request isolate',
-      features: ['Hono API', 'React Query', 'TanStack Start', 'Workers SSR'],
+      region: process.env.REGION ?? 'local',
+      uptimeMode: 'long-lived process',
+      features: ['Hono API', 'React Query', 'TanStack Start', 'Node SSR'],
     },
     200,
   )
