@@ -11,6 +11,7 @@ export type MaybePromise<T> = T | Promise<T>
  */
 export interface DatabaseBinding<Bindings extends object = object> {
   getDatabase(bindings: Bindings): MaybePromise<Database>
+  migrate?(bindings: Bindings): MaybePromise<void>
 }
 
 /** A ready Drizzle database is also accepted for simple and embedded hosts. */
@@ -21,8 +22,9 @@ export type DatabaseInput<Bindings extends object = object> =
 
 export function defineDatabase<Bindings extends object = object>(
   getDatabase: (bindings: Bindings) => MaybePromise<Database>,
+  migrate?: (bindings: Bindings) => MaybePromise<void>,
 ): DatabaseBinding<Bindings> {
-  return { getDatabase }
+  return migrate ? { getDatabase, migrate } : { getDatabase }
 }
 
 function isDatabaseBinding<Bindings extends object>(
@@ -42,4 +44,14 @@ export async function resolveDatabase<Bindings extends object>(
 ): Promise<Database> {
   if (isDatabaseBinding(input)) return input.getDatabase(bindings)
   return input
+}
+
+export async function migrateDatabase<Bindings extends object>(
+  input: DatabaseInput<Bindings>,
+  bindings: Bindings,
+): Promise<void> {
+  if (!isDatabaseBinding(input) || !input.migrate) {
+    throw new Error('The configured database does not support migrations.')
+  }
+  await input.migrate(bindings)
 }
