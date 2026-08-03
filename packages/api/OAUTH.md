@@ -2,7 +2,7 @@
 
 Brokers OAuth connections you manage under a **connection id**. You give it a
 connection id (or let it mint one) and a **connection source** (`notion`,
-`linear`, `google`, ...); it runs the consent flow, stores the tokens encrypted,
+`linear`, `github`, ...); it runs the consent flow, stores the tokens encrypted,
 and hands back a valid access token on demand — refreshing transparently when
 one is about to expire.
 
@@ -183,6 +183,7 @@ slack: {
   authorizeUrl: 'https://slack.com/oauth/v2/authorize',
   tokenUrl: 'https://slack.com/api/oauth.v2.access',
   defaultScopes: ['channels:read'],
+  availableScopes: ['channels:read', 'channels:write'],
   scopeSeparator: ',',
   tokenRequestFormat: 'form',
   clientAuth: 'body',
@@ -192,12 +193,14 @@ slack: {
 ```
 
 `<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
-on the authorize request overrides it per flow.
+on the authorize request overrides it per flow. `GET /providers` exposes both
+the defaults as `scopes` and the provider's selection catalog as
+`available_scopes`.
 
 The three shipped providers differ in exactly the ways the registry models:
 Notion uses HTTP Basic auth with a JSON body and issues non-expiring tokens with
-no scope parameter; Linear separates scopes with commas; Google needs PKCE plus
-`access_type=offline&prompt=consent` to return a refresh token at all.
+no scope parameter; Linear separates scopes with commas; GitHub requests
+space-delimited scopes and returns comma-delimited scopes.
 
 ## Security notes
 

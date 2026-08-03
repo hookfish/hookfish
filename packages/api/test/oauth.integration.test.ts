@@ -2,7 +2,12 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { oauthConnections, oauthStates } from '../src/db/schema'
 import { purgeExpiredStates } from '../src/oauth/broker'
-import { registerProvider, unregisterProvider } from '../src/oauth/providers'
+import {
+  getProviderDefinition,
+  listProviderIds,
+  registerProvider,
+  unregisterProvider,
+} from '../src/oauth/providers'
 import {
   API_ORIGIN,
   createHarness,
@@ -31,6 +36,8 @@ describe('OAuth broker integration', () => {
         id: string
         configured: boolean
         callback_url: string
+        scopes: string[]
+        available_scopes: string[]
       }>
     } = await res.json()
 
@@ -38,7 +45,23 @@ describe('OAuth broker integration', () => {
     expect(stub).toMatchObject({
       configured: true,
       callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
+      scopes: ['read', 'write'],
+      available_scopes: ['read', 'write'],
     })
+  })
+
+  it('ships GitHub with its selectable scopes and does not ship Google', () => {
+    const github = getProviderDefinition('github')
+
+    expect(github).toMatchObject({
+      id: 'github',
+      defaultScopes: [],
+      usePkce: false,
+      supportsRefresh: false,
+    })
+    expect(github?.availableScopes).toContain('repo')
+    expect(github?.availableScopes).toContain('read:user')
+    expect(listProviderIds()).not.toContain('google')
   })
 
   it('serves /api/stats', async () => {
@@ -354,6 +377,29 @@ describe('OAuth broker integration', () => {
     expect(url.searchParams.get('scope')).toBe('alpha beta')
   })
 
+  it('parses comma-delimited token scopes for space-delimited providers', async () => {
+    h.stub.nextTokenResponse = {
+      access_token: 'access-comma-scopes',
+      scope: 'repo,gist',
+    }
+
+    const { connectionId, callback } = await h.authorizeAndCallback({
+      connectionId: 'comma-token-scopes',
+      scopes: ['repo', 'gist'],
+    })
+    expect(callback.status).toBe(200)
+
+    const tokenRes = await h.fetch(
+      `/api/oauth/connections/${connectionId}/token`,
+    )
+    const token: { scopes: string[] } = await tokenRes.json()
+    expect(token.scopes).toEqual(['repo', 'gist'])
+
+    await h.fetch(`/api/oauth/connections/${connectionId}`, {
+      method: 'DELETE',
+    })
+  })
+
   it('exercises PKCE, Basic auth, JSON token body, and authorizeParams', async () => {
     const before = h.stub.tokenRequests.length
     const { authorizeUrl, callback, connectionId } =
@@ -644,6 +690,7 @@ describe('OAuth broker integration', () => {
         authorizeUrl: 'http://example.com',
         tokenUrl: 'http://example.com',
         defaultScopes: [],
+        availableScopes: [],
         scopeSeparator: ' ',
         tokenRequestFormat: 'json',
         clientAuth: 'basic',

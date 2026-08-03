@@ -141,6 +141,7 @@ const listProvidersRoute = createRoute({
                 configured: z.boolean(),
                 callback_url: z.string(),
                 scopes: z.array(z.string()),
+                available_scopes: z.array(z.string()),
                 supports_refresh: z.boolean(),
                 uses_pkce: z.boolean(),
               }),
@@ -364,6 +365,7 @@ oauthRoutes.openapi(listProvidersRoute, (c) => {
           // `pnpm dev` vs. `server dev`, and deployed environments.
           callback_url: resolveRedirectUri(c.env, c.req.url, id),
           scopes: definition.defaultScopes,
+          available_scopes: definition.availableScopes,
           supports_refresh: definition.supportsRefresh,
           uses_pkce: definition.usePkce,
         }

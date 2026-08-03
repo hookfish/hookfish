@@ -1,11 +1,12 @@
-import path from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Connect, Plugin } from 'vite'
 import { register } from 'tsx/esm/api'
+import type { Connect, Plugin } from 'vite'
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(frontendRoot, '../..')
+const frontendEnvPath = path.join(frontendRoot, '.env')
 const serverEnvPath = path.join(repoRoot, 'apps/server/.env')
 const defaultDataDir = path.join(repoRoot, 'apps/server/pgdata')
 
@@ -124,13 +125,26 @@ export function localApiPlugin(): Plugin {
   return {
     name: 'local-pglite-api',
     configureServer(server) {
-      try {
-        process.loadEnvFile(serverEnvPath)
-        server.config.logger.info(`[api] loaded env from ${serverEnvPath}`)
-      } catch {
+      const loadedEnvPaths: string[] = []
+      for (const envPath of [frontendEnvPath, serverEnvPath]) {
+        try {
+          // The first value loaded wins, so frontend settings are authoritative
+          // and the standalone server's file remains a convenient fallback.
+          process.loadEnvFile(envPath)
+          loadedEnvPaths.push(envPath)
+        } catch {
+          // A missing fallback file is fine as long as one env file exists.
+        }
+      }
+
+      if (loadedEnvPaths.length > 0) {
+        server.config.logger.info(
+          `[api] loaded env from ${loadedEnvPaths.join(', ')}`,
+        )
+      } else {
         server.config.logger.warn(
-          `[api] no .env at ${serverEnvPath} — using ambient env only.\n` +
-            '  Create one with: cp apps/server/.env.example apps/server/.env',
+          '[api] no frontend or server .env — using ambient env only.\n' +
+            '  Create apps/frontend/.env or apps/server/.env from apps/server/.env.example.',
         )
       }
 
