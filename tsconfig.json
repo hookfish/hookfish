@@ -12,6 +12,7 @@
     { "path": "./apps/server" },
     { "path": "./packages/api" },
     { "path": "./packages/cli" },
+    { "path": "./packages/database" },
     { "path": "./packages/provider" },
     { "path": "./packages/providers" },
     { "path": "./packages/providers/github" },

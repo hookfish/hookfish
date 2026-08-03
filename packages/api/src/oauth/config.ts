@@ -1,31 +1,19 @@
-import {
-  defaultProviderRegistry,
-  type OAuthProvider,
-  type ProviderRegistry,
-} from '@template/provider'
-import type { Database } from '../db/schema'
+import type { OAuthProvider, ProviderRegistry } from '@template/provider'
 import { BrokerError } from './errors'
 
 /**
- * Environment available to the Node host. Provider credentials belong to
- * provider instances registered by the application.
- *
- * Database — configure exactly one (see `resolveDatabaseSource`):
- * - `DB`: injected Drizzle instance (Node + PGlite, or a host-built pool)
- * - `DATABASE_URL`: stock Postgres connection string
+ * Conventional Hookfish configuration bindings. Hosts may pass any additional
+ * runtime-owned bindings through `Hookfish.fetch`.
  */
 export type BrokerEnv = {
-  DATABASE_URL?: string
   OAUTH_ENCRYPTION_KEY?: string
   BROKER_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
-  PGLITE_DATA_DIR?: string
-  DB?: Database
-  [key: string]: string | Database | undefined
+  [key: string]: unknown
 }
 
-export function readEnvString(env: BrokerEnv, key: string): string | undefined {
-  const value = env[key]
+export function readEnvString(env: object, key: string): string | undefined {
+  const value = Reflect.get(env, key)
 
   if (typeof value !== 'string') return undefined
 
@@ -33,7 +21,7 @@ export function readEnvString(env: BrokerEnv, key: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function requireEnvString(env: BrokerEnv, key: string): string {
+function requireEnvString(env: object, key: string): string {
   const value = readEnvString(env, key)
 
   if (!value) {
@@ -57,9 +45,9 @@ function envPrefix(providerId: string): string {
 }
 
 export function resolveProviderConfig(
-  env: BrokerEnv,
+  env: object,
   providerId: string,
-  providers: ProviderRegistry = defaultProviderRegistry,
+  providers: ProviderRegistry,
 ): ProviderConfig {
   const provider = providers.getProvider(providerId)
 
@@ -90,7 +78,7 @@ export function resolveProviderConfig(
  * the incoming request, which keeps local dev working without extra config.
  */
 export function resolveRedirectUri(
-  env: BrokerEnv,
+  env: object,
   requestUrl: string,
   providerId: string,
 ): string {
@@ -112,7 +100,7 @@ function readAmbientNodeEnv(): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-export function requireBrokerApiKey(env: BrokerEnv): string {
+export function requireBrokerApiKey(env: object): string {
   const configured = readEnvString(env, 'BROKER_API_KEY')
   if (configured) return configured
 

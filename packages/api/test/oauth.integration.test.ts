@@ -4,6 +4,7 @@ import {
 } from '@template/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { defineDatabase, Hookfish } from '../src/index'
 import { oauthConnections, oauthStates } from '../src/db/schema'
 import { purgeExpiredStates } from '../src/oauth/broker'
 import {
@@ -751,53 +752,26 @@ describe('OAuth broker integration', () => {
     if (original) h.providers.register({ notion: original })
   })
 
-  it('errors when no database source is configured', async () => {
-    const previousDb = h.env.DB
-    const previousUrl = h.env.DATABASE_URL
-    h.env.DB = undefined
-    h.env.DATABASE_URL = undefined
-
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+  it('resolves a request-aware database binding and exposes a bound fetch', async () => {
+    type Bindings = typeof h.env & { DATABASE: typeof h.db }
+    let resolvedBindings: Bindings | undefined
+    const hookfish = new Hookfish<Bindings>({
+      providers: h.providers,
+      db: defineDatabase((bindings: Bindings) => {
+        resolvedBindings = bindings
+        return bindings.DATABASE
+      }),
     })
-
-    h.env.DB = previousDb
-    h.env.DATABASE_URL = previousUrl
-
-    expect(res.status).toBe(500)
-    const body: { error: { code: string; message: string } } = await res.json()
-    expect(body.error.code).toBe('missing_configuration')
-    expect(body.error.message).toMatch(/DATABASE_URL|env\.DB/)
-  })
-
-  it('builds a Postgres client when DATABASE_URL is set and DB is absent', async () => {
-    const { createPostgresDatabase } = await import('../src/db/postgres')
-    const client = createPostgresDatabase(
-      'postgresql://user:pass@db.example.com/postgres',
+    const bindings = { ...h.env, DATABASE: h.db }
+    const { fetch: hookfishFetch } = hookfish
+    const res = await hookfishFetch(
+      new Request(`${API_ORIGIN}/api/oauth/connections`, {
+        headers: { Authorization: 'Bearer test' },
+      }),
+      bindings,
     )
-    expect(client).toBeTruthy()
 
-    const previousDb = h.env.DB
-    const previousUrl = h.env.DATABASE_URL
-    h.env.DB = undefined
-    // Point at a non-routable host so we never accidentally hit a real DB; the
-    // middleware constructs the client before the handler queries.
-    h.env.DATABASE_URL = 'postgresql://user:pass@127.0.0.1:1/postgres'
-
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'postgres-path' }),
-    })
-
-    h.env.DB = previousDb
-    h.env.DATABASE_URL = previousUrl
-
-    // Client was built; the subsequent query fails talking to 127.0.0.1:1.
-    // Either a broker error or an unexpected 500 from the driver is fine —
-    // what matters is we exercised createPostgresDatabase + the middleware branch.
-    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(res.status).toBe(200)
+    expect(resolvedBindings).toBe(bindings)
   })
 })

@@ -13,7 +13,7 @@ import {
   oauthConnections,
   oauthStates,
 } from '../db/schema'
-import { type BrokerEnv, resolveProviderConfig } from './config'
+import { readEnvString, resolveProviderConfig } from './config'
 import { generateConnectionId } from './connection-id'
 import { decryptSecret, encryptSecret, randomToken } from './crypto'
 import { BrokerError } from './errors'
@@ -32,10 +32,10 @@ const tokenResponseSchema = z.looseObject({
   scope: z.union([z.string(), z.array(z.string())]).optional(),
 })
 
-function requireEncryptionKey(env: BrokerEnv): string {
-  const key = env.OAUTH_ENCRYPTION_KEY
+function requireEncryptionKey(env: object): string {
+  const key = readEnvString(env, 'OAUTH_ENCRYPTION_KEY')
 
-  if (typeof key !== 'string' || key.trim().length === 0) {
+  if (!key) {
     throw new BrokerError(
       500,
       'missing_configuration',
@@ -43,7 +43,7 @@ function requireEncryptionKey(env: BrokerEnv): string {
     )
   }
 
-  return key.trim()
+  return key
 }
 
 function parseScopeValue(value: string | string[] | undefined): string[] {
@@ -116,7 +116,7 @@ async function assertProviderMatches(
 
 export async function startAuthorization(
   db: Database,
-  env: BrokerEnv,
+  env: object,
   input: StartAuthorizationInput,
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{
@@ -196,7 +196,7 @@ type StoredTokenFields = {
 }
 
 async function toStoredFields(
-  env: BrokerEnv,
+  env: object,
   response: ProviderTokenResponse,
   fallbackScopes: string[],
   previousRefreshToken?: string | null,
@@ -242,7 +242,7 @@ async function toStoredFields(
 
 export async function completeAuthorization(
   db: Database,
-  env: BrokerEnv,
+  env: object,
   input: { provider: string; code: string; state: string },
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{ connection: OAuthConnection; returnTo: string | null }> {
@@ -323,7 +323,7 @@ export async function completeAuthorization(
 
 async function refreshConnection(
   db: Database,
-  env: BrokerEnv,
+  env: object,
   connection: OAuthConnection,
   providers: ProviderRegistry,
 ): Promise<OAuthConnection> {
@@ -419,7 +419,7 @@ export type AccessTokenResult = {
  */
 export async function getAccessToken(
   db: Database,
-  env: BrokerEnv,
+  env: object,
   connectionId: string,
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<AccessTokenResult> {

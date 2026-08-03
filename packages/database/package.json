@@ -1,0 +1,36 @@
+{
+  "name": "@template/database",
+  "version": "0.0.0",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./pglite": {
+      "types": "./src/pglite.ts",
+      "default": "./src/pglite.ts"
+    },
+    "./postgres": {
+      "types": "./src/postgres.ts",
+      "default": "./src/postgres.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@template/api": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "typescript": "~5.9.3"
+  }
+}

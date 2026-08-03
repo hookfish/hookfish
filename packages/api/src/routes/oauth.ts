@@ -1,8 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import {
-  defaultProviderRegistry,
-  type ProviderRegistry,
-} from '@template/provider'
+import type { ProviderRegistry } from '@template/provider'
+import type { DatabaseInput } from '../db/binding'
 import type { OAuthConnection } from '../db/schema'
 import {
   completeAuthorization,
@@ -129,7 +127,6 @@ const listProvidersRoute = createRoute({
   summary: 'List known providers and whether credentials are configured',
   description:
     "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
-  middleware: [requireApiKey],
   security: brokerAuth,
   responses: {
     200: {
@@ -163,7 +160,6 @@ const authorizeRoute = createRoute({
   summary: 'Create a consent URL for a connection',
   description:
     'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`). Each connection id is one provider link.',
-  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: {
     params: providerParamSchema,
@@ -221,7 +217,6 @@ const callbackRoute = createRoute({
   summary: 'OAuth redirect target (called by the provider, not by your code)',
   description:
     "Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.",
-  middleware: [withDatabase],
   request: {
     params: providerParamSchema,
     query: z.object({
@@ -253,7 +248,6 @@ const listConnectionsRoute = createRoute({
   path: '/connections',
   summary: 'List connections',
   description: 'Returns every stored connection. Pass `provider` to filter.',
-  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: {
     query: z.object({
@@ -284,7 +278,6 @@ const getConnectionRoute = createRoute({
   method: 'get',
   path: '/connections/{connection_id}',
   summary: 'Get a connection by id',
-  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
   responses: {
@@ -304,7 +297,6 @@ const tokenRoute = createRoute({
   method: 'get',
   path: '/connections/{connection_id}/token',
   summary: 'Get a currently-valid access token, refreshing if needed',
-  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
   responses: {
@@ -332,7 +324,6 @@ const disconnectRoute = createRoute({
   method: 'delete',
   path: '/connections/{connection_id}',
   summary: 'Forget a stored connection',
-  middleware: [requireApiKey, withDatabase],
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
   responses: {
@@ -352,10 +343,19 @@ const disconnectRoute = createRoute({
 // Handlers
 // ---------------------------------------------------------------------------
 
-export function createOAuthRoutes(
-  providers: ProviderRegistry = defaultProviderRegistry,
+export function createOAuthRoutes<Bindings extends object>(
+  providers: ProviderRegistry,
+  database: DatabaseInput<Bindings>,
 ) {
-  const oauthRoutes = new OpenAPIHono<BrokerContext>()
+  const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
+  const authenticate = requireApiKey<Bindings>()
+  const connectDatabase = withDatabase(database)
+
+  oauthRoutes.use('/providers', authenticate)
+  oauthRoutes.use('/:provider/authorize', authenticate, connectDatabase)
+  oauthRoutes.use('/:provider/callback', connectDatabase)
+  oauthRoutes.use('/connections', authenticate, connectDatabase)
+  oauthRoutes.use('/connections/*', authenticate, connectDatabase)
 
   oauthRoutes.openapi(listProvidersRoute, (c) => {
     return c.json(
@@ -522,5 +522,3 @@ export function createOAuthRoutes(
 
   return oauthRoutes
 }
-
-export const oauthRoutes = createOAuthRoutes()

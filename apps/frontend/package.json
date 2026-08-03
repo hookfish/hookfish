@@ -19,6 +19,7 @@
     "@tanstack/react-router-devtools": "^1.167.0",
     "@tanstack/react-start": "^1.168.25",
     "@template/api": "workspace:*",
+    "@template/database": "workspace:*",
     "@template/provider": "workspace:*",
     "@template/providers": "workspace:*",
     "class-variance-authority": "^0.7.1",

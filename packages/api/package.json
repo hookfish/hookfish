@@ -12,17 +12,13 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./pglite": {
-      "types": "./src/db/pglite.ts",
-      "default": "./src/db/pglite.ts"
+    "./database": {
+      "types": "./src/db/index.ts",
+      "default": "./src/db/index.ts"
     },
-    "./postgres": {
-      "types": "./src/db/postgres.ts",
-      "default": "./src/db/postgres.ts"
-    },
-    "./local-node": {
-      "types": "./src/local-node.ts",
-      "default": "./src/local-node.ts"
+    "./migrations": {
+      "types": "./src/migrations.ts",
+      "default": "./src/migrations.ts"
     },
     "./oauth/config": {
       "types": "./src/oauth/config.ts",
@@ -39,13 +35,11 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.4",
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.4.0",
     "@template/provider": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.23",
-    "postgres": "^3.4.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
