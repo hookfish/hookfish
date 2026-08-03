@@ -48,17 +48,19 @@ function requireEncryptionKey(env: BrokerEnv): string {
   return key.trim()
 }
 
-function parseScopeValue(
-  value: string | string[] | undefined,
-  separator: string,
-): string[] {
+function parseScopeValue(value: string | string[] | undefined): string[] {
   if (value === undefined) return []
   if (Array.isArray(value)) return value
 
-  return value
-    .split(separator === ',' ? /[\s,]+/ : /\s+/)
-    .map((scope) => scope.trim())
-    .filter((scope) => scope.length > 0)
+  return (
+    value
+      // Authorization requests may use a different separator than token
+      // responses. GitHub, for example, requests space-delimited scopes but
+      // returns them comma-delimited.
+      .split(/[\s,]+/)
+      .map((scope) => scope.trim())
+      .filter((scope) => scope.length > 0)
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +255,7 @@ async function toStoredFields(
   const parsed = tokenResponseSchema.parse(raw)
   const encryptionKey = requireEncryptionKey(env)
 
-  const scopes = parseScopeValue(parsed.scope, config.definition.scopeSeparator)
+  const scopes = parseScopeValue(parsed.scope)
 
   // Providers commonly omit refresh_token on refresh; keep the one we hold.
   const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null

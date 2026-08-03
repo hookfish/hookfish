@@ -16,7 +16,9 @@ export type ProviderDefinition = {
   tokenUrl: string
   /** Applied when `<ID>_SCOPES` is not set in the environment. */
   defaultScopes: string[]
-  /** Google/GitHub use spaces; Linear uses commas. */
+  /** Scopes a client may offer for per-authorization selection. */
+  availableScopes: string[]
+  /** GitHub uses spaces; Linear uses commas. */
   scopeSeparator: string
   /** How the token endpoint wants the request encoded. */
   tokenRequestFormat: 'form' | 'json'
@@ -54,6 +56,7 @@ export const providerRegistry: Record<string, ProviderDefinition> = {
     // Notion has no scope parameter -- access is chosen by the user in the
     // consent UI when they pick which pages to share.
     defaultScopes: [],
+    availableScopes: [],
     scopeSeparator: ' ',
     tokenRequestFormat: 'json',
     clientAuth: 'basic',
@@ -70,6 +73,7 @@ export const providerRegistry: Record<string, ProviderDefinition> = {
     authorizeUrl: 'https://linear.app/oauth/authorize',
     tokenUrl: 'https://api.linear.app/oauth/token',
     defaultScopes: ['read', 'write'],
+    availableScopes: ['read', 'write'],
     scopeSeparator: ',',
     tokenRequestFormat: 'form',
     clientAuth: 'body',
@@ -77,25 +81,59 @@ export const providerRegistry: Record<string, ProviderDefinition> = {
     supportsRefresh: true,
   },
 
-  google: {
-    id: 'google',
-    label: 'Google',
-    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    defaultScopes: [
-      'openid',
-      'email',
-      'profile',
-      'https://www.googleapis.com/auth/drive.readonly',
+  github: {
+    id: 'github',
+    label: 'GitHub',
+    authorizeUrl: 'https://github.com/login/oauth/authorize',
+    tokenUrl: 'https://github.com/login/oauth/access_token',
+    // No scope grants read-only access to public profile, repository, and
+    // gist information. Callers can opt into additional access per flow.
+    defaultScopes: [],
+    availableScopes: [
+      'repo',
+      'repo:status',
+      'repo_deployment',
+      'public_repo',
+      'repo:invite',
+      'security_events',
+      'admin:repo_hook',
+      'write:repo_hook',
+      'read:repo_hook',
+      'admin:org',
+      'write:org',
+      'read:org',
+      'admin:public_key',
+      'write:public_key',
+      'read:public_key',
+      'admin:org_hook',
+      'gist',
+      'notifications',
+      'user',
+      'read:user',
+      'user:email',
+      'user:follow',
+      'project',
+      'read:project',
+      'delete_repo',
+      'write:packages',
+      'read:packages',
+      'delete:packages',
+      'admin:gpg_key',
+      'write:gpg_key',
+      'read:gpg_key',
+      'codespace',
+      'workflow',
+      'read:audit_log',
     ],
     scopeSeparator: ' ',
     tokenRequestFormat: 'form',
     clientAuth: 'body',
-    usePkce: true,
-    supportsRefresh: true,
-    // `offline` + `consent` are required to actually receive a refresh token;
-    // without them Google only returns one on the very first authorization.
-    authorizeParams: { access_type: 'offline', prompt: 'consent' },
+    // GitHub supports PKCE but does not require it. This broker is a
+    // confidential server-side client and authenticates the token exchange
+    // with its client secret, while `state` protects the callback from CSRF.
+    usePkce: false,
+    // GitHub OAuth App tokens do not expire or issue refresh tokens.
+    supportsRefresh: false,
   },
 }
 

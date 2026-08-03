@@ -61,6 +61,7 @@ function providerDefinition(
     authorizeUrl: stub.authorizeUrl,
     tokenUrl: stub.tokenUrl,
     defaultScopes: ['read', 'write'],
+    availableScopes: ['read', 'write'],
     scopeSeparator: ' ',
     tokenRequestFormat: 'form',
     clientAuth: 'body',
