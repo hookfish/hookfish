@@ -22,7 +22,8 @@ cp apps/frontend/.env.example apps/frontend/.env
 # Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
 
 pnpm dev
-# → https://frontend.localhost
+# Equivalent: pnpm exec template serve
+# → http://127.0.0.1:5173
 ```
 
 PGlite persists at `pgdata` in the project root and applies embedded migrations
@@ -34,13 +35,7 @@ The standalone example reads the same `apps/frontend/.env` file:
 
 ```sh
 pnpm --filter @template/example-hono-node dev
-
-# Or through the repository CLI:
-pnpm exec template serve
-pnpm dev:server
 ```
-
-`pnpm dev:server` exposes the server through the branch-aware Portless URL.
 
 ## Cloudflare Worker example
 
@@ -115,7 +110,6 @@ More detail on the broker, custom providers, and endpoints is in
 
 ```sh
 pnpm dev            # Node SSR + mounted Hookfish API
-pnpm dev:server     # Hono Node example through Portless
 pnpm build
 pnpm preview
 pnpm migrate
@@ -126,4 +120,13 @@ pnpm lint
 pnpm fmt
 pnpm test
 pnpm deploy         # deploy the Cloudflare Worker example
+```
+
+The product CLI intentionally exposes only the mounted frontend, migrations,
+and help:
+
+```sh
+pnpm exec template serve
+pnpm exec template migrate
+pnpm exec template help
 ```

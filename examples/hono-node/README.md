@@ -10,5 +10,5 @@ cp ../../apps/frontend/.env.example ../../apps/frontend/.env
 pnpm dev
 ```
 
-From the repository root, `pnpm exec template serve` runs this example once and
-`pnpm dev:server` runs it behind the branch-aware Portless URL.
+From the repository root, run
+`pnpm --filter @template/example-hono-node dev` instead.

@@ -24,10 +24,8 @@ import {
 // These prefill Swagger's "Try it out" so it is runnable without typing
 // anything. They never affect runtime behaviour.
 //
-// Nothing here hard-codes an origin: the callback URL depends on the branch
-// (portless prefixes non-`main` hosts) and on whether the API is reached
-// directly or through the frontend, so it is reported per-request as
-// `callback_url` by `GET /providers` instead.
+// Nothing here hard-codes a callback origin: it depends on how the API is
+// reached, so `GET /providers` reports `callback_url` per request instead.
 // ---------------------------------------------------------------------------
 
 /**
@@ -38,7 +36,7 @@ import {
 const brokerAuth = [{ brokerApiKey: [] }]
 
 /** Where the browser lands after a successful connection, locally. */
-const DEFAULT_RETURN_TO = 'https://frontend.localhost'
+const DEFAULT_RETURN_TO = 'http://127.0.0.1:5173'
 
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'

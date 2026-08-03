@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "node ./packages/cli/bin/template.mjs dev",
+    "dev": "node ./packages/cli/bin/template.mjs serve",
     "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck && turbo cf-typecheck",
@@ -19,8 +19,7 @@
     "cf-typecheck": "turbo cf-typecheck",
     "db:studio": "pnpm --filter @template/api db:studio",
     "cli": "node ./packages/cli/bin/template.mjs",
-    "migrate": "node ./packages/cli/bin/template.mjs migrate",
-    "dev:server": "node ./packages/cli/bin/template.mjs dev:server"
+    "migrate": "node ./packages/cli/bin/template.mjs migrate"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
@@ -28,7 +27,6 @@
     "@template/provider": "workspace:*",
     "@template/providers": "workspace:*",
     "biome-plugin-no-type-assertion": "^1.1.1",
-    "portless": "^0.14.0",
     "turbo": "^2.6.1"
   }
 }
