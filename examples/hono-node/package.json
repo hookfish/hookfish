@@ -1,23 +1,20 @@
 {
-  "name": "@template/server",
+  "name": "@template/example-hono-node",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/node.ts",
-    "dev:node": "tsx watch src/node.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@hono/node-server": "^2.0.12",
     "@template/api": "workspace:*",
     "@template/database": "workspace:*",
-    "@template/provider": "workspace:*",
-    "@template/providers": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "@template/providers": "workspace:*"
   },
   "devDependencies": {
-    "@hono/node-server": "^2.0.12",
     "@types/node": "^24.12.3",
     "tsx": "^4.23.1",
     "typescript": "~5.9.3"

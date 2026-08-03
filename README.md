@@ -1,72 +1,104 @@
 # TanStack Start + Hono
 
-Node-first full-stack application with:
+Node-first full-stack application with reusable API and provider packages:
 
-- `apps/frontend` — TanStack Start SSR with the Hono API mounted at `/api`
-- `apps/server` — optional standalone Node API process
+- `apps/frontend` — TanStack Start SSR on Node, with Hookfish mounted at `/api`
+- `examples/hono-node` — standalone Hono server on Node
+- `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
 - `packages/api` — shared Hono API and OAuth broker
-- `packages/database` — runtime-selectable Postgres and PGlite bindings
-- `packages/provider` — provider contract and registry
-- `packages/providers/*` — isolated provider implementations and SDKs
+- `packages/database` — request-aware Postgres and local PGlite bindings
+- `packages/provider` and `packages/providers/*` — provider contracts and implementations
 
-Cloudflare deployment and Hyperdrive wiring are intentionally deferred. The API
-uses Fetch and accepts request-time bindings, so adding an edge database adapter
-does not require changing its routes.
+The frontend stays on Node. Cloudflare configuration, Wrangler, and generated
+runtime types are isolated to the Worker example.
 
-## Local development
+## Local frontend development
 
-The default database is PGlite, so no database service is required. TanStack
-Start and the mounted Hono API run in the same Node process.
+The Node frontend defaults to PGlite, so no database service is required.
 
 ```sh
 pnpm install
-cp apps/server/.env.example apps/frontend/.env
+cp apps/frontend/.env.example apps/frontend/.env
 # Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
 
 pnpm dev
 # → https://frontend.localhost
 ```
 
-PGlite data defaults to `pgdata` at the project root. Set `PGLITE_DATA_DIR` to choose
-another location. Embedded migrations run automatically at startup.
+PGlite persists at `pgdata` in the project root and applies embedded migrations
+automatically. Set `PGLITE_DATA_DIR` to move it or `DATABASE_URL` to use Postgres.
 
-Each host constructs `Hookfish` next to its Fetch entrypoint:
-[`apps/frontend/src/server.ts`](apps/frontend/src/server.ts) for the frontend and
-[`apps/server/src/node.ts`](apps/server/src/node.ts) for the standalone server.
-Each chooses a database and providers before constructing `Hookfish`. Object
-keys are provider slugs; provider classes do not hard-code them.
+## Hono Node example
 
-```ts
-import { Hookfish } from '@template/api'
-import { pglite } from '@template/database/pglite'
-import { postgres } from '@template/database/postgres'
-import { NotionProvider } from '@template/provider-notion'
-
-const hookfish = new Hookfish({
-  db: process.env.DATABASE_URL
-    ? postgres(process.env.DATABASE_URL)
-    : pglite('./pgdata'),
-  providers: { notion: new NotionProvider() },
-})
-
-export default hookfish
-```
-
-## API-only development
-
-Run the same broker without the frontend:
+The standalone example reads the same `apps/frontend/.env` file:
 
 ```sh
-cp apps/server/.env.example apps/server/.env
-pnpm exec template serve
+pnpm --filter @template/example-hono-node dev
 
-# Or use the branch-aware portless URL:
+# Or through the repository CLI:
+pnpm exec template serve
 pnpm dev:server
 ```
 
-## Production Node deployment
+`pnpm dev:server` exposes the server through the branch-aware Portless URL.
 
-Build the frontend as a Nitro Node server and start its generated entrypoint:
+## Cloudflare Worker example
+
+Authenticate Wrangler and create a Hyperdrive configuration for Postgres:
+
+```sh
+pnpm --filter @template/example-cloudflare-worker exec wrangler login
+pnpm --filter @template/example-cloudflare-worker exec wrangler hyperdrive create hookfish-db \
+  --connection-string="postgres://user:pass@host:5432/dbname"
+```
+
+Replace `<YOUR_HYPERDRIVE_ID>` in
+`examples/cloudflare-worker/wrangler.jsonc`, then regenerate the checked-in
+Cloudflare runtime and binding declarations:
+
+```sh
+pnpm cf-typegen
+pnpm cf-typecheck
+```
+
+Do not add a handwritten `Env` or binding interface. Change `wrangler.jsonc`
+and rerun `pnpm cf-typegen` whenever a binding changes.
+
+The Worker also reads `apps/frontend/.env` during local development. Workers
+need Postgres, so add the local Hyperdrive connection string to that file:
+
+```sh
+# apps/frontend/.env
+CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@127.0.0.1:5432/dbname
+
+pnpm --filter @template/example-cloudflare-worker dev
+```
+
+Run migrations directly against Postgres before deployment:
+
+```sh
+DATABASE_URL=postgres://user:pass@host:5432/dbname pnpm migrate
+```
+
+Store deployed credentials with Wrangler, repeating for each provider used by
+the Worker:
+
+```sh
+pnpm --filter @template/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
+pnpm --filter @template/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
+```
+
+Deploy the Worker example:
+
+```sh
+pnpm --filter @template/example-cloudflare-worker deploy
+# Equivalent root command; only this example defines a deploy task.
+pnpm deploy
+```
+
+## Production Node frontend
+
+Build the Nitro Node server and start its generated entrypoint:
 
 ```sh
 pnpm build
@@ -74,21 +106,7 @@ pnpm --filter @template/frontend start
 ```
 
 Provide secrets as process environment variables. Without `DATABASE_URL`, the
-server uses PGlite. For production Postgres, set `DATABASE_URL` and run
-migrations before starting:
-
-```sh
-DATABASE_URL=postgres://user:pass@host:5432/dbname pnpm migrate
-DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  pnpm --filter @template/frontend start
-```
-
-The standalone API uses the same database rules:
-
-```sh
-DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  pnpm --filter @template/server dev:node
-```
+server uses PGlite. For production Postgres, run migrations before starting.
 
 More detail on the broker, custom providers, and endpoints is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md).
@@ -96,13 +114,16 @@ More detail on the broker, custom providers, and endpoints is in
 ## Commands
 
 ```sh
-pnpm dev          # Node SSR + mounted Hono API
-pnpm dev:server   # standalone Node API through portless
-pnpm build        # Nitro Node production build
-pnpm preview      # run the built Node server
-pnpm migrate      # apply Postgres migrations
+pnpm dev            # Node SSR + mounted Hookfish API
+pnpm dev:server     # Hono Node example through Portless
+pnpm build
+pnpm preview
+pnpm migrate
+pnpm cf-typegen     # regenerate Worker declarations with Wrangler
+pnpm cf-typecheck   # verify generated Worker declarations
 pnpm typecheck
 pnpm lint
 pnpm fmt
 pnpm test
+pnpm deploy         # deploy the Cloudflare Worker example
 ```

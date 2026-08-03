@@ -87,6 +87,12 @@ function parseApp(app: string): PortlessApp {
   process.exit(1)
 }
 
+function appDirectory(workspaceRoot: string, app: PortlessApp): string {
+  return app === 'frontend'
+    ? path.join(workspaceRoot, 'apps/frontend')
+    : path.join(workspaceRoot, 'examples/hono-node')
+}
+
 async function exitWith(code: number): Promise<never> {
   process.exit(code)
 }
@@ -105,9 +111,9 @@ program
     await exitWith(
       await run(
         process.execPath,
-        ['--import', 'tsx', 'src/node.ts'],
+        ['--import', 'tsx', 'src/index.ts'],
         process.env,
-        path.join(workspaceRoot, 'apps/server'),
+        path.join(workspaceRoot, 'examples/hono-node'),
       ),
     )
   })
@@ -158,9 +164,9 @@ program
     await exitWith(
       await runPortlessDev({
         appName: 'server',
-        cwd: path.join(workspaceRoot, 'apps/server'),
+        cwd: path.join(workspaceRoot, 'examples/hono-node'),
         workspaceRoot,
-        command: ['pnpm', 'exec', 'tsx', 'watch', 'src/node.ts'],
+        command: ['pnpm', 'exec', 'tsx', 'watch', 'src/index.ts'],
       }),
     )
   })
@@ -180,7 +186,7 @@ program
     await exitWith(
       await runPortlessDev({
         appName,
-        cwd: path.join(workspaceRoot, 'apps', appName),
+        cwd: appDirectory(workspaceRoot, appName),
         workspaceRoot,
         command,
       }),

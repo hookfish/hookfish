@@ -1,0 +1,24 @@
+{
+  "name": "@template/example-cloudflare-worker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env-file ../../apps/frontend/.env",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types --env-file wrangler-typegen.env",
+    "cf-typecheck": "wrangler types --env-file wrangler-typegen.env --check"
+  },
+  "dependencies": {
+    "@template/api": "workspace:*",
+    "@template/database": "workspace:*",
+    "@template/providers": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "typescript": "~5.9.3",
+    "wrangler": "^4.118.0"
+  }
+}
