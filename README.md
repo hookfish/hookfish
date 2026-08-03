@@ -5,6 +5,7 @@ Node-first full-stack application with reusable API and provider packages:
 - `apps/frontend` — TanStack Start SSR on Node, with Hookfish mounted at `/api`
 - `examples/hono-node` — standalone Hono server on Node
 - `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
+- `hookfish.config.ts` — shared database, provider, and Hookfish configuration
 - `packages/api` — shared Hono API and OAuth broker
 - `packages/database` — request-aware Postgres and local PGlite bindings
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
@@ -26,8 +27,10 @@ pnpm dev
 # → http://127.0.0.1:5173
 ```
 
-PGlite persists at `pgdata` in the project root and applies embedded migrations
-automatically. Set `PGLITE_DATA_DIR` to move it or `DATABASE_URL` to use Postgres.
+The root `hookfish.config.ts` uses PGlite, persists it at `pgdata`, and applies
+embedded migrations automatically. Set `PGLITE_DATA_DIR` to move it. Commented
+examples in that file show how to switch to Postgres or Hyperdrive. The
+frontend and examples all import the same Hookfish instance.
 
 ## Hono Node example
 
@@ -38,6 +41,9 @@ pnpm --filter @hookfish/example-hono-node dev
 ```
 
 ## Cloudflare Worker example
+
+Before running the Worker, replace the active PGlite database in
+`hookfish.config.ts` with its commented Hyperdrive configuration.
 
 Authenticate Wrangler and create a Hyperdrive configuration for Postgres:
 
@@ -69,7 +75,9 @@ CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@12
 pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-Run migrations directly against Postgres before deployment:
+Run migrations before deployment. The CLI loads `hookfish.config.ts` and uses
+its configured database. For Postgres deployment, switch to the commented
+Postgres configuration and set `DATABASE_URL`:
 
 ```sh
 DATABASE_URL=postgres://user:pass@host:5432/dbname pnpm migrate
@@ -100,8 +108,9 @@ pnpm build
 pnpm --filter @hookfish/frontend start
 ```
 
-Provide secrets as process environment variables. Without `DATABASE_URL`, the
-server uses PGlite. For production Postgres, run migrations before starting.
+Provide secrets as process environment variables. The root Hookfish config uses
+PGlite by default. For production Postgres, switch to the commented Postgres
+configuration and run migrations before starting.
 
 More detail on the broker, custom providers, and endpoints is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md).

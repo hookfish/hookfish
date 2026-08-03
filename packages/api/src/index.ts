@@ -9,7 +9,7 @@ import {
 import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
-import type { DatabaseInput } from './db/binding'
+import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { BrokerContext } from './oauth/middleware'
 import { createOAuthRoutes } from './routes/oauth'
 import { statsRoutes } from './routes/stats'
@@ -65,6 +65,7 @@ export type AppType = ReturnType<typeof createApiRoutes>
  */
 export class Hookfish<Bindings extends object = object> {
   readonly providers: ProviderRegistry
+  readonly db: DatabaseInput<Bindings>
   private readonly app: {
     fetch(
       request: Request,
@@ -75,6 +76,7 @@ export class Hookfish<Bindings extends object = object> {
 
   constructor(options: HookfishOptions<Bindings>) {
     this.providers = normalizeProviders(options.providers)
+    this.db = options.db
     const api = createApiRoutes(this.providers, options.db)
     this.app = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
   }
@@ -85,6 +87,10 @@ export class Hookfish<Bindings extends object = object> {
     executionContext?: ExecutionContext,
   ): Response | Promise<Response> => {
     return this.app.fetch(request, bindings ?? {}, executionContext)
+  }
+
+  readonly migrate = (bindings: Bindings): Promise<void> => {
+    return migrateDatabase(this.db, bindings)
   }
 }
 
@@ -102,4 +108,5 @@ export {
   type DatabaseBinding,
   type DatabaseInput,
   defineDatabase,
+  migrateDatabase,
 } from './db/binding'

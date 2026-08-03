@@ -28,21 +28,37 @@ export function pglite<Bindings extends object = object>(
   options: PgliteDatabaseOptions = {},
 ): DatabaseBinding<Bindings> {
   let pending: Promise<Database> | undefined
+  const migrationsFolder = options.migrationsFolder ?? bundledMigrations
 
-  return defineDatabase(() => {
+  const migrateClient = async (client: PGlite) => {
+    if (migrationsFolder !== false) {
+      await migrate(drizzle(client, { schema }), { migrationsFolder })
+    }
+  }
+
+  const getDatabase = () => {
     pending ??= (async () => {
       const client = new PGlite(dataDir)
       await client.waitReady
-      const database = drizzle(client, { schema })
-      const migrationsFolder = options.migrationsFolder ?? bundledMigrations
-
-      if (migrationsFolder !== false) {
-        await migrate(database, { migrationsFolder })
-      }
-
-      return database
+      await migrateClient(client)
+      return drizzle(client, { schema })
     })()
 
     return pending
+  }
+
+  return defineDatabase(getDatabase, async () => {
+    if (pending) {
+      await pending
+      return
+    }
+
+    const client = new PGlite(dataDir)
+    try {
+      await client.waitReady
+      await migrateClient(client)
+    } finally {
+      await client.close()
+    }
   })
 }

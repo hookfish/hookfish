@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, URL } from 'node:url'
 
 /** Absolute path to the SQL migrations shipped with `@hookfish/api`. */
 export const migrationsFolder = fileURLToPath(

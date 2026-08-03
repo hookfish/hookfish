@@ -1,14 +1,17 @@
 import {
-  type Database,
   type DatabaseBinding,
   defineDatabase,
   oauthConnections,
   oauthStates,
 } from '@hookfish/api/database'
+import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgresClient from 'postgres'
 
 const schema = { oauthConnections, oauthStates }
+type Schema = typeof schema
 
 export type PostgresConnection<Bindings extends object> =
   | string
@@ -34,9 +37,9 @@ export function postgres<Bindings extends object = object>(
   connection: PostgresConnection<Bindings>,
   options: PostgresDatabaseOptions = {},
 ): DatabaseBinding<Bindings> {
-  const databases = new Map<string, Database>()
+  const databases = new Map<string, PostgresJsDatabase<Schema>>()
 
-  return defineDatabase((bindings) => {
+  const getConnectionString = (bindings: Bindings) => {
     const connectionString =
       typeof connection === 'function' ? connection(bindings) : connection
     const normalized = connectionString.trim()
@@ -45,18 +48,37 @@ export function postgres<Bindings extends object = object>(
       throw new Error('Postgres connection string cannot be empty.')
     }
 
-    if (options.cache !== false) {
-      const existing = databases.get(normalized)
-      if (existing) return existing
-    }
+    return normalized
+  }
 
-    const client = postgresClient(normalized, {
+  const createDatabase = (connectionString: string) => {
+    const client = postgresClient(connectionString, {
       fetch_types: options.fetchTypes ?? true,
       max: options.max ?? 10,
       prepare: options.prepare ?? true,
     })
-    const database = drizzle(client, { schema })
-    if (options.cache !== false) databases.set(normalized, database)
+    return { client, database: drizzle(client, { schema }) }
+  }
+
+  const getDatabase = (bindings: Bindings) => {
+    const connectionString = getConnectionString(bindings)
+
+    if (options.cache !== false) {
+      const existing = databases.get(connectionString)
+      if (existing) return existing
+    }
+
+    const { database } = createDatabase(connectionString)
+    if (options.cache !== false) databases.set(connectionString, database)
     return database
+  }
+
+  return defineDatabase(getDatabase, async (bindings) => {
+    const { client, database } = createDatabase(getConnectionString(bindings))
+    try {
+      await migrate(database, { migrationsFolder })
+    } finally {
+      await client.end()
+    }
   })
 }

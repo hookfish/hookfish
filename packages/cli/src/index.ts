@@ -2,8 +2,10 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { clearLine, cursorTo } from 'node:readline'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Command } from 'commander'
+import { register } from 'tsx/esm/api'
 
 /**
  * Resolve the project root from the caller's cwd first so `npx @hookfish/cli`
@@ -64,6 +66,41 @@ async function exitWith(code: number): Promise<never> {
   process.exit(code)
 }
 
+const migrationFrames = ['⣷', '⣯', '⣟', '⡿', '⢿', '⣻', '⣽', '⣾']
+
+async function withMigrationProgress(migrate: () => Promise<void>) {
+  let frame = 0
+  const render = () => {
+    if (process.stdout.isTTY) cursorTo(process.stdout, 0)
+    process.stdout.write(
+      `[${migrationFrames[frame % migrationFrames.length]}] applying migrations...`,
+    )
+    frame += 1
+  }
+
+  render()
+  const timer = process.stdout.isTTY ? setInterval(render, 128) : undefined
+  if (!process.stdout.isTTY) process.stdout.write('\n')
+
+  try {
+    await migrate()
+    if (timer) clearInterval(timer)
+    if (process.stdout.isTTY) {
+      clearLine(process.stdout, 0)
+      cursorTo(process.stdout, 0)
+    }
+    const check = process.stdout.isTTY ? '\u001B[32m✓\u001B[39m' : '✓'
+    process.stdout.write(`[${check}] migrations applied successfully!\n`)
+  } catch (error) {
+    if (timer) clearInterval(timer)
+    if (process.stdout.isTTY) {
+      clearLine(process.stdout, 0)
+      cursorTo(process.stdout, 0)
+    }
+    throw error
+  }
+}
+
 const program = new Command()
 
 program.name('hookfish').description('OAuth broker CLI')
@@ -77,17 +114,39 @@ program
 
 program
   .command('migrate')
-  .description(
-    'Run database migrations (DATABASE_URL / POSTGRES_URL, or local PGlite)',
-  )
+  .description('Run migrations using the database in hookfish.config.ts')
   .action(async () => {
-    const url =
-      process.env.POSTGRES_URL?.trim() || process.env.DATABASE_URL?.trim()
-    const env = { ...process.env }
-    if (url) env.DATABASE_URL = url
-    await exitWith(
-      await run('pnpm', ['--filter', '@hookfish/api', 'db:migrate'], env),
-    )
+    const configPath = path.join(findWorkspaceRoot(), 'hookfish.config.ts')
+    if (!existsSync(configPath)) {
+      program.error(`Hookfish config not found: ${configPath}`)
+    }
+    console.log(`Reading config file '${configPath}'`)
+
+    const unregister = register()
+    try {
+      const config = await import(pathToFileURL(configPath).href)
+      const hookfish = Reflect.get(config, 'default')
+      const db =
+        typeof hookfish === 'object' && hookfish !== null
+          ? Reflect.get(hookfish, 'db')
+          : undefined
+      const migrate =
+        typeof hookfish === 'object' && hookfish !== null
+          ? Reflect.get(hookfish, 'migrate')
+          : undefined
+
+      if (!db || typeof migrate !== 'function') {
+        program.error(
+          'hookfish.config.ts must default-export a Hookfish instance with a database config.',
+        )
+      }
+
+      await withMigrationProgress(() =>
+        Reflect.apply(migrate, hookfish, [process.env]),
+      )
+    } finally {
+      await unregister()
+    }
   })
 
 await program.parseAsync(process.argv)
