@@ -42,49 +42,62 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 ## Runtime entrypoints
 
-Each host constructs a `Hookfish` instance next to its Fetch entrypoint:
+Each host imports the `Hookfish` instance from the root `hookfish.config.ts`:
 
 | command | process | default database |
 |---|---|---|
 | `pnpm exec template serve` | TanStack Start Node SSR + Hookfish | `pgdata` |
 | `pnpm --filter @template/example-hono-node dev` | standalone Hono API | `pgdata` |
-| `pnpm --filter @template/example-cloudflare-worker dev` | Cloudflare Worker API | Hyperdrive/Postgres |
+| `pnpm --filter @template/example-cloudflare-worker dev` | Cloudflare Worker API | Switch config to Hyperdrive first |
 
-On Node, set `PGLITE_DATA_DIR` to move the embedded database or `DATABASE_URL`
-to use Postgres. Cloudflare entrypoints use Hyperdrive instead.
+Set `PGLITE_DATA_DIR` to move the embedded database. The root config contains
+commented alternatives for Postgres and Cloudflare Hyperdrive.
 
-### Configuring the database
+### Configuring Hookfish
 
-The application passes one database input to `new Hookfish({ db, providers })`.
-It may be a ready Drizzle database, a promise, or a request-aware database
-binding. The provided Node adapters are separate from the API core:
+Database and provider configuration lives in the repository root so every host
+uses the same setup. A database may be a ready Drizzle database, a promise, or
+a request-aware database binding. The stock config currently uses PGlite:
 
 ```ts
+// hookfish.config.ts
 import { Hookfish } from '@template/api'
 import { pglite } from '@template/database/pglite'
-import { postgres } from '@template/database/postgres'
 import { NotionProvider } from '@template/provider-notion'
 
-const db = process.env.DATABASE_URL
-  ? postgres(process.env.DATABASE_URL)
-  : pglite('./pgdata')
+const db = pglite('./pgdata')
 
 export default new Hookfish({ db, providers: { notion: new NotionProvider() } })
+```
+
+The checked-in config also includes commented `postgres()` examples for a
+connection URL and for resolving a Cloudflare Hyperdrive binding.
+
+Fetch entrypoints only import that instance and pass their runtime bindings:
+
+```ts
+import hookfish from '../../../hookfish.config'
+
+export default {
+  fetch: (request, env, ctx) => hookfish.fetch(request, env, ctx),
+}
 ```
 
 `pglite()` initializes lazily and applies the bundled migrations once.
 `postgres()` accepts either a URL or a resolver called with the bindings passed
 to `Hookfish.fetch(request, bindings)`.
 
-The Cloudflare API entrypoint passes the Wrangler-generated `Env` into a
-request-aware `postgres()` binding and resolves
-`env.HYPERDRIVE.connectionString`. It disables client caching so each request
+The commented Hyperdrive config resolves `env.HYPERDRIVE.connectionString` from
+the Wrangler-generated bindings. It disables client caching so each request
 gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
 For another runtime, implement the same small binding contract with
 `defineDatabase((bindings) => database)`.
 
+`pnpm migrate` loads `hookfish.config.ts` and runs migrations through its `db`
+binding. It fails explicitly when the file or database configuration is absent.
+
 ```sh
-# Stock Node against real Postgres
+# After switching hookfish.config.ts to the Postgres example
 DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
   pnpm --filter @template/example-hono-node dev
 ```
@@ -177,8 +190,7 @@ reauthorization_required` — send the user through `authorize` again.
 ## Adding a provider
 
 Provider slugs belong to the application, not to provider classes. Add the
-providers you want where the host constructs `Hookfish`—for example,
-`examples/hono-node/src/index.ts` or `apps/frontend/src/server.ts`:
+providers you want in the root `hookfish.config.ts`:
 
 ```sh
 pnpm add @template/api @template/database @template/provider \

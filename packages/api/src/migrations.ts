@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, URL } from 'node:url'
 
 /** Absolute path to the SQL migrations shipped with `@template/api`. */
 export const migrationsFolder = fileURLToPath(

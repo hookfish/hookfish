@@ -23,7 +23,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@template/api": "workspace:*",
     "@template/cli": "workspace:*",
+    "@template/database": "workspace:*",
     "@template/provider": "workspace:*",
     "@template/providers": "workspace:*",
     "biome-plugin-no-type-assertion": "^1.1.1",
