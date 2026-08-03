@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { z } from '@hono/zod-openapi'
 import {
   createProviderRegistry,
@@ -14,10 +13,9 @@ import {
   LinearProvider,
   NotionProvider,
 } from '@template/providers'
-import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
-import { createPgliteDatabase } from '../src/db/pglite'
+import { pglite } from '../../database/src/pglite'
 import type { Database } from '../src/db/schema'
-import { createApi } from '../src/index'
+import { Hookfish } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { createPkcePair } from '../src/oauth/crypto'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
@@ -243,18 +241,12 @@ export async function createHarness(): Promise<TestHarness> {
       },
     ),
   })
-  const app = createApi({ providers })
-
-  const { db } = await createPgliteDatabase(dataDir)
-  const migrationsFolder = path.join(
-    path.resolve(fileURLToPath(import.meta.url), '../..'),
-    'drizzle',
-  )
-  await migratePglite(db, { migrationsFolder })
+  const database = pglite(dataDir)
+  const db = await database.getDatabase({})
+  const app = new Hookfish({ providers, db })
 
   const env: BrokerEnv = {
     ...process.env,
-    DB: db,
     NODE_ENV: 'test',
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,

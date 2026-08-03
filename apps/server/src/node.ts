@@ -1,25 +1,15 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import { createApi } from '@template/api'
-import { createLocalBrokerEnv } from '@template/api/local-node'
-import { type BrokerEnv, readEnvString } from '@template/api/oauth/config'
-import { providers } from '../../../index.ts'
+import { Hookfish } from '@template/api'
+import { readEnvString } from '@template/api/oauth/config'
+import { pglite } from '@template/database/pglite'
+import { postgres } from '@template/database/postgres'
+import {
+  GitHubProvider,
+  LinearProvider,
+  NotionProvider,
+} from '@template/providers'
 
-/**
- * Standalone API entrypoint.
- *
- * Database modes (see `@template/api/local-node` / OAUTH.md):
- * - Leave DATABASE_URL unset → embedded PGlite under `pgdata` (default local)
- * - Set DATABASE_URL → stock Node against any Postgres
- *
- * Production Node deployments use `DATABASE_URL`; local development defaults
- * to PGlite.
- */
-
-/**
- * Anchor every path to the package, not the shell's working directory, so this
- * behaves identically whether you launch from the repo root or from apps/server.
- */
 const packageRoot = path.resolve(import.meta.dirname, '..')
 const envPath = path.join(packageRoot, '.env')
 
@@ -34,34 +24,43 @@ try {
   )
 }
 
-const app = createApi({ providers })
-
-const dataDir = process.env.PGLITE_DATA_DIR ?? path.join(packageRoot, 'pgdata')
 const port = Number(process.env.PORT ?? 8787)
-
-/**
- * Portless sets HOST/PORT when this is launched via `pnpm --filter @template/server dev`.
- */
 const hostname = process.env.HOST ?? '127.0.0.1'
+const defaultDataDir = path.resolve(packageRoot, '../..', 'pgdata')
+const databaseUrl = process.env.DATABASE_URL?.trim()
+const db = databaseUrl
+  ? postgres(databaseUrl)
+  : pglite(process.env.PGLITE_DATA_DIR ?? defaultDataDir)
 
-const env: BrokerEnv = await createLocalBrokerEnv(dataDir)
+const hookfish = new Hookfish({
+  db,
+  providers: {
+    github: new GitHubProvider(),
+    linear: new LinearProvider(),
+    notion: new NotionProvider(),
+  },
+})
 
 serve(
-  { fetch: (request: Request) => app.fetch(request, env), port, hostname },
+  {
+    fetch: (request: Request) => hookfish.fetch(request, process.env),
+    port,
+    hostname,
+  },
   (info) => {
-    const providerIds = providers.listProviderIds()
+    const providerIds = hookfish.providers.listProviderIds()
     const configured = providerIds.filter((id) =>
-      providers.isProviderConfigured(id),
+      hookfish.providers.isProviderConfigured(id),
     )
     const publicOrigin =
-      readEnvString(env, 'OAUTH_REDIRECT_BASE_URL') ??
+      readEnvString(process.env, 'OAUTH_REDIRECT_BASE_URL') ??
       `http://localhost:${info.port}`
 
     console.log(`OAuth broker on ${publicOrigin}/api`)
     console.log(
-      readEnvString(env, 'DATABASE_URL')
-        ? 'Database: Postgres via DATABASE_URL (stock Node)'
-        : `Database: PGlite at ${dataDir}`,
+      process.env.DATABASE_URL?.trim()
+        ? 'Database: Postgres via DATABASE_URL'
+        : `Database: PGlite at ${process.env.PGLITE_DATA_DIR ?? defaultDataDir}`,
     )
     console.log(
       configured.length > 0

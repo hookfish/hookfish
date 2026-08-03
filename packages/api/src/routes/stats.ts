@@ -5,7 +5,7 @@ const statsResponseSchema = z
     region: z.string().openapi({ example: 'SJC' }),
     uptimeMode: z.string().openapi({ example: 'per-request isolate' }),
     features: z.array(z.string()).openapi({
-      example: ['Hono API', 'React Query', 'TanStack Start', 'Node SSR'],
+      example: ['Hookfish API', 'Fetch-compatible runtime'],
     }),
   })
   .openapi('StatsResponse')
@@ -13,7 +13,7 @@ const statsResponseSchema = z
 const statsRoute = createRoute({
   method: 'get',
   path: '/',
-  summary: 'Read Node runtime stats',
+  summary: 'Read runtime stats',
   responses: {
     200: {
       description: 'Runtime metadata',
@@ -27,11 +27,13 @@ const statsRoute = createRoute({
 })
 
 export const statsRoutes = new OpenAPIHono().openapi(statsRoute, (c) => {
+  const configuredRegion = Reflect.get(c.env ?? {}, 'REGION')
+
   return c.json(
     {
-      region: process.env.REGION ?? 'local',
-      uptimeMode: 'long-lived process',
-      features: ['Hono API', 'React Query', 'TanStack Start', 'Node SSR'],
+      region: typeof configuredRegion === 'string' ? configuredRegion : 'local',
+      uptimeMode: 'fetch handler',
+      features: ['Hookfish API', 'Fetch-compatible runtime'],
     },
     200,
   )

@@ -56,6 +56,9 @@ importers:
       '@template/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@template/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@template/provider':
         specifier: workspace:*
         version: link:../../packages/provider
@@ -159,6 +162,9 @@ importers:
       '@template/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@template/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@template/provider':
         specifier: workspace:*
         version: link:../../packages/provider
@@ -184,9 +190,6 @@ importers:
 
   packages/api:
     dependencies:
-      '@electric-sql/pglite':
-        specifier: ^0.5.4
-        version: 0.5.4
       '@hono/swagger-ui':
         specifier: ^0.5.2
         version: 0.5.3(hono@4.12.23)
@@ -202,9 +205,6 @@ importers:
       hono:
         specifier: ^4.12.23
         version: 4.12.23
-      postgres:
-        specifier: ^3.4.7
-        version: 3.4.9
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -230,21 +230,34 @@ importers:
 
   packages/cli:
     dependencies:
-      '@hono/node-server':
-        specifier: ^2.0.12
-        version: 2.0.12(hono@4.12.23)
-      '@template/api':
-        specifier: workspace:*
-        version: link:../api
-      '@template/provider':
-        specifier: workspace:*
-        version: link:../provider
       commander:
         specifier: ^14.0.3
         version: 14.0.3
       tsx:
         specifier: ^4.23.1
         version: 4.23.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.3
+        version: 24.12.4
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/database:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@template/api':
+        specifier: workspace:*
+        version: link:../api
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@4.20260528.1)(@electric-sql/pglite@0.5.4)(postgres@3.4.9)
+      postgres:
+        specifier: ^3.4.7
+        version: 3.4.9
     devDependencies:
       '@types/node':
         specifier: ^24.12.3

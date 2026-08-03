@@ -1,23 +1,39 @@
 import path from 'node:path'
 import handler, { createServerEntry } from '@tanstack/react-start/server-entry'
-import { createApi } from '@template/api'
-import { createLocalBrokerEnv } from '@template/api/local-node'
-import { providers } from '../../../index.ts'
+import { Hookfish } from '@template/api'
+import { pglite } from '@template/database/pglite'
+import { postgres } from '@template/database/postgres'
+import {
+  GitHubProvider,
+  LinearProvider,
+  NotionProvider,
+} from '@template/providers'
 
-const app = createApi({ providers })
-const dataDir = process.env.PGLITE_DATA_DIR ?? path.resolve('pgdata')
-const brokerEnv = createLocalBrokerEnv(dataDir)
+const databaseUrl = process.env.DATABASE_URL?.trim()
+const projectRoot = path.resolve(import.meta.dirname, '../../..')
+const db = databaseUrl
+  ? postgres(databaseUrl)
+  : pglite(process.env.PGLITE_DATA_DIR ?? path.join(projectRoot, 'pgdata'))
+
+const hookfish = new Hookfish({
+  db,
+  providers: {
+    github: new GitHubProvider(),
+    linear: new LinearProvider(),
+    notion: new NotionProvider(),
+  },
+})
 
 /**
- * Same-origin `/api/*` is served by the shared Hono app from `@template/api`.
- * Everything else goes through TanStack Start (SSR, server functions, routes).
+ * Same-origin `/api/*` is served by the shared Hookfish instance. Everything
+ * else goes through TanStack Start (SSR, server functions, routes).
  */
 export default createServerEntry({
-  async fetch(request) {
+  fetch(request) {
     const { pathname } = new URL(request.url)
 
     if (pathname === '/api' || pathname.startsWith('/api/')) {
-      return app.fetch(request, await brokerEnv)
+      return hookfish.fetch(request, process.env)
     }
 
     return handler.fetch(request)

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@template/api": "workspace:*",
+    "@template/database": "workspace:*",
     "@template/provider": "workspace:*",
     "@template/providers": "workspace:*",
     "drizzle-orm": "^0.45.2"

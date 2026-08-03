@@ -22,15 +22,14 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 ```
 
 ```sh
-pnpm exec template serve index.ts
+pnpm exec template serve
 ```
 
-The CLI loads the TypeScript file directly, then runs the Hono app on Node with
-PGlite persisting to `pgdata` — no database to provision. It applies embedded
-PGlite migrations automatically. `pnpm dev:server` loads the same `index.ts`
-behind the portless proxy; pass another path to either command when needed.
-Use `pnpm --filter @template/server dev:node` to run the monorepo's Node entry
-without the proxy.
+The CLI runs `apps/server/src/node.ts`, which constructs Hookfish and serves it
+on Node with PGlite persisting to `pgdata` — no database to provision. It
+applies embedded PGlite migrations automatically. `pnpm dev:server` runs the
+same entrypoint behind the portless proxy. Use
+`pnpm --filter @template/server dev:node` to run it without the proxy.
 `pnpm dev` mounts the same Hono app directly in the TanStack Start Node server
 (still with PGlite on disk), so you do not need a separate API process locally.
 
@@ -48,25 +47,42 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 ## Node entrypoints
 
-Both entrypoints run the same Hono app (`@template/api`), Drizzle schema, and
-migrations on Node:
+Each host constructs a `Hookfish` instance next to its Fetch entrypoint:
 
 | command | process | default database |
 |---|---|---|
-| `pnpm dev` | TanStack Start SSR + Hono API | `apps/frontend/pgdata` |
-| `pnpm exec template serve index.ts` | standalone Hono API | `pgdata` |
+| `pnpm dev` | TanStack Start SSR + Hookfish | `pgdata` |
+| `pnpm exec template serve` | standalone Hono API | `pgdata` |
 
 Set `PGLITE_DATA_DIR` to move the embedded database. Set `DATABASE_URL` to use
 Postgres instead.
 
 ### Configuring the database
 
-`withDatabase` resolves in this order (first match wins):
+The application passes one database input to `new Hookfish({ db, providers })`.
+It may be a ready Drizzle database, a promise, or a request-aware database
+binding. The provided Node adapters are separate from the API core:
 
-1. **`env.DB`** — inject a ready Drizzle instance. Local Node does this for you
-   (PGlite, or a pooled postgres.js client when `DATABASE_URL` is set).
-2. **`env.DATABASE_URL`** — a Postgres URL. The Node entrypoint normally turns
-   this into a pooled client and injects it as `env.DB`.
+```ts
+import { Hookfish } from '@template/api'
+import { pglite } from '@template/database/pglite'
+import { postgres } from '@template/database/postgres'
+import { NotionProvider } from '@template/provider-notion'
+
+const db = process.env.DATABASE_URL
+  ? postgres(process.env.DATABASE_URL)
+  : pglite('./pgdata')
+
+export default new Hookfish({ db, providers: { notion: new NotionProvider() } })
+```
+
+`pglite()` initializes lazily and applies the bundled migrations once.
+`postgres()` accepts either a URL or a resolver called with the bindings passed
+to `Hookfish.fetch(request, bindings)`.
+
+For another runtime, implement the small binding contract with
+`defineDatabase((bindings) => database)`. This is the intended seam for a later
+Hyperdrive adapter; Hyperdrive setup itself is outside the current scope.
 
 ```sh
 # Stock Node against real Postgres
@@ -161,43 +177,41 @@ reauthorization_required` — send the user through `authorize` again.
 
 ## Adding a provider
 
-Provider slugs belong to the application, not to provider classes. Put the
-providers you want in an `index.ts` and pass it to the CLI (the filename
-defaults to `index.ts`):
+Provider slugs belong to the application, not to provider classes. Add the
+providers you want where the host constructs `Hookfish`—for example,
+`apps/server/src/node.ts` or `apps/frontend/src/server.ts`:
 
 ```sh
-pnpm add @template/provider @template/provider-github \
-  @template/provider-notion @acme/provider-slack
+pnpm add @template/api @template/database @template/provider \
+  @template/provider-github @template/provider-notion @acme/provider-slack
 pnpm add --save-dev @template/cli
 ```
 
 ```ts
-import { registerProvider } from '@template/provider'
+import { Hookfish } from '@template/api'
+import { postgres } from '@template/database/postgres'
 import { GitHubProvider } from '@template/provider-github'
 import { NotionProvider } from '@template/provider-notion'
 import { SlackProvider } from '@acme/provider-slack'
 
-export const providers = registerProvider({
-  github: new GitHubProvider({
-    clientId: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-  }),
-  notion: new NotionProvider(),
-  slack: new SlackProvider({
-    clientId: process.env.SLACK_CLIENT_ID,
-    clientSecret: process.env.SLACK_CLIENT_SECRET,
-  }),
+const hookfish = new Hookfish({
+  db: postgres(process.env.DATABASE_URL!),
+  providers: {
+    github: new GitHubProvider({
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+    }),
+    notion: new NotionProvider(),
+    slack: new SlackProvider({
+      clientId: process.env.SLACK_CLIENT_ID,
+      clientSecret: process.env.SLACK_CLIENT_SECRET,
+    }),
+  },
 })
 ```
 
-Exporting the returned registry lets the frontend or another Node host construct
-an isolated API instance with `createApi({ providers })`. The CLI also supports
-the short form without an export; it reads the registry populated by
-`registerProvider`.
-
-```sh
-pnpm exec template serve index.ts
-```
+A Hookfish instance's `fetch` property is already bound, so hosts can pass it
+directly or call `hookfish.fetch(request, bindings)`.
 
 The built-ins also read their conventional `<PROVIDER>_CLIENT_ID` and
 `<PROVIDER>_CLIENT_SECRET` variables when constructor values are omitted. A
@@ -249,7 +263,7 @@ export class SlackProvider implements OAuthProvider {
 }
 ```
 
-The broker never imports this package. The user's `index.ts` does, so custom
+The broker never imports this package. The host entrypoint does, so custom
 providers can be installed, registered, and upgraded independently without
 forking the broker repository.
 

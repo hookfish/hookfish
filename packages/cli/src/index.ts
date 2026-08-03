@@ -9,7 +9,6 @@ import {
   type PortlessApp,
   runPortlessDev,
 } from './portless.js'
-import { serveBroker } from './serve.js'
 
 /**
  * Resolve the project root from the caller's cwd first so `npx @template/cli`
@@ -49,8 +48,21 @@ function run(
       stdio: 'inherit',
       shell: process.platform === 'win32',
     })
-    child.on('error', reject)
+    const forwardSigint = () => child.kill('SIGINT')
+    const forwardSigterm = () => child.kill('SIGTERM')
+    const removeSignalHandlers = () => {
+      process.off('SIGINT', forwardSigint)
+      process.off('SIGTERM', forwardSigterm)
+    }
+
+    process.on('SIGINT', forwardSigint)
+    process.on('SIGTERM', forwardSigterm)
+    child.on('error', (error) => {
+      removeSignalHandlers()
+      reject(error)
+    })
     child.on('close', (code, signal) => {
+      removeSignalHandlers()
       if (signal) {
         resolve(1)
         return
@@ -87,10 +99,17 @@ program
 
 program
   .command('serve')
-  .description('Load a TypeScript provider config and run the OAuth broker')
-  .argument('[entry]', 'provider config file', 'index.ts')
-  .action(async (entry: string) => {
-    await serveBroker({ entry })
+  .description('Run the standalone Hookfish server')
+  .action(async () => {
+    const workspaceRoot = findWorkspaceRoot()
+    await exitWith(
+      await run(
+        process.execPath,
+        ['--import', 'tsx', 'src/node.ts'],
+        process.env,
+        path.join(workspaceRoot, 'apps/server'),
+      ),
+    )
   })
 
 program
@@ -134,8 +153,7 @@ program
 program
   .command('dev:server')
   .description('Run the server behind portless')
-  .argument('[entry]', 'provider config file', 'index.ts')
-  .action(async (entry: string) => {
+  .action(async () => {
     const workspaceRoot = findWorkspaceRoot()
     await exitWith(
       await runPortlessDev({
@@ -143,10 +161,6 @@ program
         cwd: path.join(workspaceRoot, 'apps/server'),
         workspaceRoot,
         command: ['pnpm', 'exec', 'tsx', 'watch', 'src/node.ts'],
-        env: {
-          ...process.env,
-          PROVIDER_CONFIG: path.resolve(process.cwd(), entry),
-        },
       }),
     )
   })
