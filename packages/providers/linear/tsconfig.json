@@ -1,20 +1,18 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "../../node_modules/.tmp/server-worker.tsbuildinfo",
+    "tsBuildInfoFile": "../../../node_modules/.tmp/provider-linear.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "moduleDetection": "force",
     "noEmit": true,
     "strictNullChecks": true,
     "skipLibCheck": true,
-    "types": ["@cloudflare/workers-types", "node"],
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "worker-configuration.d.ts"]
+  "include": ["src"]
 }

@@ -15,10 +15,9 @@ export type BrokerContext = {
  * Resolves the database for the request.
  *
  * Configure one of (priority order):
- * 1. `env.DB` — inject a ready Drizzle instance (local Node + PGlite, or a
+ * 1. `env.DB` — inject a ready Drizzle instance (PGlite, or a
  *    host-built postgres.js pool)
- * 2. `env.HYPERDRIVE` — Cloudflare Hyperdrive binding (Workers)
- * 3. `env.DATABASE_URL` — stock Postgres URL (Node or Workers without Hyperdrive)
+ * 2. `env.DATABASE_URL` — stock Postgres URL
  */
 export const withDatabase = createMiddleware<BrokerContext>(async (c, next) => {
   const source = resolveDatabaseSource(c.env)
@@ -27,15 +26,14 @@ export const withDatabase = createMiddleware<BrokerContext>(async (c, next) => {
     throw new BrokerError(
       500,
       'missing_configuration',
-      'No database configured. Inject env.DB (Node), bind env.HYPERDRIVE (Workers), or set DATABASE_URL.',
+      'No database configured. Inject env.DB or set DATABASE_URL.',
     )
   }
 
   if (source.kind === 'injected') {
     c.set('db', source.db)
   } else {
-    // Hyperdrive and bare DATABASE_URL on Workers share serverless-safe options.
-    c.set('db', createPostgresDatabase(source.connectionString, 'worker'))
+    c.set('db', createPostgresDatabase(source.connectionString))
   }
 
   await next()

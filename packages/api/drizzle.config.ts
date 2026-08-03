@@ -3,7 +3,7 @@ import { defineConfig } from 'drizzle-kit'
 /**
  * Migrations are generated against the Postgres dialect and applied to both
  * targets: PGlite locally (`apps/server` Node entrypoint) and hosted Postgres
- * in the Worker. One schema, one set of SQL files.
+ * at runtime. One schema, one set of SQL files.
  */
 export default defineConfig({
   dialect: 'postgresql',

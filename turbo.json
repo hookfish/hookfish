@@ -10,6 +10,38 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@template/providers#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-github#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-linear#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-notion#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-github#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-linear#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@template/provider-notion#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "@template/server#build": {
       "dependsOn": ["^build"],
       "outputs": []
@@ -22,10 +54,6 @@
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
     },
-    "cf-typegen": {
-      "cache": false,
-      "outputs": []
-    },
     "dev": {
       "cache": false,
       "persistent": true
@@ -33,10 +61,6 @@
     "preview": {
       "cache": false,
       "persistent": true
-    },
-    "deploy": {
-      "dependsOn": ["build"],
-      "cache": false
     }
   }
 }

@@ -20,7 +20,7 @@ export const getHealth = createServerFn({ method: 'GET' }).handler(
   async (): Promise<HealthResponse> => {
     return {
       ok: true,
-      runtime: 'tanstack-start-server-function',
+      runtime: 'node',
       checkedAt: new Date().toISOString(),
     }
   },

@@ -22,14 +22,17 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 ```
 
 ```sh
-pnpm --filter @template/server dev
+pnpm exec template serve index.ts
 ```
 
-That runs the Hono app on Node with PGlite persisting to `apps/server/pgdata` —
-no database to provision. Run `pnpm migrate` first so the schema is applied.
-Use `pnpm --filter @template/server dev:node` without the portless proxy.
-`pnpm dev` does the same for frontend `/api` via a Vite Node middleware (still
-PGlite on disk), so you do not need a separate API process locally.
+The CLI loads the TypeScript file directly, then runs the Hono app on Node with
+PGlite persisting to `pgdata` — no database to provision. It applies embedded
+PGlite migrations automatically. `pnpm dev:server` loads the same `index.ts`
+behind the portless proxy; pass another path to either command when needed.
+Use `pnpm --filter @template/server dev:node` to run the monorepo's Node entry
+without the proxy.
+`pnpm dev` mounts the same Hono app directly in the TanStack Start Node server
+(still with PGlite on disk), so you do not need a separate API process locally.
 
 Then register the redirect URI in each provider's developer console. Ask the
 running broker for the exact string rather than guessing it — the host depends
@@ -43,21 +46,18 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
   | jq -r '.providers[] | "\(.id)\t\(.callback_url)"'
 ```
 
-## Why there are two entrypoints
+## Node entrypoints
 
-PGlite's persistent backends are Node FS, IndexedDB, and OPFS — **none of which
-exist in workerd**. The official `pglite-cloudflare-worker-example` runs it
-purely in memory, which loses every token when the isolate recycles. So:
+Both entrypoints run the same Hono app (`@template/api`), Drizzle schema, and
+migrations on Node:
 
-| | runtime | database |
+| command | process | default database |
 |---|---|---|
-| `pnpm dev` / `pnpm --filter @template/server dev` (no `DATABASE_URL`) | Node + PGlite | `apps/server/pgdata` |
-| same commands **with** `DATABASE_URL` | Node + postgres.js | your Postgres |
-| frontend Worker SSR, `dev:worker`, `deploy` | Workers | Hyperdrive binding **or** `DATABASE_URL` |
+| `pnpm dev` | TanStack Start SSR + Hono API | `apps/frontend/pgdata` |
+| `pnpm exec template serve index.ts` | standalone Hono API | `pgdata` |
 
-Same Hono app (`@template/api`), same Drizzle schema, same migrations.
-`src/db/pglite.ts` / `local-node` are imported only from Node entrypoints, so
-PGlite never enters the Worker bundle.
+Set `PGLITE_DATA_DIR` to move the embedded database. Set `DATABASE_URL` to use
+Postgres instead.
 
 ### Configuring the database
 
@@ -65,24 +65,13 @@ PGlite never enters the Worker bundle.
 
 1. **`env.DB`** — inject a ready Drizzle instance. Local Node does this for you
    (PGlite, or a pooled postgres.js client when `DATABASE_URL` is set).
-2. **`env.HYPERDRIVE`** — Cloudflare Hyperdrive binding. Uncomment the
-   `hyperdrive` block in `apps/server/wrangler.jsonc` /
-   `apps/frontend/wrangler.jsonc`, set the config id from
-   `wrangler hyperdrive create`, and optionally `localConnectionString` for
-   `wrangler dev`.
-3. **`env.DATABASE_URL`** — stock Postgres URL. On Workers:
-   `pnpm wrangler secret put DATABASE_URL`. On Node, set it in `.env` and the
-   local entrypoint injects a pooled client as `env.DB` instead.
+2. **`env.DATABASE_URL`** — a Postgres URL. The Node entrypoint normally turns
+   this into a pooled client and injects it as `env.DB`.
 
 ```sh
 # Stock Node against real Postgres
 DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
   pnpm --filter @template/server dev:node
-```
-
-```sh
-# Workers without Hyperdrive
-pnpm wrangler secret put DATABASE_URL
 ```
 
 ## Endpoints
@@ -172,35 +161,115 @@ reauthorization_required` — send the user through `authorize` again.
 
 ## Adding a provider
 
-Append an entry to `providerRegistry` in `src/oauth/providers.ts` and set
-`<ID>_CLIENT_ID` / `<ID>_CLIENT_SECRET`. Nothing else changes. The registry
-captures the per-provider dialect differences:
+Provider slugs belong to the application, not to provider classes. Put the
+providers you want in an `index.ts` and pass it to the CLI (the filename
+defaults to `index.ts`):
+
+```sh
+pnpm add @template/provider @template/provider-github \
+  @template/provider-notion @acme/provider-slack
+pnpm add --save-dev @template/cli
+```
 
 ```ts
-slack: {
-  id: 'slack',
-  label: 'Slack',
-  authorizeUrl: 'https://slack.com/oauth/v2/authorize',
-  tokenUrl: 'https://slack.com/api/oauth.v2.access',
-  defaultScopes: ['channels:read'],
-  availableScopes: ['channels:read', 'channels:write'],
-  scopeSeparator: ',',
-  tokenRequestFormat: 'form',
-  clientAuth: 'body',
-  usePkce: false,
-  supportsRefresh: true,
+import { registerProvider } from '@template/provider'
+import { GitHubProvider } from '@template/provider-github'
+import { NotionProvider } from '@template/provider-notion'
+import { SlackProvider } from '@acme/provider-slack'
+
+export const providers = registerProvider({
+  github: new GitHubProvider({
+    clientId: process.env.GITHUB_CLIENT_ID,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET,
+  }),
+  notion: new NotionProvider(),
+  slack: new SlackProvider({
+    clientId: process.env.SLACK_CLIENT_ID,
+    clientSecret: process.env.SLACK_CLIENT_SECRET,
+  }),
+})
+```
+
+Exporting the returned registry lets the frontend or another Node host construct
+an isolated API instance with `createApi({ providers })`. The CLI also supports
+the short form without an export; it reads the registry populated by
+`registerProvider`.
+
+```sh
+pnpm exec template serve index.ts
+```
+
+The built-ins also read their conventional `<PROVIDER>_CLIENT_ID` and
+`<PROVIDER>_CLIENT_SECRET` variables when constructor values are omitted. A
+later registration for the same slug replaces the earlier one, so an app can
+override a built-in without editing broker code.
+
+To publish a custom provider, create an ordinary package that depends only on
+`@template/provider` plus the provider's official SDK. The contract has two
+required lifecycle methods and one optional refresh method; protocol details
+stay inside the class:
+
+```ts
+import type {
+  CreateAuthorizationInput,
+  ExchangeCodeInput,
+  OAuthProvider,
+  ProviderTokenResponse,
+  RefreshTokenInput,
+} from '@template/provider'
+
+export class SlackProvider implements OAuthProvider {
+  readonly label = 'Slack'
+  readonly defaultScopes = ['channels:read']
+  readonly availableScopes = ['channels:read', 'channels:write']
+
+  constructor(
+    private readonly options: {
+      clientId?: string
+      clientSecret?: string
+    } = {},
+  ) {}
+
+  createAuthorization(input: CreateAuthorizationInput) {
+    // Use the Slack SDK to return { url, codeVerifier? }.
+    throw new Error('Implement with the Slack SDK')
+  }
+  async exchangeCode(
+    input: ExchangeCodeInput,
+  ): Promise<ProviderTokenResponse> {
+    // Use the Slack SDK to return { payload, account? }.
+    throw new Error('Implement with the Slack SDK')
+  }
+  async refreshToken(
+    input: RefreshTokenInput,
+  ): Promise<ProviderTokenResponse> {
+    // Optional. Omit when Slack cannot refresh this token type.
+    throw new Error('Implement with the Slack SDK')
+  }
 }
 ```
+
+The broker never imports this package. The user's `index.ts` does, so custom
+providers can be installed, registered, and upgraded independently without
+forking the broker repository.
 
 `<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
 on the authorize request overrides it per flow. `GET /providers` exposes both
 the defaults as `scopes` and the provider's selection catalog as
 `available_scopes`.
 
-The three shipped providers differ in exactly the ways the registry models:
-Notion uses HTTP Basic auth with a JSON body and issues non-expiring tokens with
-no scope parameter; Linear separates scopes with commas; GitHub requests
-space-delimited scopes and returns comma-delimited scopes.
+The broker only coordinates state and persistence. URL parameters, scope
+formatting, request encoding, client authentication, PKCE, and response account
+metadata belong to the provider implementation.
+
+Each shipped provider has a focused `test/provider.test.ts` because its SDK and
+OAuth dialect are independent. Custom packages do not need that exact filename,
+but should test URL construction, token parsing, error mapping, and refresh when
+supported. Run everything with `pnpm test`, or one package with:
+
+```sh
+pnpm --filter @template/provider-github test
+```
 
 ## Security notes
 

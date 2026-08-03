@@ -125,6 +125,7 @@ export function runPortlessDev(options: {
   command: string[]
   cwd: string
   workspaceRoot: string
+  env?: NodeJS.ProcessEnv
 }): Promise<number> {
   const { appName, command, cwd, workspaceRoot } = options
   const { routeName, url } = getPortlessRoute(appName)
@@ -140,7 +141,7 @@ export function runPortlessDev(options: {
     { cwd: workspaceRoot },
   )
 
-  const env = { ...process.env }
+  const env = { ...(options.env ?? process.env) }
   env.PORT = String(appPort)
   env.HOST = env.HOST ?? '127.0.0.1'
   // Providers must redirect to the public HTTPS origin, not localhost:$PORT.

@@ -1,33 +1,27 @@
-import type { HyperdriveBinding } from '../db/resolve'
+import {
+  defaultProviderRegistry,
+  type OAuthProvider,
+  type ProviderRegistry,
+} from '@template/provider'
 import type { Database } from '../db/schema'
 import { BrokerError } from './errors'
-import {
-  getProviderDefinition,
-  listProviderIds,
-  type ProviderDefinition,
-} from './providers'
-
-export type { HyperdriveBinding }
 
 /**
- * Bindings available to the Worker / Node host. Provider credentials are read
- * dynamically by name (`NOTION_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, ...) so
- * adding a provider never requires touching this type.
+ * Environment available to the Node host. Provider credentials belong to
+ * provider instances registered by the application.
  *
  * Database — configure exactly one (see `resolveDatabaseSource`):
  * - `DB`: injected Drizzle instance (Node + PGlite, or a host-built pool)
- * - `HYPERDRIVE`: Cloudflare Hyperdrive binding (Workers)
  * - `DATABASE_URL`: stock Postgres connection string
  */
 export type BrokerEnv = {
   DATABASE_URL?: string
-  HYPERDRIVE?: HyperdriveBinding
   OAUTH_ENCRYPTION_KEY?: string
   BROKER_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
   PGLITE_DATA_DIR?: string
   DB?: Database
-  [key: string]: string | Database | HyperdriveBinding | undefined
+  [key: string]: string | Database | undefined
 }
 
 export function readEnvString(env: BrokerEnv, key: string): string | undefined {
@@ -46,7 +40,7 @@ function requireEnvString(env: BrokerEnv, key: string): string {
     throw new BrokerError(
       500,
       'missing_configuration',
-      `${key} is not set. Add it to .env (local) or as a Worker secret.`,
+      `${key} is not set. Add it to the Node environment or .env file.`,
     )
   }
 
@@ -54,9 +48,7 @@ function requireEnvString(env: BrokerEnv, key: string): string {
 }
 
 export type ProviderConfig = {
-  definition: ProviderDefinition
-  clientId: string
-  clientSecret: string
+  provider: OAuthProvider
   scopes: string[]
 }
 
@@ -64,46 +56,32 @@ function envPrefix(providerId: string): string {
   return providerId.toUpperCase().replace(/[^A-Z0-9]/g, '_')
 }
 
-/** True when both halves of the provider's credentials are present. */
-export function isProviderConfigured(
-  env: BrokerEnv,
-  providerId: string,
-): boolean {
-  const prefix = envPrefix(providerId)
-
-  return (
-    readEnvString(env, `${prefix}_CLIENT_ID`) !== undefined &&
-    readEnvString(env, `${prefix}_CLIENT_SECRET`) !== undefined
-  )
-}
-
 export function resolveProviderConfig(
   env: BrokerEnv,
   providerId: string,
+  providers: ProviderRegistry = defaultProviderRegistry,
 ): ProviderConfig {
-  const definition = getProviderDefinition(providerId)
+  const provider = providers.getProvider(providerId)
 
-  if (!definition) {
+  if (!provider) {
     throw new BrokerError(
       404,
       'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${listProviderIds().join(', ')}.`,
+      `Unknown provider "${providerId}". Known providers: ${providers.listProviderIds().join(', ')}.`,
     )
   }
 
-  const prefix = envPrefix(definition.id)
+  const prefix = envPrefix(providerId)
   const scopeOverride = readEnvString(env, `${prefix}_SCOPES`)
 
   return {
-    definition,
-    clientId: requireEnvString(env, `${prefix}_CLIENT_ID`),
-    clientSecret: requireEnvString(env, `${prefix}_CLIENT_SECRET`),
+    provider,
     scopes: scopeOverride
       ? scopeOverride
           .split(/[\s,]+/)
           .map((scope) => scope.trim())
           .filter((scope) => scope.length > 0)
-      : definition.defaultScopes,
+      : [...(provider.defaultScopes ?? [])],
   }
 }
 

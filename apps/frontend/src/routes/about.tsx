@@ -18,14 +18,14 @@ function About() {
         <CardHeader>
           <CardTitle>About this stack</CardTitle>
           <CardDescription>
-            A Cloudflare Workers app with separate TanStack Start and Hono apps.
+            A Node application with TanStack Start and a mounted Hono API.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm text-muted-foreground">
           <p>
-            This project targets Cloudflare Workers. TanStack Start renders the
-            React frontend and owns app-specific server functions, while Hono
-            runs as a standalone API.
+            TanStack Start renders the React frontend and owns app-specific
+            server functions. The same long-lived Node process mounts Hono at
+            `/api` and connects it to PGlite or Postgres.
           </p>
           <p>
             The frontend reads the single Hono stats endpoint with React Query.

@@ -90,6 +90,6 @@ type Schema = {
 /**
  * The broker only ever uses the subset of Drizzle that both drivers implement,
  * so route code is written once and runs on PGlite (local) or postgres.js
- * (stock Node / Workers + Hyperdrive or DATABASE_URL).
+ * (PGlite locally or Postgres through DATABASE_URL).
  */
 export type Database = PostgresJsDatabase<Schema> | PgliteDatabase<Schema>

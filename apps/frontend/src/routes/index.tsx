@@ -52,7 +52,7 @@ function Dashboard() {
     <main className="grid gap-6">
       <section className="grid max-w-3xl gap-3">
         <Badge variant="secondary" className="w-fit">
-          Cloudflare-compatible full stack app
+          Node full-stack app
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
           TanStack Start owns app actions; Hono serves `/api` on the same

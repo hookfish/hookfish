@@ -1,17 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { cloudflare } from '@cloudflare/vite-plugin'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
+import { nitro } from 'nitro/vite'
 import path from 'node:path'
-import { localApiPlugin } from './vite-plugin-local-api'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    // Node + PGlite for `/api` in local dev (before workerd).
-    localApiPlugin(),
-    cloudflare({ viteEnvironment: { name: 'ssr' } }),
     tanstackStart({
       srcDirectory: '.',
       router: {
@@ -23,6 +19,11 @@ export default defineConfig({
         entry: 'src/server.ts',
       },
     }),
+    nitro({
+      // PGlite resolves its Postgres data bundle relative to its package at
+      // runtime, so preserve the package instead of folding it into one chunk.
+      traceDeps: ['@electric-sql/pglite*'],
+    }),
     tailwindcss(),
     react(),
   ],
@@ -30,5 +31,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  ssr: {
+    external: ['@electric-sql/pglite'],
   },
 })
