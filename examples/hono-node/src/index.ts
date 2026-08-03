@@ -11,7 +11,7 @@ import {
 } from '@template/providers'
 
 const packageRoot = path.resolve(import.meta.dirname, '..')
-const envPath = path.join(packageRoot, '.env')
+const envPath = path.resolve(packageRoot, '../../apps/frontend/.env')
 
 try {
   process.loadEnvFile(envPath)
@@ -20,7 +20,7 @@ try {
   console.warn(
     `No .env at ${envPath} -- using the ambient environment only.\n` +
       '  Credentials belong in .env, not .env.example (that one is a committed template).\n' +
-      '  Create it with: cp apps/server/.env.example apps/server/.env',
+      '  Create it with: cp apps/frontend/.env.example apps/frontend/.env',
   )
 }
 

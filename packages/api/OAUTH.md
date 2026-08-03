@@ -13,7 +13,7 @@ upserts the stored tokens; using it for a different provider returns `409`.
 ## Setup
 
 ```sh
-cp apps/server/.env.example apps/server/.env
+cp apps/frontend/.env.example apps/frontend/.env
 
 # Fill in at minimum:
 openssl rand -base64 32   # -> OAUTH_ENCRYPTION_KEY
@@ -25,37 +25,33 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 pnpm exec template serve
 ```
 
-The CLI runs `apps/server/src/node.ts`, which constructs Hookfish and serves it
-on Node with PGlite persisting to `pgdata` — no database to provision. It
-applies embedded PGlite migrations automatically. `pnpm dev:server` runs the
-same entrypoint behind the portless proxy. Use
-`pnpm --filter @template/server dev:node` to run it without the proxy.
-`pnpm dev` mounts the same Hono app directly in the TanStack Start Node server
-(still with PGlite on disk), so you do not need a separate API process locally.
+The CLI runs the TanStack Start Node frontend, with Hookfish mounted directly at
+`/api` and PGlite persisting to `pgdata`—no database or separate API process to
+provision. The frontend, Node example, and local Worker all read
+`apps/frontend/.env`; Wrangler receives it through its `--env-file` option.
 
 Then register the redirect URI in each provider's developer console. Ask the
-running broker for the exact string rather than guessing it — the host depends
-on your branch (portless prefixes non-`main` hosts) and on whether you reach
-the API directly or through the frontend, and providers match `redirect_uri`
-byte for byte:
+running broker for the exact string rather than guessing it—the host depends on
+how you reach the API, and providers match `redirect_uri` byte for byte:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  https://server.localhost/api/oauth/providers \
+  http://127.0.0.1:5173/api/oauth/providers \
   | jq -r '.providers[] | "\(.id)\t\(.callback_url)"'
 ```
 
-## Node entrypoints
+## Runtime entrypoints
 
 Each host constructs a `Hookfish` instance next to its Fetch entrypoint:
 
 | command | process | default database |
 |---|---|---|
-| `pnpm dev` | TanStack Start SSR + Hookfish | `pgdata` |
-| `pnpm exec template serve` | standalone Hono API | `pgdata` |
+| `pnpm exec template serve` | TanStack Start Node SSR + Hookfish | `pgdata` |
+| `pnpm --filter @template/example-hono-node dev` | standalone Hono API | `pgdata` |
+| `pnpm --filter @template/example-cloudflare-worker dev` | Cloudflare Worker API | Hyperdrive/Postgres |
 
-Set `PGLITE_DATA_DIR` to move the embedded database. Set `DATABASE_URL` to use
-Postgres instead.
+On Node, set `PGLITE_DATA_DIR` to move the embedded database or `DATABASE_URL`
+to use Postgres. Cloudflare entrypoints use Hyperdrive instead.
 
 ### Configuring the database
 
@@ -80,14 +76,17 @@ export default new Hookfish({ db, providers: { notion: new NotionProvider() } })
 `postgres()` accepts either a URL or a resolver called with the bindings passed
 to `Hookfish.fetch(request, bindings)`.
 
-For another runtime, implement the small binding contract with
-`defineDatabase((bindings) => database)`. This is the intended seam for a later
-Hyperdrive adapter; Hyperdrive setup itself is outside the current scope.
+The Cloudflare API entrypoint passes the Wrangler-generated `Env` into a
+request-aware `postgres()` binding and resolves
+`env.HYPERDRIVE.connectionString`. It disables client caching so each request
+gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
+For another runtime, implement the same small binding contract with
+`defineDatabase((bindings) => database)`.
 
 ```sh
 # Stock Node against real Postgres
 DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
-  pnpm --filter @template/server dev:node
+  pnpm --filter @template/example-hono-node dev
 ```
 
 ## Endpoints
@@ -115,10 +114,10 @@ Start a connection. Omit `connection_id` to have the broker mint one as
 `word-word-number` (e.g. `swift-orchid-4821`):
 
 ```sh
-curl -X POST https://server.localhost/api/oauth/notion/authorize \
+curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"return_to":"https://frontend.localhost/settings"}'
+  -d '{"return_to":"http://127.0.0.1:5173/settings"}'
 ```
 
 ```json
@@ -133,10 +132,10 @@ curl -X POST https://server.localhost/api/oauth/notion/authorize \
 Pass your own id to reconnect the same link:
 
 ```sh
-curl -X POST https://server.localhost/api/oauth/notion/authorize \
+curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"connection_id":"swift-orchid-4821","return_to":"https://frontend.localhost/settings"}'
+  -d '{"connection_id":"swift-orchid-4821","return_to":"http://127.0.0.1:5173/settings"}'
 ```
 
 Redirect the user to `authorize_url`. When they approve, the broker stores the
@@ -146,17 +145,17 @@ List what you have, or fetch one:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "https://server.localhost/api/oauth/connections?provider=notion"
+  "http://127.0.0.1:5173/api/oauth/connections?provider=notion"
 
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "https://server.localhost/api/oauth/connections/swift-orchid-4821"
+  "http://127.0.0.1:5173/api/oauth/connections/swift-orchid-4821"
 ```
 
 Then, whenever you need to call the provider:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "https://server.localhost/api/oauth/connections/swift-orchid-4821/token"
+  "http://127.0.0.1:5173/api/oauth/connections/swift-orchid-4821/token"
 ```
 
 ```json
@@ -179,7 +178,7 @@ reauthorization_required` — send the user through `authorize` again.
 
 Provider slugs belong to the application, not to provider classes. Add the
 providers you want where the host constructs `Hookfish`—for example,
-`apps/server/src/node.ts` or `apps/frontend/src/server.ts`:
+`examples/hono-node/src/index.ts` or `apps/frontend/src/server.ts`:
 
 ```sh
 pnpm add @template/api @template/database @template/provider \

@@ -9,7 +9,8 @@
   "files": [],
   "references": [
     { "path": "./apps/frontend" },
-    { "path": "./apps/server" },
+    { "path": "./examples/cloudflare-worker" },
+    { "path": "./examples/hono-node" },
     { "path": "./packages/api" },
     { "path": "./packages/cli" },
     { "path": "./packages/database" },

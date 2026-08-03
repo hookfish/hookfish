@@ -15,6 +15,10 @@ export type PostgresConnection<Bindings extends object> =
   | ((bindings: Bindings) => string)
 
 export type PostgresDatabaseOptions = {
+  /** Reuse clients by connection string. Disable this in request-isolated runtimes. */
+  cache?: boolean
+  /** Skip Postgres type discovery when array types are not used. */
+  fetchTypes?: boolean
   max?: number
   prepare?: boolean
 }
@@ -41,15 +45,18 @@ export function postgres<Bindings extends object = object>(
       throw new Error('Postgres connection string cannot be empty.')
     }
 
-    const existing = databases.get(normalized)
-    if (existing) return existing
+    if (options.cache !== false) {
+      const existing = databases.get(normalized)
+      if (existing) return existing
+    }
 
     const client = postgresClient(normalized, {
+      fetch_types: options.fetchTypes ?? true,
       max: options.max ?? 10,
       prepare: options.prepare ?? true,
     })
     const database = drizzle(client, { schema })
-    databases.set(normalized, database)
+    if (options.cache !== false) databases.set(normalized, database)
     return database
   })
 }

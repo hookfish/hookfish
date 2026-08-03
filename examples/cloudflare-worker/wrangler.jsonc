@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "template-api",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      // Replace this with the id returned by `wrangler hyperdrive create`.
+      "id": "<YOUR_HYPERDRIVE_ID>"
+    }
+  ]
+}

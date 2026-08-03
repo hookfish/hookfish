@@ -13,7 +13,7 @@
       "**",
       "!!**/dist",
       "!!apps/frontend/src/routeTree.gen.ts",
-      "!!apps/**/worker-configuration.d.ts"
+      "!!**/worker-configuration.d.ts"
     ]
   },
   "formatter": {

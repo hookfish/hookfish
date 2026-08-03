@@ -1,6 +1,7 @@
 # Logs
 logs
 *.log
+*.cpuprofile
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -13,11 +14,13 @@ dist
 dist-ssr
 .output
 *.local
+.wrangler
+.dev.vars*
 
 # Secrets -- OAuth client credentials, encryption key, broker API key
 .env
 .env.*
-!apps/server/.env.example
+!apps/frontend/.env.example
 
 # Local PGlite data directory
 pgdata/
