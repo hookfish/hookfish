@@ -121,7 +121,7 @@ when unset.
 | `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
 | `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
-| `GET` | `/api/oauth/connections` | List connections (`?provider=` optional) |
+| `GET` | `/api/oauth/connections` | List connections (`?provider=` and `?connection_id_prefix=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
 | `GET` | `/api/oauth/tokens/{connection_id}` | A token valid *right now* |
 | `DELETE` | `/api/oauth/connections/{connection_id}` | Revoke upstream when supported, then forget a connection |
@@ -171,9 +171,14 @@ that reminds you to configure it before deploying.
 
 List what you have, or fetch one:
 
+Connection prefixes respect `/` segment boundaries. For example, `team/apple`
+matches `team/apple` and descendants such as `team/apple/calendar`, but not
+`team/apples`. End the prefix with `/` to list descendants without matching the
+prefix itself.
+
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "http://127.0.0.1:5173/api/oauth/connections?provider=notion"
+  "http://127.0.0.1:5173/api/oauth/connections?provider=notion&connection_id_prefix=team"
 
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
   "http://127.0.0.1:5173/api/oauth/connections/team/swift-orchid-4821"
