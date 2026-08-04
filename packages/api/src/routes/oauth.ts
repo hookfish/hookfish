@@ -293,7 +293,7 @@ const getConnectionRoute = createRoute({
 
 const tokenRoute = createRoute({
   method: 'get',
-  path: '/connections/{connection_id}/token',
+  path: '/tokens/{connection_id}',
   summary: 'Get a currently-valid access token, refreshing if needed',
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
@@ -337,6 +337,28 @@ const disconnectRoute = createRoute({
   },
 })
 
+// OpenAPI path parameters only match one path segment, while connection ids
+// are deliberately allowed to contain `/`. Keep the conventional OpenAPI
+// paths above for documentation, and use Hono's regex parameter syntax at
+// runtime so the parameter consumes the complete remainder of the path.
+const getConnectionRuntimeRoute = createRoute({
+  ...getConnectionRoute,
+  path: '/connections/:connection_id{.+}',
+  hide: true,
+})
+
+const tokenRuntimeRoute = createRoute({
+  ...tokenRoute,
+  path: '/tokens/:connection_id{.+}',
+  hide: true,
+})
+
+const disconnectRuntimeRoute = createRoute({
+  ...disconnectRoute,
+  path: '/connections/:connection_id{.+}',
+  hide: true,
+})
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -354,6 +376,13 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.use('/:provider/callback', connectDatabase)
   oauthRoutes.use('/connections', authenticate, connectDatabase)
   oauthRoutes.use('/connections/*', authenticate, connectDatabase)
+  oauthRoutes.use('/tokens/*', authenticate, connectDatabase)
+
+  // The runtime variants are hidden because regex parameters are a Hono
+  // extension, not valid OpenAPI path syntax.
+  oauthRoutes.openAPIRegistry.registerPath(getConnectionRoute)
+  oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
+  oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
   oauthRoutes.openapi(listProvidersRoute, (c) => {
     return c.json(
@@ -461,14 +490,14 @@ export function createOAuthRoutes<Bindings extends object>(
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })
 
-  oauthRoutes.openapi(getConnectionRoute, async (c) => {
+  oauthRoutes.openapi(getConnectionRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     const connection = await getConnection(c.get('db'), connectionId)
 
     return c.json({ connection: serializeConnection(connection) }, 200)
   })
 
-  oauthRoutes.openapi(tokenRoute, async (c) => {
+  oauthRoutes.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     const token = await getAccessToken(
       c.get('db'),
@@ -491,7 +520,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(disconnectRoute, async (c) => {
+  oauthRoutes.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
 
     return c.json(

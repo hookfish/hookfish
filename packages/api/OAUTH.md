@@ -116,7 +116,7 @@ when unset.
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
-| `GET` | `/api/oauth/connections/{connection_id}/token` | A token valid *right now* |
+| `GET` | `/api/oauth/tokens/{connection_id}` | A token valid *right now* |
 | `DELETE` | `/api/oauth/connections/{connection_id}` | Forget a connection |
 
 Swagger UI lives at `/api`.
@@ -144,11 +144,14 @@ curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
 
 Pass your own id to reconnect the same link:
 
+Connection ids may contain `/` and span multiple path segments, such as
+`a/b-c/d`. Use the same complete id in the connection and token URLs.
+
 ```sh
 curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"connection_id":"swift-orchid-4821","return_to":"http://127.0.0.1:5173/settings"}'
+  -d '{"connection_id":"team/swift-orchid-4821","return_to":"http://127.0.0.1:5173/settings"}'
 ```
 
 Redirect the user to `authorize_url`. When they approve, the broker stores the
@@ -168,12 +171,12 @@ Then, whenever you need to call the provider:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  "http://127.0.0.1:5173/api/oauth/connections/swift-orchid-4821/token"
+  "http://127.0.0.1:5173/api/oauth/tokens/team/swift-orchid-4821"
 ```
 
 ```json
 {
-  "connection_id": "swift-orchid-4821",
+  "connection_id": "team/swift-orchid-4821",
   "provider": "notion",
   "access_token": "secret_...",
   "token_type": "bearer",
