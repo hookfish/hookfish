@@ -67,7 +67,14 @@ import { NotionProvider } from '@hookfish/provider-notion'
 
 const db = pglite('./pgdata')
 
-export default new Hookfish({ db, providers: { notion: new NotionProvider() } })
+export default new Hookfish({
+  db,
+  // Disable the interactive docs while retaining /api/openapi.json:
+  // swaggerUi: false,
+  // Override the default development completion page before deploying:
+  // returnTo: 'https://app.example.com/settings/integrations',
+  providers: { notion: new NotionProvider() },
+})
 ```
 
 The checked-in config also includes commented `postgres()` examples for a
@@ -111,15 +118,17 @@ when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, and each `callback_url` to register |
+| `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
 | `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
 | `GET` | `/api/oauth/connections/{connection_id}/token` | A token valid *right now* |
-| `DELETE` | `/api/oauth/connections/{connection_id}` | Forget a connection |
+| `DELETE` | `/api/oauth/connections/{connection_id}` | Revoke upstream when supported, then forget a connection |
 
-Swagger UI lives at `/api`.
+Swagger UI lives at `/api` by default. Set `swaggerUi: false` in
+`hookfish.config.ts` to disable the interactive page; `/api/openapi.json`
+remains available for tooling.
 
 ## Usage
 
@@ -130,7 +139,7 @@ Start a connection. Omit `connection_id` to have the broker mint one as
 curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"return_to":"http://127.0.0.1:5173/settings"}'
+  -d '{}'
 ```
 
 ```json
@@ -148,11 +157,14 @@ Pass your own id to reconnect the same link:
 curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
-  -d '{"connection_id":"swift-orchid-4821","return_to":"http://127.0.0.1:5173/settings"}'
+  -d '{"connection_id":"swift-orchid-4821"}'
 ```
 
 Redirect the user to `authorize_url`. When they approve, the broker stores the
-tokens and sends them to `return_to?connected=notion`.
+tokens and sends them to the configured `returnTo` URL with
+`?connected=notion` appended. If `returnTo` is omitted from the Hookfish
+configuration, the callback displays a default development completion page
+that reminds you to configure it before deploying.
 
 List what you have, or fetch one:
 
@@ -231,8 +243,8 @@ override a built-in without editing broker code.
 
 To publish a custom provider, create an ordinary package that depends only on
 `@hookfish/provider` plus the provider's official SDK. The contract has two
-required lifecycle methods and one optional refresh method; protocol details
-stay inside the class:
+required lifecycle methods plus optional refresh and revocation methods;
+protocol details stay inside the class:
 
 ```ts
 import type {
@@ -241,6 +253,7 @@ import type {
   OAuthProvider,
   ProviderTokenResponse,
   RefreshTokenInput,
+  RevokeTokenInput,
 } from '@hookfish/provider'
 
 export class SlackProvider implements OAuthProvider {
@@ -271,6 +284,10 @@ export class SlackProvider implements OAuthProvider {
     // Optional. Omit when Slack cannot refresh this token type.
     throw new Error('Implement with the Slack SDK')
   }
+  async revokeToken(input: RevokeTokenInput): Promise<void> {
+    // Optional. Revoke upstream access (and refresh tokens when applicable).
+    throw new Error('Implement with the Slack SDK')
+  }
 }
 ```
 
@@ -281,7 +298,8 @@ forking the broker repository.
 `<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
 on the authorize request overrides it per flow. `GET /providers` exposes both
 the defaults as `scopes` and the provider's selection catalog as
-`available_scopes`.
+`available_scopes`. It also reports `supports_refresh` and
+`supports_revocation`, so clients do not need provider-specific knowledge.
 
 The broker only coordinates state and persistence. URL parameters, scope
 formatting, request encoding, client authentication, PKCE, and response account
@@ -308,3 +326,8 @@ pnpm --filter @hookfish/provider-github test
 - The API key is compared without early exit to keep it off the timing side
   channel.
 - Connection-listing responses never include token columns.
+- Token responses send `Cache-Control: no-store` and `Pragma: no-cache`.
+- Disconnect revokes access upstream for GitHub, Linear, and Notion before
+  deleting locally. A provider failure returns `token_revocation_failed` and
+  retains the encrypted record for retry; providers without a revocation
+  implementation are deleted locally and report `revocation: "unsupported"`.

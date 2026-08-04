@@ -5,9 +5,10 @@ import {
   type ProviderCredentials,
   ProviderRequestError,
   type ProviderTokenResponse,
+  type RefreshTokenInput,
+  type RevokeTokenInput,
   requireProviderCredentials,
   resolveProviderCredentials,
-  type RefreshTokenInput,
 } from '@hookfish/provider'
 import { z } from 'zod'
 
@@ -77,6 +78,50 @@ export class LinearProvider implements OAuthProvider {
       grant_type: 'refresh_token',
       refresh_token: input.refreshToken,
     })
+  }
+
+  async revokeToken(input: RevokeTokenInput): Promise<void> {
+    const tokens = [
+      { token: input.accessToken, token_type_hint: 'access_token' },
+      ...(input.refreshToken
+        ? [
+            {
+              token: input.refreshToken,
+              token_type_hint: 'refresh_token',
+            },
+          ]
+        : []),
+    ]
+
+    try {
+      const responses = await Promise.all(
+        tokens.map((params) =>
+          this.fetcher('https://api.linear.app/oauth/revoke', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(params).toString(),
+          }),
+        ),
+      )
+
+      for (const response of responses) {
+        if (response.ok) continue
+
+        const text = await response.text()
+        throw new ProviderRequestError(
+          `Linear revocation endpoint returned ${response.status}: ${text.slice(0, 500)}`,
+        )
+      }
+    } catch (error) {
+      if (error instanceof ProviderRequestError) throw error
+
+      throw new ProviderRequestError('Linear token revocation failed.', {
+        cause: error,
+      })
+    }
   }
 
   private async requestToken(

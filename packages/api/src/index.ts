@@ -19,6 +19,10 @@ export type HookfishProviders = Record<string, OAuthProvider> | ProviderRegistry
 export type HookfishOptions<Bindings extends object = object> = {
   providers: HookfishProviders
   db: DatabaseInput<Bindings>
+  /** Serve the interactive Swagger UI at `/api`. The OpenAPI document remains available. @default true */
+  swaggerUi?: boolean
+  /** Fixed destination after a successful OAuth callback. Omit for the development completion page. */
+  returnTo?: string
 }
 
 function normalizeProviders(providers: HookfishProviders): ProviderRegistry {
@@ -30,6 +34,8 @@ function normalizeProviders(providers: HookfishProviders): ProviderRegistry {
 function createApiRoutes<Bindings extends object>(
   providers: ProviderRegistry,
   database: DatabaseInput<Bindings>,
+  returnTo?: string,
+  swaggerUi = true,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -39,20 +45,24 @@ function createApiRoutes<Bindings extends object>(
     description: 'Send BROKER_API_KEY as `Authorization: Bearer <key>`.',
   })
 
+  base.doc('/openapi.json', {
+    openapi: '3.1.0',
+    info: {
+      title: 'Hookfish API',
+      version: '0.0.0',
+    },
+    servers: [{ url: '/api' }],
+  })
+
+  if (swaggerUi) {
+    base.get('/', swaggerUI({ url: '/api/openapi.json' }))
+  }
+
   return base
-    .doc('/openapi.json', {
-      openapi: '3.1.0',
-      info: {
-        title: 'Hookfish API',
-        version: '0.0.0',
-      },
-      servers: [{ url: '/api' }],
-    })
-    .get('/', swaggerUI({ url: '/api/openapi.json' }))
     .use('/stats', cors())
     .route('/stats', statsRoutes)
     .use('/oauth/*', cors())
-    .route('/oauth', createOAuthRoutes(providers, database))
+    .route('/oauth', createOAuthRoutes(providers, database, returnTo))
 }
 
 export type AppType = ReturnType<typeof createApiRoutes>
@@ -66,6 +76,7 @@ export type AppType = ReturnType<typeof createApiRoutes>
 export class Hookfish<Bindings extends object = object> {
   readonly providers: ProviderRegistry
   readonly db: DatabaseInput<Bindings>
+  readonly returnTo: string | undefined
   private readonly app: {
     fetch(
       request: Request,
@@ -77,7 +88,13 @@ export class Hookfish<Bindings extends object = object> {
   constructor(options: HookfishOptions<Bindings>) {
     this.providers = normalizeProviders(options.providers)
     this.db = options.db
-    const api = createApiRoutes(this.providers, options.db)
+    this.returnTo = options.returnTo
+    const api = createApiRoutes(
+      this.providers,
+      options.db,
+      options.returnTo,
+      options.swaggerUi,
+    )
     this.app = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
   }
 
@@ -103,10 +120,10 @@ export function isHookfish(value: unknown): value is Hookfish<object> {
   )
 }
 
-export type { Database, OAuthConnection, OAuthState } from './db/schema'
 export {
   type DatabaseBinding,
   type DatabaseInput,
   defineDatabase,
   migrateDatabase,
 } from './db/binding'
+export type { Database, OAuthConnection, OAuthState } from './db/schema'

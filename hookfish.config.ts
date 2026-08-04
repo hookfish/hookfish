@@ -26,6 +26,11 @@ const db = pglite(
 
 export default new Hookfish({
   db,
+  // Disable the interactive docs in deployments where `/api` should not load
+  // Swagger UI. The machine-readable `/api/openapi.json` remains available.
+  // swaggerUi: false,
+  // Override the default development completion page before deploying:
+  // returnTo: 'https://app.example.com/settings/integrations',
   providers: {
     github: new GitHubProvider(),
     linear: new LinearProvider(),
