@@ -5,6 +5,7 @@
   "files": [
     "src",
     "drizzle",
+    "CREDENTIALS.md",
     "OAUTH.md"
   ],
   "exports": {

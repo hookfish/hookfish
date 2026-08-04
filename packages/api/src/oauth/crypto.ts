@@ -39,14 +39,26 @@ export function randomToken(byteLength = 32): string {
   return toBase64Url(randomBytes(byteLength))
 }
 
-async function importKey(encryptionKey: string): Promise<CryptoKey> {
+export type SecretCryptoOptions = {
+  /** Authenticated but unencrypted context that must match during decryption. */
+  additionalData?: string
+  /** Configuration key named in validation errors. */
+  keyName?: string
+  /** Stored value named in decryption errors. */
+  subject?: string
+}
+
+async function importKey(
+  encryptionKey: string,
+  keyName: string,
+): Promise<CryptoKey> {
   const raw = fromBase64(encryptionKey)
 
   if (raw.byteLength !== 32) {
     throw new BrokerError(
       500,
       'invalid_encryption_key',
-      'OAUTH_ENCRYPTION_KEY must be 32 random bytes, base64-encoded. Generate one with: openssl rand -base64 32',
+      `${keyName} must be 32 random bytes, base64-encoded. Generate one with: openssl rand -base64 32`,
     )
   }
 
@@ -60,11 +72,21 @@ async function importKey(encryptionKey: string): Promise<CryptoKey> {
 export async function encryptSecret(
   encryptionKey: string,
   plaintext: string,
+  options: SecretCryptoOptions = {},
 ): Promise<string> {
-  const key = await importKey(encryptionKey)
+  const key = await importKey(
+    encryptionKey,
+    options.keyName ?? 'OAUTH_ENCRYPTION_KEY',
+  )
   const iv = randomBytes(IV_BYTES)
   const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    {
+      name: 'AES-GCM',
+      iv,
+      ...(options.additionalData
+        ? { additionalData: new TextEncoder().encode(options.additionalData) }
+        : {}),
+    },
     key,
     new TextEncoder().encode(plaintext),
   )
@@ -81,15 +103,25 @@ export async function encryptSecret(
 export async function decryptSecret(
   encryptionKey: string,
   encoded: string,
+  options: SecretCryptoOptions = {},
 ): Promise<string> {
-  const key = await importKey(encryptionKey)
+  const keyName = options.keyName ?? 'OAUTH_ENCRYPTION_KEY'
+  const key = await importKey(encryptionKey, keyName)
   const payload = fromBase64(encoded)
   const iv = payload.slice(0, IV_BYTES)
   const ciphertext = payload.slice(IV_BYTES)
 
   try {
     const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
+      {
+        name: 'AES-GCM',
+        iv,
+        ...(options.additionalData
+          ? {
+              additionalData: new TextEncoder().encode(options.additionalData),
+            }
+          : {}),
+      },
       key,
       ciphertext,
     )
@@ -99,7 +131,7 @@ export async function decryptSecret(
     throw new BrokerError(
       500,
       'decryption_failed',
-      'Stored token could not be decrypted. OAUTH_ENCRYPTION_KEY has probably changed since it was written.',
+      `${options.subject ?? 'Stored token'} could not be decrypted. ${keyName} or its authenticated context has probably changed since it was written.`,
     )
   }
 }
