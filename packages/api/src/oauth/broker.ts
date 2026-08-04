@@ -6,7 +6,7 @@ import {
   ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, lt, or, sql } from 'drizzle-orm'
 import {
   type Database,
   type OAuthConnection,
@@ -446,16 +446,24 @@ export async function getAccessToken(
 
 export async function listConnections(
   db: Database,
-  options: { provider?: string } = {},
+  options: { provider?: string; connectionIdPrefix?: string } = {},
 ): Promise<OAuthConnection[]> {
-  if (options.provider) {
-    return db
-      .select()
-      .from(oauthConnections)
-      .where(eq(oauthConnections.provider, options.provider))
-  }
+  const providerFilter = options.provider
+    ? eq(oauthConnections.provider, options.provider)
+    : undefined
+  const prefixFilter = options.connectionIdPrefix
+    ? options.connectionIdPrefix.endsWith('/')
+      ? sql<boolean>`starts_with(${oauthConnections.connectionId}, ${options.connectionIdPrefix})`
+      : or(
+          eq(oauthConnections.connectionId, options.connectionIdPrefix),
+          sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${options.connectionIdPrefix}/`})`,
+        )
+    : undefined
 
-  return db.select().from(oauthConnections)
+  return db
+    .select()
+    .from(oauthConnections)
+    .where(and(providerFilter, prefixFilter))
 }
 
 export type DeleteConnectionResult = {

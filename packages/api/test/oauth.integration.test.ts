@@ -288,6 +288,68 @@ describe('OAuth broker integration', () => {
     })
   })
 
+  it('lists connections by segment-aware literal connection id prefix', async () => {
+    const connectionIds = [
+      'prefix-search/team/%_',
+      'prefix-search/team/%_/one',
+      'prefix-search/team/%_/two',
+      'prefix-search/team/%_extra/three',
+      'prefix-search/other/four',
+    ]
+
+    try {
+      await h.authorizeAndCallback({ connectionId: connectionIds[0] })
+      await h.authorizeAndCallback({ connectionId: connectionIds[1] })
+      await h.authorizeAndCallback({
+        provider: h.altProviderId,
+        connectionId: connectionIds[2],
+      })
+      await h.authorizeAndCallback({ connectionId: connectionIds[3] })
+      await h.authorizeAndCallback({ connectionId: connectionIds[4] })
+
+      const prefix = new URLSearchParams({
+        connection_id_prefix: 'prefix-search/team/%_',
+      })
+      const prefixResponse = await h.fetch(`/api/oauth/connections?${prefix}`)
+      expect(prefixResponse.status).toBe(200)
+      const prefixBody: {
+        connections: Array<{ connection_id: string }>
+      } = await prefixResponse.json()
+      expect(prefixBody.connections.map((c) => c.connection_id).sort()).toEqual(
+        connectionIds.slice(0, 3).sort(),
+      )
+
+      prefix.set('connection_id_prefix', 'prefix-search/team/%_/')
+      const descendantsResponse = await h.fetch(
+        `/api/oauth/connections?${prefix}`,
+      )
+      expect(descendantsResponse.status).toBe(200)
+      const descendantsBody: {
+        connections: Array<{ connection_id: string }>
+      } = await descendantsResponse.json()
+      expect(
+        descendantsBody.connections.map((c) => c.connection_id).sort(),
+      ).toEqual(connectionIds.slice(1, 3).sort())
+
+      prefix.set('connection_id_prefix', 'prefix-search/team/%_')
+      prefix.set('provider', h.providerId)
+      const providerResponse = await h.fetch(`/api/oauth/connections?${prefix}`)
+      expect(providerResponse.status).toBe(200)
+      const providerBody: {
+        connections: Array<{ connection_id: string }>
+      } = await providerResponse.json()
+      expect(
+        providerBody.connections.map((c) => c.connection_id).sort(),
+      ).toEqual(connectionIds.slice(0, 2).sort())
+    } finally {
+      for (const connectionId of connectionIds) {
+        await h.fetch(`/api/oauth/connections/${connectionId}`, {
+          method: 'DELETE',
+        })
+      }
+    }
+  })
+
   it('upserts when reconnecting the same connection id for the same provider', async () => {
     const connectionId = 'same-link-reconnect'
     h.stub.nextTokenResponse = {
