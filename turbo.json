@@ -54,6 +54,14 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@hookfish/example-express#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@hookfish/example-nextjs#build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
     "typecheck": {
       "dependsOn": ["^typecheck"],
       "outputs": []

@@ -10,7 +10,9 @@
   "references": [
     { "path": "./apps/frontend" },
     { "path": "./examples/cloudflare-worker" },
+    { "path": "./examples/express" },
     { "path": "./examples/hono-node" },
+    { "path": "./examples/nextjs" },
     { "path": "./packages/api" },
     { "path": "./packages/cli" },
     { "path": "./packages/database" },
