@@ -133,9 +133,7 @@ describe('OAuth broker integration', () => {
     const got: { connection: { connection_id: string } } = await getRes.json()
     expect(got.connection.connection_id).toBe(connectionId)
 
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     expect(tokenRes.status).toBe(200)
     expect(tokenRes.headers.get('cache-control')).toBe('no-store')
     expect(tokenRes.headers.get('pragma')).toBe('no-cache')
@@ -250,6 +248,46 @@ describe('OAuth broker integration', () => {
     expect((await fetchApp('/api/openapi.json')).status).toBe(200)
   })
 
+  it('supports path-compatible connection ids', async () => {
+    const connectionId = 'a/b-c/d'
+    const { callback } = await h.authorizeAndCallback({ connectionId })
+    expect(callback.status).toBe(200)
+
+    const getRes = await h.fetch(`/api/oauth/connections/${connectionId}`)
+    expect(getRes.status).toBe(200)
+    const got: { connection: { connection_id: string } } = await getRes.json()
+    expect(got.connection.connection_id).toBe(connectionId)
+
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
+    expect(tokenRes.status).toBe(200)
+    const token: { connection_id: string; access_token: string } =
+      await tokenRes.json()
+    expect(token.connection_id).toBe(connectionId)
+    expect(token.access_token).toMatch(/^access-/)
+
+    const oldTokenPath = await h.fetch(
+      `/api/oauth/connections/${connectionId}/token`,
+    )
+    expect(oldTokenPath.status).toBe(404)
+
+    const openApi: { paths: Record<string, unknown> } = await (
+      await h.fetch('/api/openapi.json')
+    ).json()
+    expect(openApi.paths['/oauth/tokens/{connection_id}']).toBeDefined()
+    expect(
+      openApi.paths['/oauth/connections/{connection_id}/token'],
+    ).toBeUndefined()
+
+    const delRes = await h.fetch(`/api/oauth/connections/${connectionId}`, {
+      method: 'DELETE',
+    })
+    expect(delRes.status).toBe(200)
+    expect(await delRes.json()).toEqual({
+      deleted: true,
+      revocation: 'unsupported',
+    })
+  })
+
   it('upserts when reconnecting the same connection id for the same provider', async () => {
     const connectionId = 'same-link-reconnect'
     h.stub.nextTokenResponse = {
@@ -272,9 +310,7 @@ describe('OAuth broker integration', () => {
     const second = await h.authorizeAndCallback({ connectionId })
     expect(second.callback.status).toBe(200)
 
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     const token: { access_token: string } = await tokenRes.json()
     expect(token.access_token).toBe('access-second')
 
@@ -376,9 +412,7 @@ describe('OAuth broker integration', () => {
       expires_in: 3600,
     }
 
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     expect(tokenRes.status).toBe(200)
     const token: { access_token: string; refreshed: boolean } =
       await tokenRes.json()
@@ -569,9 +603,7 @@ describe('OAuth broker integration', () => {
     })
     expect(callback.status).toBe(200)
 
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     const token: { scopes: string[] } = await tokenRes.json()
     expect(token.scopes).toEqual(['repo', 'gist'])
 
@@ -690,9 +722,7 @@ describe('OAuth broker integration', () => {
       })
       .where(eq(oauthConnections.connectionId, connectionId))
 
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     expect(tokenRes.status).toBe(401)
     const body: { error: { code: string } } = await tokenRes.json()
     expect(body.error.code).toBe('reauthorization_required')
@@ -783,9 +813,7 @@ describe('OAuth broker integration', () => {
     expect(callback.status).toBe(200)
 
     h.env.OAUTH_ENCRYPTION_KEY = OTHER_ENCRYPTION_KEY
-    const tokenRes = await h.fetch(
-      `/api/oauth/connections/${connectionId}/token`,
-    )
+    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     h.env.OAUTH_ENCRYPTION_KEY = TEST_ENCRYPTION_KEY
 
     expect(tokenRes.status).toBe(500)
