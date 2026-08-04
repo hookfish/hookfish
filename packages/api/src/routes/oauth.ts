@@ -275,7 +275,8 @@ const listConnectionsRoute = createRoute({
   method: 'get',
   path: '/connections',
   summary: 'List connections',
-  description: 'Returns every stored connection. Pass `provider` to filter.',
+  description:
+    'Returns every stored connection. Pass `provider`, `connection_id_prefix`, or both to filter. Connection id prefixes respect `/` segment boundaries: `team/apple` matches itself and `team/apple/...`, but not `team/apples`.',
   security: brokerAuth,
   request: {
     query: z.object({
@@ -286,6 +287,14 @@ const listConnectionsRoute = createRoute({
         .openapi({
           param: { name: 'provider', in: 'query' },
           example: 'notion',
+        }),
+      connection_id_prefix: z
+        .string()
+        .min(1)
+        .optional()
+        .openapi({
+          param: { name: 'connection_id_prefix', in: 'query' },
+          example: 'team/',
         }),
     }),
   },
@@ -527,8 +536,12 @@ export function createOAuthRoutes<Bindings extends object>(
   })
 
   const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
-    const { provider } = c.req.valid('query')
-    const connections = await listConnections(c.get('db'), { provider })
+    const { provider, connection_id_prefix: connectionIdPrefix } =
+      c.req.valid('query')
+    const connections = await listConnections(c.get('db'), {
+      provider,
+      connectionIdPrefix,
+    })
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })
