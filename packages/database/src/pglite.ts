@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
 import {
+  credentials,
   type Database,
   type DatabaseBinding,
   defineDatabase,
@@ -10,7 +11,7 @@ import { migrationsFolder as bundledMigrations } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 
-const schema = { oauthConnections, oauthStates }
+const schema = { credentials, oauthConnections, oauthStates }
 
 export type PgliteDatabaseOptions = {
   /** Override the bundled Hookfish migrations, or set false to skip them. */

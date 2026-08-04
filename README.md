@@ -22,7 +22,8 @@ The Node frontend defaults to PGlite, so no database service is required.
 ```sh
 pnpm install
 cp apps/frontend/.env.example apps/frontend/.env
-# Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
+# Fill OAUTH_ENCRYPTION_KEY, CREDENTIALS_ENCRYPTION_KEY, BROKER_API_KEY,
+# and provider credentials.
 
 pnpm dev
 # Equivalent: pnpm exec hookfish serve
@@ -137,6 +138,10 @@ configuration and run migrations before starting.
 
 More detail on the broker, custom providers, and endpoints is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md).
+
+User-supplied API keys and headers can be stored in the encrypted credential
+vault documented in
+[packages/api/CREDENTIALS.md](packages/api/CREDENTIALS.md).
 
 ## Commands
 

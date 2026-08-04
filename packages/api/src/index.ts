@@ -11,6 +11,7 @@ import { cors } from 'hono/cors'
 
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { BrokerContext } from './oauth/middleware'
+import { createCredentialRoutes } from './routes/credentials'
 import { createOAuthRoutes } from './routes/oauth'
 import { statsRoutes } from './routes/stats'
 
@@ -61,6 +62,7 @@ function createApiRoutes<Bindings extends object>(
   return base
     .use('/stats', cors())
     .route('/stats', statsRoutes)
+    .route('/credentials', createCredentialRoutes(database))
     .use('/oauth/*', cors())
     .route('/oauth', createOAuthRoutes(providers, database, returnTo))
 }
@@ -126,4 +128,9 @@ export {
   defineDatabase,
   migrateDatabase,
 } from './db/binding'
-export type { Database, OAuthConnection, OAuthState } from './db/schema'
+export type {
+  Credential,
+  Database,
+  OAuthConnection,
+  OAuthState,
+} from './db/schema'

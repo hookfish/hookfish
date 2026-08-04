@@ -249,6 +249,8 @@ export async function createHarness(
   const env: BrokerEnv = {
     ...process.env,
     NODE_ENV: 'test',
+    CREDENTIALS_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
+    CREDENTIALS_OWNER_ID: 'test-owner',
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
     BROKER_API_KEY: 'test',

@@ -7,6 +7,8 @@ import { BrokerError } from './errors'
  */
 export type BrokerEnv = {
   OAUTH_ENCRYPTION_KEY?: string
+  CREDENTIALS_ENCRYPTION_KEY?: string
+  CREDENTIALS_OWNER_ID?: string
   BROKER_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
   [key: string]: unknown
@@ -21,7 +23,7 @@ export function readEnvString(env: object, key: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function requireEnvString(env: object, key: string): string {
+export function requireEnvString(env: object, key: string): string {
   const value = readEnvString(env, key)
 
   if (!value) {

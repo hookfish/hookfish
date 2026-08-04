@@ -77,10 +77,44 @@ export const oauthStates = pgTable(
   (table) => [index('oauth_states_expires_idx').on(table.expiresAt)],
 )
 
+/**
+ * User-supplied credentials such as API keys and request headers. Secret
+ * values are serialized and encrypted before this table is touched. The
+ * owner id is deliberately present even while the default deployment uses a
+ * single system owner, so adding user authentication does not require
+ * redesigning the storage model.
+ */
+export const credentials = pgTable(
+  'credentials',
+  {
+    id: uuid('id').primaryKey(),
+    ownerId: text('owner_id').notNull(),
+    name: text('name').notNull(),
+    kind: text('kind').notNull(),
+    encryptedPayload: text('encrypted_payload').notNull(),
+    encryptionVersion: text('encryption_version').notNull().default('v1'),
+    /** Non-secret field/header names, safe to show without decrypting. */
+    fields: text('fields').array().notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('credentials_owner_idx').on(table.ownerId),
+    index('credentials_owner_kind_idx').on(table.ownerId, table.kind),
+  ],
+)
+
 export type OAuthConnection = typeof oauthConnections.$inferSelect
 export type OAuthState = typeof oauthStates.$inferSelect
+export type Credential = typeof credentials.$inferSelect
 
 type Schema = {
+  credentials: typeof credentials
   oauthConnections: typeof oauthConnections
   oauthStates: typeof oauthStates
 }
