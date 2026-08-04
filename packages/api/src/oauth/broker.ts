@@ -68,6 +68,8 @@ function parseScopeValue(value: string | string[] | undefined): string[] {
 export type StartAuthorizationInput = {
   /** Omit to mint an id that is not yet in use. */
   connectionId?: string
+  /** Places an automatically minted id below this slash-delimited prefix. */
+  connectionIdPrefix?: string
   provider: string
   redirectUri: string
   /** Overrides the provider's configured scopes for this one flow. */
@@ -81,9 +83,13 @@ export type StartAuthorizationInput = {
  */
 const MINT_ATTEMPTS = 8
 
-async function mintConnectionId(db: Database): Promise<string> {
+async function mintConnectionId(
+  db: Database,
+  prefix?: string,
+): Promise<string> {
   for (let attempt = 0; attempt < MINT_ATTEMPTS; attempt++) {
-    const candidate = generateConnectionId()
+    const generatedId = generateConnectionId()
+    const candidate = prefix ? `${prefix}/${generatedId}` : generatedId
 
     if (!(await findConnection(db, candidate))) return candidate
   }
@@ -126,9 +132,18 @@ export async function startAuthorization(
   const config = resolveProviderConfig(env, input.provider, providers)
   const { provider } = config
 
+  if (input.connectionId && input.connectionIdPrefix) {
+    throw new BrokerError(
+      400,
+      'invalid_connection_id',
+      'Pass either connection_id or connection_id_prefix, not both.',
+    )
+  }
+
   // A minted id is already known to be free; a caller-supplied one may be
   // linked to another provider.
-  const connectionId = input.connectionId ?? (await mintConnectionId(db))
+  const connectionId =
+    input.connectionId ?? (await mintConnectionId(db, input.connectionIdPrefix))
 
   if (input.connectionId) {
     await assertProviderMatches(db, input.connectionId, input.provider)

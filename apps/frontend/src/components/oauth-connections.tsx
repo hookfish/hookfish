@@ -261,8 +261,15 @@ function AddConnectionDialog({
   const normalizedPath = path.trim()
   const normalizedName = name.trim()
   const connectionId = joinConnectionPath(normalizedPath, normalizedName)
+  const connectionIdPreview = normalizedName
+    ? connectionId
+    : normalizedPath
+      ? `${normalizedPath}/word-word-number`
+      : 'word-word-number'
   const pathError = validateConnectionPath(normalizedPath)
-  const nameError = validateConnectionName(normalizedName)
+  const nameError = normalizedName
+    ? validateConnectionName(normalizedName)
+    : undefined
   const error = pathError ?? nameError
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -271,7 +278,11 @@ function AddConnectionDialog({
 
     const input: AuthorizeConnectionInput = {
       provider: providerId,
-      connection_id: connectionId,
+      ...(normalizedName
+        ? { connection_id: connectionId }
+        : normalizedPath
+          ? { connection_id_prefix: normalizedPath }
+          : {}),
     }
     mutation.mutate(input)
   }
@@ -294,8 +305,8 @@ function AddConnectionDialog({
           <DialogHeader>
             <DialogTitle>Add connection</DialogTitle>
             <DialogDescription>
-              Name the connection and place it in the current path or a new
-              nested path.
+              Place the connection in the current path or a new nested path. Add
+              a name, or let Hookfish generate one.
             </DialogDescription>
           </DialogHeader>
 
@@ -316,17 +327,19 @@ function AddConnectionDialog({
             </Field>
 
             <Field data-invalid={Boolean(nameError)}>
-              <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
+              <FieldLabel htmlFor="connection-name">
+                Connection name (optional)
+              </FieldLabel>
               <Input
                 id="connection-name"
                 value={name}
-                placeholder="production"
+                placeholder="Generated automatically"
                 autoComplete="off"
                 aria-invalid={Boolean(nameError)}
                 onChange={(event) => setName(event.target.value)}
               />
               <FieldDescription>
-                Full ID: <code>{connectionId || 'connection-name'}</code>
+                Full ID: <code>{connectionIdPreview}</code>
               </FieldDescription>
               <FieldError>{nameError}</FieldError>
             </Field>

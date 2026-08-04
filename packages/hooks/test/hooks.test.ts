@@ -124,6 +124,22 @@ describe('createHookfishHooks', () => {
       connection_id: 'swift-orchid-4821',
       scopes: ['read:user'],
     })
+
+    await mutation.mutationFn(
+      {
+        provider: 'github',
+        connection_id_prefix: 'team/payments',
+      },
+      {
+        client: queryClient(),
+        meta: undefined,
+        mutationKey: mutation.mutationKey,
+      },
+    )
+
+    await expect(requests[1]?.json()).resolves.toEqual({
+      connection_id_prefix: 'team/payments',
+    })
   })
 
   it('preserves slashes in connection ids handled by runtime routes', async () => {

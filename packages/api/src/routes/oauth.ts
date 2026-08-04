@@ -202,7 +202,7 @@ const authorizeRoute = createRoute({
   path: '/{provider}/authorize',
   summary: 'Create a consent URL for a connection',
   description:
-    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`). Each connection id is one provider link.',
+    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.',
   security: brokerAuth,
   request: {
     params: providerParamSchema,
@@ -214,6 +214,11 @@ const authorizeRoute = createRoute({
               description:
                 'Opaque id for this provider link. Omit to auto-generate as `word-word-number` (e.g. `swift-orchid-4821`). Re-pass the same id to reconnect the same link; a different provider on an existing id returns 409.',
               example: EXAMPLE_CONNECTION_ID,
+            }),
+            connection_id_prefix: z.string().min(1).optional().openapi({
+              description:
+                'Slash-delimited path below which the broker should mint an id. Use this only when connection_id is omitted.',
+              example: 'team/payments',
             }),
             scopes: z.array(z.string()).optional().openapi({
               description:
@@ -461,6 +466,7 @@ export function createOAuthRoutes<Bindings extends object>(
       c.env,
       {
         connectionId: body.connection_id,
+        connectionIdPrefix: body.connection_id_prefix,
         provider,
         redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
         scopes: body.scopes,

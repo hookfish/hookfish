@@ -163,6 +163,35 @@ describe('OAuth broker integration', () => {
     expect(missing.status).toBe(404)
   })
 
+  it('mints an unnamed connection below a requested path', async () => {
+    const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        connection_id_prefix: 'team/payments',
+      }),
+    })
+    const body: { connection_id: string } = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.connection_id).toMatch(/^team\/payments\/[a-z]+-[a-z]+-\d{4}$/)
+  })
+
+  it('rejects an explicit connection id combined with a generated-id path', async () => {
+    const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        connection_id: 'team/payments/production',
+        connection_id_prefix: 'team/payments',
+      }),
+    })
+    const body: { error: { code: string } } = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error.code).toBe('invalid_connection_id')
+  })
+
   it('revokes upstream credentials before deleting the local connection', async () => {
     const provider = h.providers.getProvider(h.providerId)
     if (!provider) throw new Error('Expected stub provider')
