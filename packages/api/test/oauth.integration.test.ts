@@ -1,6 +1,7 @@
 import {
   type OAuthProvider,
   ProviderConfigurationError,
+  ProviderRequestError,
 } from '@hookfish/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -37,6 +38,7 @@ describe('OAuth broker integration', () => {
         callback_url: string
         scopes: string[]
         available_scopes: string[]
+        supports_revocation: boolean
       }>
     } = await res.json()
 
@@ -46,6 +48,7 @@ describe('OAuth broker integration', () => {
       callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
       scopes: ['read', 'write'],
       available_scopes: ['read', 'write'],
+      supports_revocation: false,
     })
   })
 
@@ -114,21 +117,16 @@ describe('OAuth broker integration', () => {
     const { connectionId, callback } = await h.authorizeAndCallback()
 
     expect(callback.status).toBe(200)
-    const connected: {
-      connected: true
-      connection: {
-        connection_id: string
-        provider: string
-        external_account_id: string | null
-        external_account_label: string | null
-      }
-    } = await callback.json()
-
-    expect(connected.connected).toBe(true)
-    expect(connected.connection.connection_id).toBe(connectionId)
-    expect(connected.connection.provider).toBe(h.providerId)
-    expect(connected.connection.external_account_id).toBe('acct_stub')
-    expect(connected.connection.external_account_label).toBe('Stub Account')
+    expect(callback.headers.get('content-type')).toContain('text/html')
+    expect(callback.headers.get('cache-control')).toBe('no-store')
+    expect(callback.headers.get('referrer-policy')).toBe('no-referrer')
+    const completionPage = await callback.text()
+    expect(completionPage).toContain('Hookfish development mode')
+    expect(completionPage).toContain('Connection complete')
+    expect(completionPage).toContain(
+      `Connection ID: <code>${connectionId}</code>`,
+    )
+    expect(completionPage).toContain('hookfish.config.ts')
 
     const getRes = await h.fetch(`/api/oauth/connections/${connectionId}`)
     expect(getRes.status).toBe(200)
@@ -137,6 +135,8 @@ describe('OAuth broker integration', () => {
 
     const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
     expect(tokenRes.status).toBe(200)
+    expect(tokenRes.headers.get('cache-control')).toBe('no-store')
+    expect(tokenRes.headers.get('pragma')).toBe('no-cache')
     const token: {
       access_token: string
       refreshed: boolean
@@ -154,10 +154,98 @@ describe('OAuth broker integration', () => {
       method: 'DELETE',
     })
     expect(delRes.status).toBe(200)
-    expect(await delRes.json()).toEqual({ deleted: true })
+    expect(await delRes.json()).toEqual({
+      deleted: true,
+      revocation: 'unsupported',
+    })
 
     const missing = await h.fetch(`/api/oauth/connections/${connectionId}`)
     expect(missing.status).toBe(404)
+  })
+
+  it('revokes upstream credentials before deleting the local connection', async () => {
+    const provider = h.providers.getProvider(h.providerId)
+    if (!provider) throw new Error('Expected stub provider')
+
+    const originalRevokeToken = provider.revokeToken
+    const revocations: Array<{
+      accessToken: string
+      refreshToken?: string
+    }> = []
+    provider.revokeToken = async (input) => {
+      revocations.push(input)
+    }
+
+    try {
+      h.stub.nextTokenResponse = {
+        access_token: 'access-to-revoke',
+        refresh_token: 'refresh-to-revoke',
+      }
+      const { connectionId } = await h.authorizeAndCallback({
+        connectionId: 'revoke-upstream',
+      })
+      const response = await h.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({
+        deleted: true,
+        revocation: 'revoked',
+      })
+      expect(revocations).toEqual([
+        {
+          accessToken: 'access-to-revoke',
+          refreshToken: 'refresh-to-revoke',
+        },
+      ])
+    } finally {
+      provider.revokeToken = originalRevokeToken
+    }
+  })
+
+  it('retains the local connection when upstream revocation fails', async () => {
+    const provider = h.providers.getProvider(h.providerId)
+    if (!provider) throw new Error('Expected stub provider')
+
+    const originalRevokeToken = provider.revokeToken
+    provider.revokeToken = async () => {
+      throw new ProviderRequestError('Stub token revocation failed.')
+    }
+
+    const connectionId = 'failed-revocation'
+    try {
+      await h.authorizeAndCallback({ connectionId })
+      const response = await h.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
+      const body: { error: { code: string } } = await response.json()
+
+      expect(response.status).toBe(502)
+      expect(body.error.code).toBe('token_revocation_failed')
+      expect(
+        await h.fetch(`/api/oauth/connections/${connectionId}`),
+      ).toHaveProperty('status', 200)
+    } finally {
+      provider.revokeToken = undefined
+      await h.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
+      provider.revokeToken = originalRevokeToken
+    }
+  })
+
+  it('can disable Swagger UI without disabling the OpenAPI document', async () => {
+    const app = new Hookfish({
+      providers: h.providers,
+      db: h.db,
+      swaggerUi: false,
+    })
+    const fetchApp = (path: string) =>
+      app.fetch(new Request(`${API_ORIGIN}${path}`), h.env)
+
+    expect((await fetchApp('/api')).status).toBe(404)
+    expect((await fetchApp('/api/openapi.json')).status).toBe(200)
   })
 
   it('supports path-compatible connection ids', async () => {
@@ -194,7 +282,10 @@ describe('OAuth broker integration', () => {
       method: 'DELETE',
     })
     expect(delRes.status).toBe(200)
-    expect(await delRes.json()).toEqual({ deleted: true })
+    expect(await delRes.json()).toEqual({
+      deleted: true,
+      revocation: 'unsupported',
+    })
   })
 
   it('upserts when reconnecting the same connection id for the same provider', async () => {
@@ -370,18 +461,57 @@ describe('OAuth broker integration', () => {
     expect(body.error.code).toBe('token_exchange_failed')
   })
 
-  it('redirects to return_to after a successful callback', async () => {
-    const { callback } = await h.authorizeAndCallback({
-      connectionId: 'with-return-to',
+  it('uses the configured returnTo URL and ignores request overrides', async () => {
+    const configured = await createHarness({
       returnTo: 'https://frontend.localhost/settings',
     })
 
-    expect(callback.status).toBe(302)
-    expect(callback.headers.get('location')).toBe(
-      `https://frontend.localhost/settings?connected=${h.providerId}`,
-    )
+    try {
+      const authorize = await configured.fetch(
+        `/api/oauth/${configured.providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            connection_id: 'with-return-to',
+            return_to: 'https://attacker.example/ignored',
+          }),
+        },
+      )
+      const authorization: { authorize_url: string } = await authorize.json()
+      const consent = await fetch(authorization.authorize_url, {
+        redirect: 'manual',
+      })
+      const callbackUrl = new URL(consent.headers.get('location')!)
+      const callback = await configured.fetch(
+        `${callbackUrl.pathname}${callbackUrl.search}`,
+      )
 
-    await h.fetch('/api/oauth/connections/with-return-to', { method: 'DELETE' })
+      expect(callback.status).toBe(302)
+      expect(callback.headers.get('location')).toBe(
+        `https://frontend.localhost/settings?connected=${configured.providerId}`,
+      )
+
+      await configured.fetch('/api/oauth/connections/with-return-to', {
+        method: 'DELETE',
+      })
+    } finally {
+      await configured.close()
+    }
+  })
+
+  it('escapes caller-supplied connection ids on the development page', async () => {
+    const connectionId = '<img src=x onerror=alert(1)>'
+    const { callback } = await h.authorizeAndCallback({ connectionId })
+    const completionPage = await callback.text()
+
+    expect(completionPage).not.toContain(connectionId)
+    expect(completionPage).toContain('&lt;img src=x onerror=alert(1)&gt;')
+
+    await h.fetch(
+      `/api/oauth/connections/${encodeURIComponent(connectionId)}`,
+      { method: 'DELETE' },
+    )
   })
 
   it('returns provider denial and invalid callback errors', async () => {
@@ -751,7 +881,6 @@ describe('OAuth broker integration', () => {
       provider: h.providerId,
       codeVerifier: null,
       redirectUri: `${API_ORIGIN}/api/oauth/${h.providerId}/callback`,
-      returnTo: null,
       scopes: [],
       expiresAt: new Date(Date.now() - 60_000),
     })

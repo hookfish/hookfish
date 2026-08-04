@@ -45,7 +45,6 @@ export type TestHarness = {
   authorizeAndCallback: (options?: {
     provider?: string
     connectionId?: string
-    returnTo?: string
     scopes?: string[]
   }) => Promise<{
     connectionId: string
@@ -196,7 +195,9 @@ function providerDefinition(
   return provider
 }
 
-export async function createHarness(): Promise<TestHarness> {
+export async function createHarness(
+  options: { returnTo?: string } = {},
+): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'oauth-broker-'))
   const stub = await startOAuthStub()
 
@@ -243,7 +244,7 @@ export async function createHarness(): Promise<TestHarness> {
   })
   const database = pglite(dataDir)
   const db = await database.getDatabase({})
-  const app = new Hookfish({ providers, db })
+  const app = new Hookfish({ providers, db, returnTo: options.returnTo })
 
   const env: BrokerEnv = {
     ...process.env,
@@ -278,7 +279,6 @@ export async function createHarness(): Promise<TestHarness> {
     const provider = options.provider ?? providerId
     const body: Record<string, unknown> = {}
     if (options.connectionId) body.connection_id = options.connectionId
-    if (options.returnTo) body.return_to = options.returnTo
     if (options.scopes) body.scopes = options.scopes
 
     const authorizeRes = await apiFetch(`/api/oauth/${provider}/authorize`, {

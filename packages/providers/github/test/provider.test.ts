@@ -14,9 +14,11 @@ describe('GitHubProvider', () => {
         scopes: ['repo', 'gist'],
       },
     }))
+    const deleteToken = vi.fn(async () => undefined)
     const factory = vi.fn(() => ({
       getWebFlowAuthorizationUrl,
       createToken,
+      deleteToken,
     }))
     const provider = new GitHubProvider({
       ...credentials,
@@ -32,6 +34,7 @@ describe('GitHubProvider', () => {
       code: 'code',
       redirectUri: 'https://broker.example/callback',
     })
+    await provider.revokeToken({ accessToken: 'github-token' })
 
     expect(factory).toHaveBeenCalledWith(credentials)
     expect(getWebFlowAuthorizationUrl).toHaveBeenCalledWith({
@@ -43,6 +46,7 @@ describe('GitHubProvider', () => {
       code: 'code',
       redirectUrl: 'https://broker.example/callback',
     })
+    expect(deleteToken).toHaveBeenCalledWith({ token: 'github-token' })
     expect(authorization.url).toContain('github.com/login/oauth/authorize')
     expect(token.payload).toEqual({
       access_token: 'github-token',

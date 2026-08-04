@@ -18,16 +18,6 @@ import {
   withDatabase,
 } from '../oauth/middleware'
 
-// ---------------------------------------------------------------------------
-// Documentation defaults
-//
-// These prefill Swagger's "Try it out" so it is runnable without typing
-// anything. They never affect runtime behaviour.
-//
-// Nothing here hard-codes a callback origin: it depends on how the API is
-// reached, so `GET /providers` reports `callback_url` per request instead.
-// ---------------------------------------------------------------------------
-
 /**
  * References the `brokerApiKey` scheme registered in `src/index.ts`. Attaching
  * it is what puts the **Authorize** button in Swagger UI and makes its
@@ -35,11 +25,65 @@ import {
  */
 const brokerAuth = [{ brokerApiKey: [] }]
 
-/** Where the browser lands after a successful connection, locally. */
-const DEFAULT_RETURN_TO = 'http://127.0.0.1:5173'
-
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case '&':
+        return '&amp;'
+      case '<':
+        return '&lt;'
+      case '>':
+        return '&gt;'
+      case '"':
+        return '&quot;'
+      default:
+        return '&#39;'
+    }
+  })
+}
+
+function developmentCompletionPage(
+  provider: string,
+  connectionId: string,
+): string {
+  const safeProvider = escapeHtml(provider)
+  const safeConnectionId = escapeHtml(connectionId)
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connection complete · Hookfish</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #0b1020; color: #eef2ff; }
+      main { width: min(36rem, calc(100% - 3rem)); padding: 2.5rem; border: 1px solid #293451; border-radius: 1rem; background: #11182b; box-shadow: 0 1.5rem 4rem #0006; }
+      .eyebrow { margin: 0 0 .75rem; color: #93c5fd; font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(2rem, 8vw, 3rem); letter-spacing: -.04em; }
+      p { color: #cbd5e1; line-height: 1.65; }
+      .success { color: #86efac; font-weight: 700; }
+      .notice { margin-top: 1.75rem; padding: 1rem 1.125rem; border: 1px solid #334155; border-radius: .75rem; background: #0b1222; }
+      code { color: #bfdbfe; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Hookfish development mode</p>
+      <h1>Connection complete</h1>
+      <p class="success">${safeProvider} connected successfully.</p>
+      <p>Connection ID: <code>${safeConnectionId}</code></p>
+      <div class="notice">
+        <p>This is Hookfish's default development completion page.</p>
+        <p>Before deploying, override it in <code>hookfish.config.ts</code> by setting <code>returnTo</code> to your application's integration page.</p>
+      </div>
+    </main>
+  </body>
+</html>`
+}
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -141,6 +185,7 @@ const listProvidersRoute = createRoute({
                 scopes: z.array(z.string()),
                 available_scopes: z.array(z.string()),
                 supports_refresh: z.boolean(),
+                supports_revocation: z.boolean(),
                 uses_pkce: z.boolean(),
               }),
             ),
@@ -175,16 +220,6 @@ const authorizeRoute = createRoute({
                 'Overrides the configured scopes for this flow. Leave empty to use the provider defaults from <PROVIDER>_SCOPES or the registry -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
               default: [],
               example: [],
-            }),
-            // `default` here is OpenAPI documentation only -- it prefills
-            // Swagger's "Try it out" body. Deliberately NOT a Zod `.default()`,
-            // which would apply at runtime and hard-code localhost into every
-            // deployed environment.
-            return_to: z.url().optional().openapi({
-              description:
-                'Where the callback sends the browser once it finishes, with `?connected=<provider>` appended. Omit to receive the connection as JSON instead.',
-              default: DEFAULT_RETURN_TO,
-              example: DEFAULT_RETURN_TO,
             }),
           }),
         },
@@ -226,17 +261,12 @@ const callbackRoute = createRoute({
   },
   responses: {
     200: {
-      description: 'Connection stored',
+      description: 'Connection stored; default development page displayed',
       content: {
-        'application/json': {
-          schema: z.object({
-            connected: z.literal(true),
-            connection: connectionSchema,
-          }),
-        },
+        'text/html': { schema: z.string() },
       },
     },
-    302: { description: 'Redirected back to `return_to`' },
+    302: { description: 'Redirected to the configured `returnTo` URL' },
     ...commonErrors,
   },
 })
@@ -321,7 +351,9 @@ const tokenRoute = createRoute({
 const disconnectRoute = createRoute({
   method: 'delete',
   path: '/connections/{connection_id}',
-  summary: 'Forget a stored connection',
+  summary: 'Revoke and forget a stored connection',
+  description:
+    'Revokes upstream credentials when the provider implements revocation, then deletes the encrypted local record. If upstream revocation fails, the record is retained so the operation can be retried. Providers without revocation support are deleted locally.',
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
   responses: {
@@ -329,7 +361,10 @@ const disconnectRoute = createRoute({
       description: 'Deletion result',
       content: {
         'application/json': {
-          schema: z.object({ deleted: z.boolean() }),
+          schema: z.object({
+            deleted: z.boolean(),
+            revocation: z.enum(['revoked', 'unsupported', 'not_found']),
+          }),
         },
       },
     },
@@ -366,6 +401,7 @@ const disconnectRuntimeRoute = createRoute({
 export function createOAuthRoutes<Bindings extends object>(
   providers: ProviderRegistry,
   database: DatabaseInput<Bindings>,
+  returnTo?: string,
 ) {
   const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>()
@@ -398,6 +434,7 @@ export function createOAuthRoutes<Bindings extends object>(
             scopes: [...(provider.defaultScopes ?? [])],
             available_scopes: [...(provider.availableScopes ?? [])],
             supports_refresh: provider.refreshToken !== undefined,
+            supports_revocation: provider.revokeToken !== undefined,
             uses_pkce: provider.usesPkce ?? false,
           }
         }),
@@ -418,7 +455,6 @@ export function createOAuthRoutes<Bindings extends object>(
         provider,
         redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
         scopes: body.scopes,
-        returnTo: body.return_to,
       },
       providers,
     )
@@ -464,7 +500,7 @@ export function createOAuthRoutes<Bindings extends object>(
       )
     }
 
-    const { connection, returnTo } = await completeAuthorization(
+    const connection = await completeAuthorization(
       c.get('db'),
       c.env,
       { provider, code: query.code, state: query.state },
@@ -477,8 +513,15 @@ export function createOAuthRoutes<Bindings extends object>(
       return c.redirect(destination.toString(), 302)
     }
 
-    return c.json(
-      { connected: true, connection: serializeConnection(connection) },
+    c.header('Cache-Control', 'no-store')
+    c.header(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+    )
+    c.header('Referrer-Policy', 'no-referrer')
+    c.header('X-Content-Type-Options', 'nosniff')
+    return c.html(
+      developmentCompletionPage(provider, connection.connectionId),
       200,
     )
   })
@@ -506,6 +549,9 @@ export function createOAuthRoutes<Bindings extends object>(
       providers,
     )
 
+    c.header('Cache-Control', 'no-store')
+    c.header('Pragma', 'no-cache')
+
     return c.json(
       {
         connection_id: token.connectionId,
@@ -524,7 +570,7 @@ export function createOAuthRoutes<Bindings extends object>(
     const { connection_id: connectionId } = c.req.valid('param')
 
     return c.json(
-      { deleted: await deleteConnection(c.get('db'), connectionId) },
+      await deleteConnection(c.get('db'), c.env, connectionId, providers),
       200,
     )
   })

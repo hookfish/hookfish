@@ -18,6 +18,10 @@ describe('LinearProvider', () => {
       code: 'code',
       redirectUri: 'https://broker.example/callback',
     })
+    await provider.revokeToken({
+      accessToken: 'linear-token',
+      refreshToken: 'linear-refresh',
+    })
 
     const request = fetcher.mock.calls[0]
     const body = new URLSearchParams(String(request?.[1]?.body))
@@ -33,5 +37,20 @@ describe('LinearProvider', () => {
       client_secret: 'secret',
     })
     expect(result.payload.access_token).toBe('linear-token')
+
+    const revokeRequests = fetcher.mock.calls.slice(1)
+    expect(revokeRequests).toHaveLength(2)
+    expect(revokeRequests.map((request) => request[0])).toEqual([
+      'https://api.linear.app/oauth/revoke',
+      'https://api.linear.app/oauth/revoke',
+    ])
+    expect(
+      revokeRequests.map((request) =>
+        Object.fromEntries(new URLSearchParams(String(request[1]?.body))),
+      ),
+    ).toEqual([
+      { token: 'linear-token', token_type_hint: 'access_token' },
+      { token: 'linear-refresh', token_type_hint: 'refresh_token' },
+    ])
   })
 })

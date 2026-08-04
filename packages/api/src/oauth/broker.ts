@@ -2,8 +2,8 @@ import { z } from '@hono/zod-openapi'
 import {
   defaultProviderRegistry,
   ProviderConfigurationError,
-  ProviderRequestError,
   type ProviderRegistry,
+  ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
 import { and, eq, lt } from 'drizzle-orm'
@@ -72,8 +72,6 @@ export type StartAuthorizationInput = {
   redirectUri: string
   /** Overrides the provider's configured scopes for this one flow. */
   scopes?: string[]
-  /** Where the callback should send the browser when it finishes. */
-  returnTo?: string
 }
 
 /**
@@ -153,7 +151,6 @@ export async function startAuthorization(
     provider: input.provider,
     codeVerifier: authorization.codeVerifier ?? null,
     redirectUri: input.redirectUri,
-    returnTo: input.returnTo ?? null,
     scopes,
     expiresAt,
   })
@@ -170,7 +167,10 @@ export async function startAuthorization(
 // Token endpoint plumbing
 // ---------------------------------------------------------------------------
 
-async function callProvider<T>(operation: () => T | Promise<T>): Promise<T> {
+async function callProvider<T>(
+  operation: () => T | Promise<T>,
+  requestErrorCode = 'token_exchange_failed',
+): Promise<T> {
   try {
     return await operation()
   } catch (error) {
@@ -178,7 +178,7 @@ async function callProvider<T>(operation: () => T | Promise<T>): Promise<T> {
       throw new BrokerError(500, 'missing_configuration', error.message)
     }
     if (error instanceof ProviderRequestError) {
-      throw new BrokerError(502, 'token_exchange_failed', error.message)
+      throw new BrokerError(502, requestErrorCode, error.message)
     }
     throw error
   }
@@ -245,7 +245,7 @@ export async function completeAuthorization(
   env: object,
   input: { provider: string; code: string; state: string },
   providers: ProviderRegistry = defaultProviderRegistry,
-): Promise<{ connection: OAuthConnection; returnTo: string | null }> {
+): Promise<OAuthConnection> {
   // Single-use: delete-and-return so a replayed code can't be redeemed twice.
   const [pending] = await db
     .delete(oauthStates)
@@ -314,7 +314,7 @@ export async function completeAuthorization(
     )
   }
 
-  return { connection, returnTo: pending.returnTo }
+  return connection
 }
 
 // ---------------------------------------------------------------------------
@@ -458,16 +458,49 @@ export async function listConnections(
   return db.select().from(oauthConnections)
 }
 
+export type DeleteConnectionResult = {
+  deleted: boolean
+  revocation: 'revoked' | 'unsupported' | 'not_found'
+}
+
 export async function deleteConnection(
   db: Database,
+  env: object,
   connectionId: string,
-): Promise<boolean> {
+  providers: ProviderRegistry = defaultProviderRegistry,
+): Promise<DeleteConnectionResult> {
+  const connection = await findConnection(db, connectionId)
+
+  if (!connection) {
+    return { deleted: false, revocation: 'not_found' }
+  }
+
+  const provider = providers.getProvider(connection.provider)
+  const revokeToken = provider?.revokeToken?.bind(provider)
+  let revocation: DeleteConnectionResult['revocation'] = 'unsupported'
+
+  if (revokeToken) {
+    const key = requireEncryptionKey(env)
+    const [accessToken, refreshToken] = await Promise.all([
+      decryptSecret(key, connection.accessToken),
+      connection.refreshToken
+        ? decryptSecret(key, connection.refreshToken)
+        : undefined,
+    ])
+
+    await callProvider(
+      () => revokeToken({ accessToken, refreshToken }),
+      'token_revocation_failed',
+    )
+    revocation = 'revoked'
+  }
+
   const deleted = await db
     .delete(oauthConnections)
-    .where(eq(oauthConnections.connectionId, connectionId))
+    .where(eq(oauthConnections.id, connection.id))
     .returning()
 
-  return deleted.length > 0
+  return { deleted: deleted.length > 0, revocation }
 }
 
 /** Housekeeping for abandoned flows. */

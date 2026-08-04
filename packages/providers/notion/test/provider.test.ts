@@ -10,15 +10,17 @@ describe('NotionProvider', () => {
       workspace_id: 'workspace-id',
       workspace_name: null,
     }))
+    const revoke = vi.fn(async () => ({ request_id: 'request-id' }))
     const provider = new NotionProvider({
       clientId: 'notion-client',
       clientSecret: 'secret',
-      client: { oauth: { token } },
+      client: { oauth: { token, revoke } },
     })
     const result = await provider.exchangeCode({
       code: 'code',
       redirectUri: 'https://broker.example/callback',
     })
+    await provider.revokeToken({ accessToken: 'notion-token' })
 
     expect(token).toHaveBeenCalledWith({
       client_id: 'notion-client',
@@ -26,6 +28,11 @@ describe('NotionProvider', () => {
       grant_type: 'authorization_code',
       code: 'code',
       redirect_uri: 'https://broker.example/callback',
+    })
+    expect(revoke).toHaveBeenCalledWith({
+      client_id: 'notion-client',
+      client_secret: 'secret',
+      token: 'notion-token',
     })
     expect(result.payload.access_token).toBe('notion-token')
     expect(result.account).toEqual({

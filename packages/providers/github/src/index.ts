@@ -1,14 +1,15 @@
-import { OAuthApp } from '@octokit/oauth-app'
 import {
   type CreateAuthorizationInput,
   type ExchangeCodeInput,
   type OAuthProvider,
-  ProviderRequestError,
   type ProviderCredentials,
+  ProviderRequestError,
   type ProviderTokenResponse,
+  type RevokeTokenInput,
   requireProviderCredentials,
   resolveProviderCredentials,
 } from '@hookfish/provider'
+import { OAuthApp } from '@octokit/oauth-app'
 import { z } from 'zod'
 
 const tokenSchema = z.object({
@@ -26,6 +27,7 @@ export type GitHubOAuthClient = {
     code: string
     redirectUrl: string
   }): Promise<{ authentication: unknown }>
+  deleteToken(input: { token: string }): Promise<unknown>
 }
 
 export type GitHubOAuthClientFactory = (
@@ -134,6 +136,23 @@ export class GitHubProvider implements OAuthProvider {
       }
     } catch (error) {
       throw new ProviderRequestError('GitHub token exchange failed.', {
+        cause: error,
+      })
+    }
+  }
+
+  async revokeToken(input: RevokeTokenInput): Promise<void> {
+    const credentials = requireProviderCredentials(
+      this.label,
+      resolveProviderCredentials('GITHUB', this.credentials),
+    )
+
+    try {
+      await this.createOAuthClient(credentials).deleteToken({
+        token: input.accessToken,
+      })
+    } catch (error) {
+      throw new ProviderRequestError('GitHub token revocation failed.', {
         cause: error,
       })
     }

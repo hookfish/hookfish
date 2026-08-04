@@ -39,6 +39,12 @@ export type RefreshTokenInput = {
   refreshToken: string
 }
 
+export type RevokeTokenInput = {
+  accessToken: string
+  /** Present when the provider issued a refresh token for this connection. */
+  refreshToken?: string
+}
+
 export type ProviderTokenResponse = {
   payload: Record<string, unknown>
   account?: {
@@ -48,7 +54,7 @@ export type ProviderTokenResponse = {
 }
 
 /**
- * A provider owns its OAuth dialect. The broker only coordinates these three
+ * A provider owns its OAuth dialect. The broker only coordinates these
  * lifecycle operations and never needs to know separators, auth styles, or
  * request encodings.
  */
@@ -64,6 +70,8 @@ export interface OAuthProvider {
   ): AuthorizationRequest | Promise<AuthorizationRequest>
   exchangeCode(input: ExchangeCodeInput): Promise<ProviderTokenResponse>
   refreshToken?(input: RefreshTokenInput): Promise<ProviderTokenResponse>
+  /** Revoke upstream credentials before the broker forgets them locally. */
+  revokeToken?(input: RevokeTokenInput): Promise<void>
 }
 
 const registryKey = Symbol.for('@hookfish/provider/registry')

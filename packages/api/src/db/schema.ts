@@ -68,8 +68,6 @@ export const oauthStates = pgTable(
     provider: text('provider').notNull(),
     codeVerifier: text('code_verifier'),
     redirectUri: text('redirect_uri').notNull(),
-    /** Where to send the browser once the callback finishes. */
-    returnTo: text('return_to'),
     scopes: text('scopes').array().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

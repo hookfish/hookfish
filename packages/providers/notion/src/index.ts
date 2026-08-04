@@ -1,14 +1,15 @@
-import { Client } from '@notionhq/client'
 import {
   type CreateAuthorizationInput,
   type ExchangeCodeInput,
   type OAuthProvider,
-  ProviderRequestError,
   type ProviderCredentials,
+  ProviderRequestError,
   type ProviderTokenResponse,
+  type RevokeTokenInput,
   requireProviderCredentials,
   resolveProviderCredentials,
 } from '@hookfish/provider'
+import { Client } from '@notionhq/client'
 import { z } from 'zod'
 
 const tokenSchema = z.looseObject({
@@ -20,10 +21,12 @@ const tokenSchema = z.looseObject({
 })
 
 type NotionTokenInput = Parameters<Client['oauth']['token']>[0]
+type NotionRevokeInput = Parameters<Client['oauth']['revoke']>[0]
 
 export type NotionOAuthClient = {
   oauth: {
     token(input: NotionTokenInput): Promise<unknown>
+    revoke(input: NotionRevokeInput): Promise<unknown>
   }
 }
 
@@ -90,6 +93,25 @@ export class NotionProvider implements OAuthProvider {
       }
     } catch (error) {
       throw new ProviderRequestError('Notion token exchange failed.', {
+        cause: error,
+      })
+    }
+  }
+
+  async revokeToken(input: RevokeTokenInput): Promise<void> {
+    const credentials = requireProviderCredentials(
+      this.label,
+      resolveProviderCredentials('NOTION', this.credentials),
+    )
+
+    try {
+      await this.client.oauth.revoke({
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
+        token: input.accessToken,
+      })
+    } catch (error) {
+      throw new ProviderRequestError('Notion token revocation failed.', {
         cause: error,
       })
     }

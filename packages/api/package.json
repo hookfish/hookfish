@@ -39,7 +39,7 @@
     "@hono/zod-openapi": "^1.4.0",
     "@hookfish/provider": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.23",
+    "hono": "^4.12.34",
     "zod": "^4.4.3"
   },
   "devDependencies": {
