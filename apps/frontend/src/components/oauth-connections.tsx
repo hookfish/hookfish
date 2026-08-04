@@ -7,6 +7,7 @@ import {
   FolderIcon,
   HouseIcon,
   Link2Icon,
+  ListIcon,
   PlusIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
@@ -84,6 +85,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   type Connection,
   connectionDirectory,
@@ -97,6 +99,7 @@ type Provider = ProvidersResponse['providers'][number]
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 
 const ALL_PROVIDERS = '__all__'
+type ConnectionView = 'tree' | 'all'
 
 function ConnectionItem({
   connection,
@@ -383,10 +386,13 @@ function AddConnectionDialog({
 export function OAuthConnections() {
   const [currentPath, setCurrentPath] = useState('')
   const [providerFilter, setProviderFilter] = useState(ALL_PROVIDERS)
+  const [view, setView] = useState<ConnectionView>('tree')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const providersQuery = hookfish.useProviders()
   const connectionsQuery = hookfish.useConnections({
-    ...(currentPath ? { connection_id_prefix: currentPath } : {}),
+    ...(view === 'tree' && currentPath
+      ? { connection_id_prefix: currentPath }
+      : {}),
     ...(providerFilter === ALL_PROVIDERS ? {} : { provider: providerFilter }),
   })
   const authorizeMutation = hookfish.useAuthorizeConnection({
@@ -403,11 +409,20 @@ export function OAuthConnections() {
       ),
     [connectionsQuery.data?.connections, currentPath],
   )
+  const allConnections = useMemo(
+    () =>
+      [...(connectionsQuery.data?.connections ?? [])].sort((left, right) =>
+        left.connection_id.localeCompare(right.connection_id),
+      ),
+    [connectionsQuery.data?.connections],
+  )
   const isEmpty =
     !connectionsQuery.isPending &&
     !connectionsQuery.isError &&
-    directory.folders.length === 0 &&
-    directory.connections.length === 0
+    (view === 'all'
+      ? allConnections.length === 0
+      : directory.folders.length === 0 && directory.connections.length === 0)
+  const addConnectionPath = view === 'tree' ? currentPath : ''
 
   return (
     <section className="grid gap-4">
@@ -419,6 +434,26 @@ export function OAuthConnections() {
             tree.
           </CardDescription>
           <CardAction className="flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              spacing={0}
+              value={view}
+              onValueChange={(value) => {
+                if (value === 'tree' || value === 'all') setView(value)
+              }}
+              aria-label="Connection view"
+            >
+              <ToggleGroupItem value="tree" aria-label="Tree view">
+                <FolderIcon />
+                Tree
+              </ToggleGroupItem>
+              <ToggleGroupItem value="all" aria-label="View all connections">
+                <ListIcon />
+                All
+              </ToggleGroupItem>
+            </ToggleGroup>
             <Select value={providerFilter} onValueChange={setProviderFilter}>
               <SelectTrigger size="sm" aria-label="Filter by provider">
                 <SelectValue />
@@ -440,12 +475,14 @@ export function OAuthConnections() {
         </CardHeader>
 
         <CardContent className="grid gap-4">
-          <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
-            <PathBreadcrumb
-              currentPath={currentPath}
-              onNavigate={setCurrentPath}
-            />
-          </div>
+          {view === 'tree' ? (
+            <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+              <PathBreadcrumb
+                currentPath={currentPath}
+                onNavigate={setCurrentPath}
+              />
+            </div>
+          ) : null}
 
           {connectionsQuery.isPending ? <LoadingItems /> : null}
 
@@ -473,9 +510,13 @@ export function OAuthConnections() {
                 <EmptyMedia variant="icon">
                   <FolderIcon />
                 </EmptyMedia>
-                <EmptyTitle>This path is empty</EmptyTitle>
+                <EmptyTitle>
+                  {view === 'tree' ? 'This path is empty' : 'No connections'}
+                </EmptyTitle>
                 <EmptyDescription>
-                  Add a named connection here, or change the provider filter.
+                  {view === 'tree'
+                    ? 'Add a named connection here, or change the provider filter.'
+                    : 'Add a named connection, or change the provider filter.'}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -487,7 +528,8 @@ export function OAuthConnections() {
             </Empty>
           ) : null}
 
-          {directory.folders.length || directory.connections.length ? (
+          {view === 'tree' &&
+          (directory.folders.length || directory.connections.length) ? (
             <ItemGroup>
               {directory.folders.map((folder) => (
                 <Item asChild variant="outline" key={folder.path}>
@@ -528,6 +570,24 @@ export function OAuthConnections() {
             </ItemGroup>
           ) : null}
 
+          {view === 'all' && allConnections.length ? (
+            <ItemGroup>
+              {allConnections.map((connection) => (
+                <ConnectionItem
+                  key={connection.connection_id}
+                  connection={connection}
+                  disconnecting={
+                    disconnectMutation.isPending &&
+                    disconnectMutation.variables === connection.connection_id
+                  }
+                  onDisconnect={() =>
+                    disconnectMutation.mutate(connection.connection_id)
+                  }
+                />
+              ))}
+            </ItemGroup>
+          ) : null}
+
           {disconnectMutation.isError ? (
             <Alert variant="destructive">
               <AlertTitle>Could not disconnect</AlertTitle>
@@ -540,9 +600,9 @@ export function OAuthConnections() {
       </Card>
 
       <AddConnectionDialog
-        key={`${addDialogOpen ? 'open' : 'closed'}:${currentPath}`}
+        key={`${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
-        currentPath={currentPath}
+        currentPath={addConnectionPath}
         providers={providersQuery.data?.providers ?? []}
         mutation={authorizeMutation}
         onOpenChange={setAddDialogOpen}
