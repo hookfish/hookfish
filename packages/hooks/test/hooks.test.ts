@@ -30,17 +30,22 @@ describe('createHookfishHooks', () => {
       queryKeyScope: 'primary',
     })
 
-    expect(hookfish.keys.connections({ provider: 'github' })).toEqual([
+    expect(
+      hookfish.keys.connections({
+        provider: 'github',
+        connection_id_prefix: 'team/payments',
+      }),
+    ).toEqual([
       'hookfish',
       'primary',
       'connections',
-      { provider: 'github' },
+      { provider: 'github', connectionIdPrefix: 'team/payments' },
     ])
     expect(hookfish.keys.connections()).toEqual([
       'hookfish',
       'primary',
       'connections',
-      { provider: null },
+      { provider: null, connectionIdPrefix: null },
     ])
   })
 
@@ -61,14 +66,17 @@ describe('createHookfishHooks', () => {
     })
 
     const data = await queryClient().fetchQuery(
-      hookfish.options.connections({ provider: 'github' }),
+      hookfish.options.connections({
+        provider: 'github',
+        connection_id_prefix: 'team/payments',
+      }),
     )
 
     expect(data).toEqual({ connections: [] })
     expect(headerCalls).toBe(1)
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/oauth/connections?provider=github',
+      'https://broker.example/api/oauth/connections?provider=github&connection_id_prefix=team%2Fpayments',
     )
     expect(requests[0]?.headers.get('Authorization')).toBe(
       'Bearer session-token',

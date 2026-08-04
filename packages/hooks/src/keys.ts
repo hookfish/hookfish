@@ -9,7 +9,14 @@ export function createHookfishKeys(scope: string) {
     providers: () => [...root, 'providers'] as const,
     connectionsRoot: () => [...root, 'connections'] as const,
     connections: (filter: ConnectionsFilter = {}) =>
-      [...root, 'connections', { provider: filter.provider ?? null }] as const,
+      [
+        ...root,
+        'connections',
+        {
+          provider: filter.provider ?? null,
+          connectionIdPrefix: filter.connection_id_prefix ?? null,
+        },
+      ] as const,
     connection: (connectionId: string) =>
       [...root, 'connection', connectionId] as const,
     authorize: () => [...root, 'authorize'] as const,

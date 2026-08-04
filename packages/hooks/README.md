@@ -21,6 +21,15 @@ await queryClient.prefetchQuery(
 )
 ```
 
+Path and provider filters compose on the same typed endpoint:
+
+```tsx
+const connections = hookfish.useConnections({
+  connection_id_prefix: 'team/payments',
+  provider: 'github',
+})
+```
+
 Protected routes accept any headers supported by Hono's RPC client. Prefer a
 browser-safe session token or cookie. Never put `BROKER_API_KEY` in frontend
 code:

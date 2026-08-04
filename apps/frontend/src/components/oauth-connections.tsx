@@ -1,5 +1,17 @@
-import type { ConnectionsResponse, ProvidersResponse } from '@hookfish/hooks'
-import { Link2Icon, PlugZapIcon, ShieldCheckIcon } from 'lucide-react'
+import type {
+  AuthorizeConnectionInput,
+  ProvidersResponse,
+} from '@hookfish/hooks'
+import {
+  ChevronRightIcon,
+  FolderIcon,
+  HouseIcon,
+  Link2Icon,
+  PlusIcon,
+  ShieldCheckIcon,
+} from 'lucide-react'
+import { Fragment, type FormEvent, useMemo, useState } from 'react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,23 +24,48 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import {
   Item,
   ItemActions,
@@ -38,60 +75,28 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
+import {
+  type Connection,
+  connectionDirectory,
+  joinConnectionPath,
+  validateConnectionName,
+  validateConnectionPath,
+} from '@/lib/connection-tree'
 import { hookfish } from '@/lib/hookfish'
 
 type Provider = ProvidersResponse['providers'][number]
-type Connection = ConnectionsResponse['connections'][number]
+type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 
-function ProviderItem({
-  provider,
-  connectionCount,
-  connecting,
-  onConnect,
-}: {
-  provider: Provider
-  connectionCount: number
-  connecting: boolean
-  onConnect: () => void
-}) {
-  return (
-    <Item variant="outline">
-      <ItemMedia variant="icon">
-        <PlugZapIcon />
-      </ItemMedia>
-      <ItemContent>
-        <ItemTitle>
-          {provider.label}
-          <Badge variant={provider.configured ? 'secondary' : 'outline'}>
-            {provider.configured ? 'Ready' : 'Needs credentials'}
-          </Badge>
-        </ItemTitle>
-        <ItemDescription>
-          {connectionCount === 0
-            ? `${provider.scopes.length} default scopes`
-            : `${connectionCount} connection${connectionCount === 1 ? '' : 's'}`}
-        </ItemDescription>
-      </ItemContent>
-      <ItemActions>
-        <Button
-          size="sm"
-          variant={connectionCount > 0 ? 'outline' : 'default'}
-          disabled={!provider.configured || connecting}
-          onClick={onConnect}
-        >
-          {connecting ? <Spinner /> : null}
-          {connecting
-            ? 'Opening'
-            : connectionCount > 0
-              ? 'Connect another'
-              : 'Connect'}
-        </Button>
-      </ItemActions>
-    </Item>
-  )
-}
+const ALL_PROVIDERS = '__all__'
 
 function ConnectionItem({
   connection,
@@ -102,10 +107,10 @@ function ConnectionItem({
   disconnecting: boolean
   onDisconnect: () => void
 }) {
-  const label =
-    connection.external_account_label ??
-    connection.external_account_id ??
-    connection.connection_id
+  const connectionName =
+    connection.connection_id.split('/').at(-1) ?? connection.connection_id
+  const accountLabel =
+    connection.external_account_label ?? connection.external_account_id
 
   return (
     <Item variant="outline">
@@ -114,14 +119,12 @@ function ConnectionItem({
       </ItemMedia>
       <ItemContent>
         <ItemTitle>
-          {label}
+          {connectionName}
           <Badge variant="outline">{connection.provider}</Badge>
         </ItemTitle>
         <ItemDescription>
-          ID: {connection.connection_id}
-          {connection.scopes.length > 0
-            ? ` · ${connection.scopes.length} scopes`
-            : ''}
+          {accountLabel ? `${accountLabel} · ` : ''}
+          {connection.connection_id}
         </ItemDescription>
       </ItemContent>
       <ItemActions>
@@ -137,10 +140,10 @@ function ConnectionItem({
               <AlertDialogMedia>
                 <ShieldCheckIcon />
               </AlertDialogMedia>
-              <AlertDialogTitle>Disconnect {label}?</AlertDialogTitle>
+              <AlertDialogTitle>Disconnect {connectionName}?</AlertDialogTitle>
               <AlertDialogDescription>
                 Hookfish will revoke the provider credential when supported and
-                remove the stored connection.
+                remove {connection.connection_id}.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -176,83 +179,340 @@ function LoadingItems() {
   )
 }
 
+function PathBreadcrumb({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string
+  onNavigate: (path: string) => void
+}) {
+  const segments = currentPath ? currentPath.split('/') : []
+
+  return (
+    <Breadcrumb>
+      <BreadcrumbList>
+        <BreadcrumbItem>
+          {segments.length === 0 ? (
+            <BreadcrumbPage className="flex items-center gap-1.5">
+              <HouseIcon className="size-3.5" />
+              Connections
+            </BreadcrumbPage>
+          ) : (
+            <BreadcrumbLink asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5"
+                onClick={() => onNavigate('')}
+              >
+                <HouseIcon className="size-3.5" />
+                Connections
+              </button>
+            </BreadcrumbLink>
+          )}
+        </BreadcrumbItem>
+        {segments.map((segment, index) => {
+          const path = segments.slice(0, index + 1).join('/')
+          const current = index === segments.length - 1
+
+          return (
+            <Fragment key={path}>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                {current ? (
+                  <BreadcrumbPage>{segment}</BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <button type="button" onClick={() => onNavigate(path)}>
+                      {segment}
+                    </button>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </Fragment>
+          )
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+}
+
+function AddConnectionDialog({
+  open,
+  currentPath,
+  providers,
+  mutation,
+  onOpenChange,
+}: {
+  open: boolean
+  currentPath: string
+  providers: Provider[]
+  mutation: AuthorizeMutation
+  onOpenChange: (open: boolean) => void
+}) {
+  const configuredProviders = providers.filter(
+    (provider) => provider.configured,
+  )
+  const [path, setPath] = useState(currentPath)
+  const [name, setName] = useState('')
+  const [providerId, setProviderId] = useState(configuredProviders[0]?.id ?? '')
+  const normalizedPath = path.trim()
+  const normalizedName = name.trim()
+  const connectionId = joinConnectionPath(normalizedPath, normalizedName)
+  const pathError = validateConnectionPath(normalizedPath)
+  const nameError = validateConnectionName(normalizedName)
+  const error = pathError ?? nameError
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (error || !providerId) return
+
+    const input: AuthorizeConnectionInput = {
+      provider: providerId,
+      connection_id: connectionId,
+    }
+    mutation.mutate(input)
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (mutation.isPending) return
+    if (nextOpen) {
+      setPath(currentPath)
+      setName('')
+      setProviderId(configuredProviders[0]?.id ?? '')
+      mutation.reset()
+    }
+    onOpenChange(nextOpen)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent>
+        <form className="grid gap-4" onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Add connection</DialogTitle>
+            <DialogDescription>
+              Name the connection and place it in the current path or a new
+              nested path.
+            </DialogDescription>
+          </DialogHeader>
+
+          <FieldGroup>
+            <Field data-invalid={Boolean(pathError)}>
+              <FieldLabel htmlFor="connection-path">Path</FieldLabel>
+              <Input
+                id="connection-path"
+                value={path}
+                placeholder="team/payments"
+                aria-invalid={Boolean(pathError)}
+                onChange={(event) => setPath(event.target.value)}
+              />
+              <FieldDescription>
+                Slash-delimited folders. Leave blank for the root.
+              </FieldDescription>
+              <FieldError>{pathError}</FieldError>
+            </Field>
+
+            <Field data-invalid={Boolean(nameError)}>
+              <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
+              <Input
+                id="connection-name"
+                value={name}
+                placeholder="production"
+                autoComplete="off"
+                aria-invalid={Boolean(nameError)}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <FieldDescription>
+                Full ID: <code>{connectionId || 'connection-name'}</code>
+              </FieldDescription>
+              <FieldError>{nameError}</FieldError>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
+              <Select value={providerId} onValueChange={setProviderId}>
+                <SelectTrigger id="connection-provider" className="w-full">
+                  <SelectValue placeholder="Select a provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {configuredProviders.map((provider) => (
+                    <SelectItem value={provider.id} key={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {configuredProviders.length === 0 ? (
+                <FieldError>
+                  Configure provider credentials before adding a connection.
+                </FieldError>
+              ) : null}
+            </Field>
+          </FieldGroup>
+
+          {mutation.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not start authorization</AlertTitle>
+              <AlertDescription>{mutation.error.message}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => handleOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={Boolean(error) || !providerId || mutation.isPending}
+            >
+              {mutation.isPending ? <Spinner /> : <PlusIcon />}
+              {mutation.isPending ? 'Opening provider' : 'Add connection'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function OAuthConnections() {
+  const [currentPath, setCurrentPath] = useState('')
+  const [providerFilter, setProviderFilter] = useState(ALL_PROVIDERS)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
   const providersQuery = hookfish.useProviders()
-  const connectionsQuery = hookfish.useConnections()
+  const connectionsQuery = hookfish.useConnections({
+    ...(currentPath ? { connection_id_prefix: currentPath } : {}),
+    ...(providerFilter === ALL_PROVIDERS ? {} : { provider: providerFilter }),
+  })
   const authorizeMutation = hookfish.useAuthorizeConnection({
     onSuccess(data) {
       window.location.assign(data.authorize_url)
     },
   })
   const disconnectMutation = hookfish.useDisconnectConnection()
-
-  const queryError = providersQuery.error ?? connectionsQuery.error
-  const mutationError = authorizeMutation.error ?? disconnectMutation.error
+  const directory = useMemo(
+    () =>
+      connectionDirectory(
+        connectionsQuery.data?.connections ?? [],
+        currentPath,
+      ),
+    [connectionsQuery.data?.connections, currentPath],
+  )
+  const isEmpty =
+    !connectionsQuery.isPending &&
+    !connectionsQuery.isError &&
+    directory.folders.length === 0 &&
+    directory.connections.length === 0
 
   return (
-    <section className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle>OAuth Providers</CardTitle>
-          <CardDescription>
-            Start a typed authorization flow without exposing the broker key.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {providersQuery.isPending ? <LoadingItems /> : null}
-          {providersQuery.data ? (
-            <ItemGroup>
-              {providersQuery.data.providers.map((provider) => {
-                const connectionCount =
-                  connectionsQuery.data?.connections.filter(
-                    (connection) => connection.provider === provider.id,
-                  ).length ?? 0
-
-                return (
-                  <ProviderItem
-                    key={provider.id}
-                    provider={provider}
-                    connectionCount={connectionCount}
-                    connecting={
-                      authorizeMutation.isPending &&
-                      authorizeMutation.variables?.provider === provider.id
-                    }
-                    onConnect={() =>
-                      authorizeMutation.mutate({ provider: provider.id })
-                    }
-                  />
-                )
-              })}
-            </ItemGroup>
-          ) : null}
-        </CardContent>
-      </Card>
-
+    <section className="grid gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Connections</CardTitle>
           <CardDescription>
-            Browser-safe account metadata returned through the shared hooks.
+            Browse connection paths and add named provider links anywhere in the
+            tree.
           </CardDescription>
+          <CardAction className="flex items-center gap-2">
+            <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <SelectTrigger size="sm" aria-label="Filter by provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value={ALL_PROVIDERS}>All providers</SelectItem>
+                {providersQuery.data?.providers.map((provider) => (
+                  <SelectItem value={provider.id} key={provider.id}>
+                    {provider.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+              <PlusIcon />
+              Add connection
+            </Button>
+          </CardAction>
         </CardHeader>
+
         <CardContent className="grid gap-4">
+          <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+            <PathBreadcrumb
+              currentPath={currentPath}
+              onNavigate={setCurrentPath}
+            />
+          </div>
+
           {connectionsQuery.isPending ? <LoadingItems /> : null}
-          {connectionsQuery.data?.connections.length === 0 ? (
+
+          {connectionsQuery.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load connections</AlertTitle>
+              <AlertDescription>
+                {connectionsQuery.error.message}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {providersQuery.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load providers</AlertTitle>
+              <AlertDescription>
+                {providersQuery.error.message}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {isEmpty ? (
             <Empty className="border">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
-                  <Link2Icon />
+                  <FolderIcon />
                 </EmptyMedia>
-                <EmptyTitle>No connections yet</EmptyTitle>
+                <EmptyTitle>This path is empty</EmptyTitle>
                 <EmptyDescription>
-                  Choose a configured provider to create the first connection.
+                  Add a named connection here, or change the provider filter.
                 </EmptyDescription>
               </EmptyHeader>
+              <EmptyContent>
+                <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                  <PlusIcon />
+                  Add connection
+                </Button>
+              </EmptyContent>
             </Empty>
           ) : null}
-          {connectionsQuery.data?.connections.length ? (
+
+          {directory.folders.length || directory.connections.length ? (
             <ItemGroup>
-              {connectionsQuery.data.connections.map((connection) => (
+              {directory.folders.map((folder) => (
+                <Item asChild variant="outline" key={folder.path}>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPath(folder.path)}
+                  >
+                    <ItemMedia variant="icon">
+                      <FolderIcon />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>{folder.name}</ItemTitle>
+                      <ItemDescription>
+                        {folder.connectionCount} connection
+                        {folder.connectionCount === 1 ? '' : 's'}
+                      </ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <ChevronRightIcon className="size-4 text-muted-foreground" />
+                    </ItemActions>
+                  </button>
+                </Item>
+              ))}
+
+              {directory.connections.map((connection) => (
                 <ConnectionItem
                   key={connection.connection_id}
                   connection={connection}
@@ -267,21 +527,26 @@ export function OAuthConnections() {
               ))}
             </ItemGroup>
           ) : null}
+
+          {disconnectMutation.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not disconnect</AlertTitle>
+              <AlertDescription>
+                {disconnectMutation.error.message}
+              </AlertDescription>
+            </Alert>
+          ) : null}
         </CardContent>
       </Card>
 
-      {queryError ? (
-        <Alert variant="destructive" className="lg:col-span-2">
-          <AlertTitle>Could not load OAuth data</AlertTitle>
-          <AlertDescription>{queryError.message}</AlertDescription>
-        </Alert>
-      ) : null}
-      {mutationError ? (
-        <Alert variant="destructive" className="lg:col-span-2">
-          <AlertTitle>OAuth action failed</AlertTitle>
-          <AlertDescription>{mutationError.message}</AlertDescription>
-        </Alert>
-      ) : null}
+      <AddConnectionDialog
+        key={`${addDialogOpen ? 'open' : 'closed'}:${currentPath}`}
+        open={addDialogOpen}
+        currentPath={currentPath}
+        providers={providersQuery.data?.providers ?? []}
+        mutation={authorizeMutation}
+        onOpenChange={setAddDialogOpen}
+      />
     </section>
   )
 }
