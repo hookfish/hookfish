@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Hookfish } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import {
@@ -8,7 +9,8 @@ import {
 } from '@hookfish/providers'
 
 const db = pglite(
-  process.env.PGLITE_DATA_DIR ?? path.join(import.meta.dirname, 'pgdata'),
+  process.env.PGLITE_DATA_DIR ??
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'pgdata'),
 )
 
 // To use Postgres instead:

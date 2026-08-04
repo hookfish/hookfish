@@ -4,6 +4,8 @@ Node-first full-stack application with reusable API and provider packages:
 
 - `apps/frontend` — TanStack Start SSR on Node, with Hookfish mounted at `/api`
 - `examples/hono-node` — standalone Hono server on Node
+- `examples/express` — Express server with Hookfish mounted at `/api`
+- `examples/nextjs` — Next.js App Router application with Hookfish route handlers
 - `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
 - `hookfish.config.ts` — shared database, provider, and Hookfish configuration
 - `packages/api` — shared Hono API and OAuth broker
@@ -38,6 +40,27 @@ The standalone example reads the same `apps/frontend/.env` file:
 
 ```sh
 pnpm --filter @hookfish/example-hono-node dev
+```
+
+## Express example
+
+The Express example adapts Hookfish's Fetch handler to Node's request and
+response objects. It reads the same `apps/frontend/.env` file:
+
+```sh
+pnpm --filter @hookfish/example-express dev
+# → http://127.0.0.1:3000/api
+```
+
+## Next.js example
+
+The Next.js App Router example forwards every `/api/*` route to Hookfish. Next
+loads environment variables from the example's `.env.local` file:
+
+```sh
+cp apps/frontend/.env.example examples/nextjs/.env.local
+pnpm --filter @hookfish/example-nextjs dev
+# → http://127.0.0.1:3000/api
 ```
 
 ## Cloudflare Worker example
