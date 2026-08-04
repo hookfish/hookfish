@@ -420,7 +420,7 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
-  oauthRoutes.openapi(listProvidersRoute, (c) => {
+  const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
     return c.json(
       {
         providers: providers.listProviders().map(([slug, provider]) => {
@@ -443,7 +443,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(authorizeRoute, async (c) => {
+  const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
 
@@ -470,7 +470,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(callbackRoute, async (c) => {
+  const callbackApi = authorizeApi.openapi(callbackRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const query = c.req.valid('query')
 
@@ -526,21 +526,24 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(listConnectionsRoute, async (c) => {
+  const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
     const { provider } = c.req.valid('query')
     const connections = await listConnections(c.get('db'), { provider })
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })
 
-  oauthRoutes.openapi(getConnectionRuntimeRoute, async (c) => {
-    const { connection_id: connectionId } = c.req.valid('param')
-    const connection = await getConnection(c.get('db'), connectionId)
+  const connectionApi = listApi.openapi(
+    getConnectionRuntimeRoute,
+    async (c) => {
+      const { connection_id: connectionId } = c.req.valid('param')
+      const connection = await getConnection(c.get('db'), connectionId)
 
-    return c.json({ connection: serializeConnection(connection) }, 200)
-  })
+      return c.json({ connection: serializeConnection(connection) }, 200)
+    },
+  )
 
-  oauthRoutes.openapi(tokenRuntimeRoute, async (c) => {
+  const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     const token = await getAccessToken(
       c.get('db'),
@@ -566,7 +569,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(disconnectRuntimeRoute, async (c) => {
+  const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
 
     return c.json(
@@ -575,7 +578,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.onError((error, c) => {
+  routes.onError((error, c) => {
     if (isBrokerError(error)) {
       return c.json(
         { error: { code: error.code, message: error.message } },
@@ -593,5 +596,5 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  return oauthRoutes
+  return routes
 }

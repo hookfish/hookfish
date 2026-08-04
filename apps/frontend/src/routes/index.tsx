@@ -15,7 +15,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getStats } from '../lib/hono-api'
+import { hookfish } from '../lib/hookfish'
 import { createMessage, getHealth } from '../lib/server-functions'
 
 export const Route = createFileRoute('/')({
@@ -31,10 +31,7 @@ function Dashboard() {
     queryFn: () => getHealth(),
   })
 
-  const statsQuery = useQuery({
-    queryKey: ['hono-api', 'stats'],
-    queryFn: getStats,
-  })
+  const statsQuery = hookfish.useStats()
 
   const messageMutation = useMutation({
     mutationFn: (text: string) => createMessage({ data: { text } }),

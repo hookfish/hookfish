@@ -9,6 +9,7 @@ Node-first full-stack application with reusable API and provider packages:
 - `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
 - `hookfish.config.ts` — shared database, provider, and Hookfish configuration
 - `packages/api` — shared Hono API and OAuth broker
+- `packages/hooks` — typed Hono RPC clients, React Query options, and hooks
 - `packages/database` — request-aware Postgres and local PGlite bindings
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
 
@@ -137,6 +138,26 @@ configuration and run migrations before starting.
 
 More detail on the broker, custom providers, and endpoints is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md).
+
+## Frontend hooks
+
+`@hookfish/hooks` wraps the API's exported Hono RPC type with reusable React
+Query options and hooks:
+
+```ts
+import { createHookfishHooks } from '@hookfish/hooks'
+
+const hookfish = createHookfishHooks({ baseUrl: '/api' })
+
+function RuntimeStats() {
+  const stats = hookfish.useStats()
+  return stats.data?.region
+}
+```
+
+Protected operations support injected headers, including async session-token
+providers. Do not expose `BROKER_API_KEY` to browser code. Access-token
+retrieval remains server-only and is intentionally omitted from the hooks.
 
 ## Commands
 

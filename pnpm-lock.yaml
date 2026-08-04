@@ -50,6 +50,9 @@ importers:
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@hookfish/hooks':
+        specifier: workspace:*
+        version: link:../../packages/hooks
       '@hookfish/provider':
         specifier: workspace:*
         version: link:../../packages/provider
@@ -349,6 +352,34 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+
+  packages/hooks:
+    dependencies:
+      '@hookfish/api':
+        specifier: workspace:*
+        version: link:../api
+      hono:
+        specifier: ^4.12.34
+        version: 4.13.0
+    devDependencies:
+      '@tanstack/react-query':
+        specifier: ^5.100.14
+        version: 5.100.14(react@19.2.6)
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.15
+      '@vitest/coverage-v8':
+        specifier: ^3.2.4
+        version: 3.2.7(vitest@3.2.7(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@24.12.4)(typescript@5.9.3))(tsx@4.23.1)(yaml@2.9.0))
+      react:
+        specifier: ^19.2.6
+        version: 19.2.6
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@24.12.4)(typescript@5.9.3))(tsx@4.23.1)(yaml@2.9.0)
 
   packages/provider:
     devDependencies:
