@@ -108,8 +108,12 @@ program.name('hookfish').description('OAuth broker CLI')
 program
   .command('serve')
   .description('Run the frontend with the Hookfish API mounted at /api')
-  .action(async () => {
-    await exitWith(await run('pnpm', ['--filter', '@hookfish/frontend', 'dev']))
+  .option('--no-open', 'Do not open the frontend in a browser')
+  .action(async (options: { open: boolean }) => {
+    const args = ['--filter', '@hookfish/frontend', 'dev']
+    if (options.open) args.push('--open')
+
+    await exitWith(await run('pnpm', args))
   })
 
 program

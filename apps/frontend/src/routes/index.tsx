@@ -1,10 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { OAuthConnections } from '@/components/oauth-connections'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -12,56 +10,43 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getStats } from '../lib/hono-api'
-import { createMessage, getHealth } from '../lib/server-functions'
+import { hookfish } from '../lib/hookfish'
+import { getHealth } from '../lib/server-functions'
 
 export const Route = createFileRoute('/')({
   component: Dashboard,
 })
 
 function Dashboard() {
-  const queryClient = useQueryClient()
-  const [message, setMessage] = useState('Hello from the typed Hono RPC client')
-
   const healthQuery = useQuery({
     queryKey: ['server-function', 'health'],
     queryFn: () => getHealth(),
   })
 
-  const statsQuery = useQuery({
-    queryKey: ['hono-api', 'stats'],
-    queryFn: getStats,
-  })
-
-  const messageMutation = useMutation({
-    mutationFn: (text: string) => createMessage({ data: { text } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['server-function'] })
-    },
-  })
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    messageMutation.mutate(message)
-  }
+  const statsQuery = hookfish.useStats()
 
   return (
     <main className="grid gap-6">
       <section className="grid max-w-3xl gap-3">
         <Badge variant="secondary" className="w-fit">
-          Node full-stack app
+          Hookfish dashboard
         </Badge>
         <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          TanStack Start owns app actions; Hono serves `/api` on the same
-          origin.
+          Connect accounts without exposing broker credentials.
         </h1>
         <p className="text-muted-foreground">
-          Health and message creation run through TanStack server functions. The
-          shared Hono app from `@hookfish/api` is mounted at `/api/*` and
-          exposes one stats endpoint read by the frontend.
+          Manage OAuth providers and connections through typed Hono RPC hooks.
+          TanStack Start keeps the broker API key on the server.
+        </p>
+      </section>
+
+      <OAuthConnections />
+
+      <section className="grid gap-2">
+        <h2 className="text-lg font-medium">Runtime</h2>
+        <p className="text-sm text-muted-foreground">
+          Deployment health and metadata for this Hookfish instance.
         </p>
       </section>
 
@@ -142,46 +127,6 @@ function Dashboard() {
           </CardContent>
         </Card>
       </section>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Typed Mutation</CardTitle>
-          <CardDescription>
-            Send a message through a TanStack server function.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <form onSubmit={handleSubmit} className="grid gap-2">
-            <Label htmlFor="message">Message</Label>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <Input
-                id="message"
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-              />
-              <Button type="submit" disabled={messageMutation.isPending}>
-                {messageMutation.isPending ? 'Sending' : 'Send'}
-              </Button>
-            </div>
-          </form>
-          {messageMutation.data ? (
-            <Alert>
-              <AlertTitle>Message created</AlertTitle>
-              <AlertDescription>
-                Created {messageMutation.data.id}: {messageMutation.data.text}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {messageMutation.isError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Mutation failed</AlertTitle>
-              <AlertDescription>
-                {messageMutation.error.message}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-        </CardContent>
-      </Card>
     </main>
   )
 }

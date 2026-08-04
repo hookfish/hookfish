@@ -202,7 +202,7 @@ const authorizeRoute = createRoute({
   path: '/{provider}/authorize',
   summary: 'Create a consent URL for a connection',
   description:
-    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`). Each connection id is one provider link.',
+    'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.',
   security: brokerAuth,
   request: {
     params: providerParamSchema,
@@ -214,6 +214,11 @@ const authorizeRoute = createRoute({
               description:
                 'Opaque id for this provider link. Omit to auto-generate as `word-word-number` (e.g. `swift-orchid-4821`). Re-pass the same id to reconnect the same link; a different provider on an existing id returns 409.',
               example: EXAMPLE_CONNECTION_ID,
+            }),
+            connection_id_prefix: z.string().min(1).optional().openapi({
+              description:
+                'Slash-delimited path below which the broker should mint an id. Use this only when connection_id is omitted.',
+              example: 'team/payments',
             }),
             scopes: z.array(z.string()).optional().openapi({
               description:
@@ -429,7 +434,7 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
-  oauthRoutes.openapi(listProvidersRoute, (c) => {
+  const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
     return c.json(
       {
         providers: providers.listProviders().map(([slug, provider]) => {
@@ -452,7 +457,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(authorizeRoute, async (c) => {
+  const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
 
@@ -461,6 +466,7 @@ export function createOAuthRoutes<Bindings extends object>(
       c.env,
       {
         connectionId: body.connection_id,
+        connectionIdPrefix: body.connection_id_prefix,
         provider,
         redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
         scopes: body.scopes,
@@ -479,7 +485,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(callbackRoute, async (c) => {
+  const callbackApi = authorizeApi.openapi(callbackRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const query = c.req.valid('query')
 
@@ -535,7 +541,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(listConnectionsRoute, async (c) => {
+  const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
     const { provider, connection_id_prefix: connectionIdPrefix } =
       c.req.valid('query')
     const connections = await listConnections(c.get('db'), {
@@ -546,14 +552,17 @@ export function createOAuthRoutes<Bindings extends object>(
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })
 
-  oauthRoutes.openapi(getConnectionRuntimeRoute, async (c) => {
-    const { connection_id: connectionId } = c.req.valid('param')
-    const connection = await getConnection(c.get('db'), connectionId)
+  const connectionApi = listApi.openapi(
+    getConnectionRuntimeRoute,
+    async (c) => {
+      const { connection_id: connectionId } = c.req.valid('param')
+      const connection = await getConnection(c.get('db'), connectionId)
 
-    return c.json({ connection: serializeConnection(connection) }, 200)
-  })
+      return c.json({ connection: serializeConnection(connection) }, 200)
+    },
+  )
 
-  oauthRoutes.openapi(tokenRuntimeRoute, async (c) => {
+  const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     const token = await getAccessToken(
       c.get('db'),
@@ -579,7 +588,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.openapi(disconnectRuntimeRoute, async (c) => {
+  const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
 
     return c.json(
@@ -588,7 +597,7 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  oauthRoutes.onError((error, c) => {
+  routes.onError((error, c) => {
     if (isBrokerError(error)) {
       return c.json(
         { error: { code: error.code, message: error.message } },
@@ -606,5 +615,5 @@ export function createOAuthRoutes<Bindings extends object>(
     )
   })
 
-  return oauthRoutes
+  return routes
 }

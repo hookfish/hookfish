@@ -9,6 +9,7 @@ Node-first full-stack application with reusable API and provider packages:
 - `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
 - `hookfish.config.ts` — shared database, provider, and Hookfish configuration
 - `packages/api` — shared Hono API and OAuth broker
+- `packages/hooks` — typed Hono RPC clients, React Query options, and hooks
 - `packages/database` — request-aware Postgres and local PGlite bindings
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
 
@@ -26,7 +27,9 @@ cp apps/frontend/.env.example apps/frontend/.env
 
 pnpm dev
 # Equivalent: pnpm exec hookfish serve
-# → http://127.0.0.1:5173
+# Opens http://127.0.0.1:5173 automatically.
+
+pnpm dev --no-open # Keep the browser closed.
 ```
 
 The root `hookfish.config.ts` uses PGlite, persists it at `pgdata`, and applies
@@ -138,10 +141,32 @@ configuration and run migrations before starting.
 More detail on the broker, custom providers, and endpoints is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md).
 
+## Frontend hooks
+
+`@hookfish/hooks` wraps the API's exported Hono RPC type with reusable React
+Query options and hooks:
+
+```ts
+import { createHookfishHooks } from '@hookfish/hooks'
+
+const hookfish = createHookfishHooks({ baseUrl: '/api' })
+
+function RuntimeStats() {
+  const stats = hookfish.useStats()
+  return stats.data?.region
+}
+```
+
+The TanStack Start frontend sends protected hook operations through an
+allowlisted server function that injects `BROKER_API_KEY`; the secret never
+enters the browser bundle. Access-token retrieval remains server-only and is
+intentionally omitted from both the hooks and the server-function proxy.
+
 ## Commands
 
 ```sh
-pnpm dev            # Node SSR + mounted Hookfish API
+pnpm dev            # Node SSR + mounted Hookfish API; opens the browser
+pnpm dev --no-open  # Start without opening the browser
 pnpm build
 pnpm preview
 pnpm migrate
@@ -159,6 +184,7 @@ and help:
 
 ```sh
 pnpm exec hookfish serve
+pnpm exec hookfish serve --no-open
 pnpm exec hookfish migrate
 pnpm exec hookfish help
 ```

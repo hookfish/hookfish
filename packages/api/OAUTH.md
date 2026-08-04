@@ -119,7 +119,7 @@ when unset.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
-| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id`) |
+| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id` or `connection_id_prefix`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` and `?connection_id_prefix=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
@@ -150,6 +150,16 @@ curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   "expires_at": "2026-07-29T04:26:02.024Z"
 }
 ```
+
+To mint the generated id inside a path, pass `connection_id_prefix` instead:
+
+```json
+{
+  "connection_id_prefix": "team/payments"
+}
+```
+
+The resulting id will look like `team/payments/swift-orchid-4821`.
 
 Pass your own id to reconnect the same link:
 
