@@ -155,9 +155,10 @@ function RuntimeStats() {
 }
 ```
 
-Protected operations support injected headers, including async session-token
-providers. Do not expose `BROKER_API_KEY` to browser code. Access-token
-retrieval remains server-only and is intentionally omitted from the hooks.
+The TanStack Start frontend sends protected hook operations through an
+allowlisted server function that injects `BROKER_API_KEY`; the secret never
+enters the browser bundle. Access-token retrieval remains server-only and is
+intentionally omitted from both the hooks and the server-function proxy.
 
 ## Commands
 
