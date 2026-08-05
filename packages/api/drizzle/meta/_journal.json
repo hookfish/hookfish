@@ -29,6 +29,13 @@
       "when": 1785803550826,
       "tag": "0003_sloppy_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785870939197,
+      "tag": "0004_next_magus",
+      "breakpoints": true
     }
   ]
 }

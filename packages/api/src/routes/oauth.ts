@@ -1,7 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import type { ProviderRegistry } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
-import type { OAuthConnection } from '../db/schema'
+import {
+  assertConnectionAccess,
+  assertConnectionPrefixAccess,
+} from '../oauth/access-token'
 import {
   completeAuthorization,
   deleteConnection,
@@ -11,7 +14,7 @@ import {
   startAuthorization,
 } from '../oauth/broker'
 import { resolveRedirectUri } from '../oauth/config'
-import { isBrokerError } from '../oauth/errors'
+import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
   requireApiKey,
@@ -107,7 +110,10 @@ function errorResponse(description: string) {
 
 const commonErrors = {
   400: errorResponse('Invalid request'),
-  401: errorResponse('Missing API key, or the connection needs reauthorizing'),
+  401: errorResponse(
+    'Missing or invalid broker credential, or the connection needs reauthorizing',
+  ),
+  403: errorResponse('The broker access token does not cover this connection'),
   404: errorResponse('Unknown provider or no connection for this id'),
   409: errorResponse('Connection id is already linked to another provider'),
   500: errorResponse('Broker is misconfigured'),
@@ -145,7 +151,9 @@ const connectionSchema = z
   .openapi('OAuthConnection')
 
 /** Never serialises the encrypted token columns. */
-function serializeConnection(connection: OAuthConnection) {
+function serializeConnection(
+  connection: Awaited<ReturnType<typeof listConnections>>[number],
+) {
   return {
     connection_id: connection.connectionId,
     provider: connection.provider,
@@ -421,12 +429,12 @@ export function createOAuthRoutes<Bindings extends object>(
   const authenticate = requireApiKey<Bindings>()
   const connectDatabase = withDatabase(database)
 
-  oauthRoutes.use('/providers', authenticate)
-  oauthRoutes.use('/:provider/authorize', authenticate, connectDatabase)
+  oauthRoutes.use('/providers', connectDatabase, authenticate)
+  oauthRoutes.use('/:provider/authorize', connectDatabase, authenticate)
   oauthRoutes.use('/:provider/callback', connectDatabase)
-  oauthRoutes.use('/connections', authenticate, connectDatabase)
-  oauthRoutes.use('/connections/*', authenticate, connectDatabase)
-  oauthRoutes.use('/tokens/*', authenticate, connectDatabase)
+  oauthRoutes.use('/connections', connectDatabase, authenticate)
+  oauthRoutes.use('/connections/*', connectDatabase, authenticate)
+  oauthRoutes.use('/tokens/*', connectDatabase, authenticate)
 
   // The runtime variants are hidden because regex parameters are a Hono
   // extension, not valid OpenAPI path syntax.
@@ -460,6 +468,21 @@ export function createOAuthRoutes<Bindings extends object>(
   const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
+
+    if (body.connection_id) {
+      assertConnectionAccess(c.get('accessGrant'), body.connection_id)
+    } else if (body.connection_id_prefix) {
+      assertConnectionPrefixAccess(
+        c.get('accessGrant'),
+        body.connection_id_prefix,
+      )
+    } else if (!c.get('accessGrant').scopes.includes('**')) {
+      throw new BrokerError(
+        400,
+        'connection_id_required',
+        'A scoped broker access token must provide a connection_id or connection_id_prefix within its scope.',
+      )
+    }
 
     const result = await startAuthorization(
       c.get('db'),
@@ -544,9 +567,11 @@ export function createOAuthRoutes<Bindings extends object>(
   const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
     const { provider, connection_id_prefix: connectionIdPrefix } =
       c.req.valid('query')
+    const grant = c.get('accessGrant')
     const connections = await listConnections(c.get('db'), {
       provider,
       connectionIdPrefix,
+      connectionScopes: grant.scopes,
     })
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
@@ -556,6 +581,7 @@ export function createOAuthRoutes<Bindings extends object>(
     getConnectionRuntimeRoute,
     async (c) => {
       const { connection_id: connectionId } = c.req.valid('param')
+      assertConnectionAccess(c.get('accessGrant'), connectionId)
       const connection = await getConnection(c.get('db'), connectionId)
 
       return c.json({ connection: serializeConnection(connection) }, 200)
@@ -564,6 +590,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    assertConnectionAccess(c.get('accessGrant'), connectionId)
     const token = await getAccessToken(
       c.get('db'),
       c.env,
@@ -590,6 +617,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    assertConnectionAccess(c.get('accessGrant'), connectionId)
 
     return c.json(
       await deleteConnection(c.get('db'), c.env, connectionId, providers),

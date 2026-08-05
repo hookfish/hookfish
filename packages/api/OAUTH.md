@@ -111,14 +111,19 @@ DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
 
 ## Endpoints
 
-All routes require `Authorization: Bearer $BROKER_API_KEY`, except the callback
-— that one is hit by the user's browser and is authenticated by its single-use
-`state` value instead. Outside production, `BROKER_API_KEY` defaults to `test`
-when unset.
+All routes require `Authorization: Bearer <credential>`, except the callback —
+that one is hit by the user's browser and is authenticated by its single-use
+`state` value instead. `BROKER_API_KEY` is the root credential and can access
+every connection. It can mint expiring credentials limited to one or more
+hierarchical connection folders. Outside production,
+`BROKER_API_KEY` defaults to `test` when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
+| `POST` | `/api/admin/tokens` | Mint a named, expiring broker credential for one or more connection scopes |
+| `GET` | `/api/admin/tokens` | List active broker credentials by name only (root access required) |
+| `DELETE` | `/api/admin/tokens/{name}` | Immediately revoke a named broker credential (root access required) |
 | `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id` or `connection_id_prefix`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` and `?connection_id_prefix=` optional) |
@@ -216,6 +221,75 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 `refreshed: true` means the stored token had expired and was renewed on this
 call. If a connection expires with no usable refresh token, you get `401
 reauthorization_required` — send the user through `authorize` again.
+
+## Hierarchical broker access tokens
+
+Connection scopes are absolute folder paths. Submit `team` and the API
+canonicalizes it to `team/**`, granting the connection id `team` and every
+descendant such as `team/notion` or `team/eu/github`; it does not include
+`other/team/notion` or `teamish/notion`. Use `**` to grant root access.
+
+Mint a named, one-hour credential for one or more scopes with the root key:
+
+```sh
+curl -X POST http://127.0.0.1:5173/api/admin/tokens \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"name":"team-worker","scopes":["team"],"expires_in":3600}'
+```
+
+```json
+{
+  "name": "team-worker",
+  "access_token": "hookfish_at_v1.eyJ2IjoxLC...",
+  "token_type": "Bearer",
+  "scopes": ["team/**"],
+  "expires_at": "2026-08-04T20:00:00.000Z"
+}
+```
+
+Use that token in the same `Authorization` header. A token may contain up to 32
+scopes. Listing connections returns only connections matched by at least one
+of them. Getting a connection, retrieving its provider token, deleting it, or
+starting an authorization outside every scope returns `403
+insufficient_scope`. A non-root scoped credential must provide
+`connection_id` or `connection_id_prefix` when starting authorization because
+a root-level generated id would fall outside its namespace.
+
+Scoped credentials can mint credentials at the same or a narrower folder (for
+example, a token for `team` can mint one for `team/eu`) but cannot broaden
+their scope or create a credential that outlives them. Delegated token names
+must be nested below the issuer's name: `team-worker` can mint
+`team-worker.eu`, but not `production-api`. Lifetimes default to one hour and
+are capped at 30 days.
+
+Root credentials can list active token names:
+
+```sh
+curl -H "Authorization: Bearer $BROKER_API_KEY" \
+  http://127.0.0.1:5173/api/admin/tokens
+```
+
+```json
+{ "tokens": ["team-worker", "production-api"] }
+```
+
+The listing deliberately returns names only—never bearer values, scopes, or
+expiration metadata. Names are unique among active tokens and may be reused
+after the previous token expires.
+
+Revoke a token immediately with the root credential:
+
+```sh
+curl -X DELETE -H "Authorization: Bearer $BROKER_API_KEY" \
+  http://127.0.0.1:5173/api/admin/tokens/team-worker
+```
+
+The broker stores only a SHA-256 hash of each token's random identifier. Every
+scoped request must match an unexpired database record after its HMAC signature
+is verified. The record's scopes and expiration are authoritative, so narrowing
+either value takes effect on the next request; deleting the record invalidates
+the bearer credential without rotating `BROKER_API_KEY`.
 
 ## Adding a provider
 
@@ -343,6 +417,11 @@ pnpm --filter @hookfish/provider-github test
   the row as it consumes it, so a replayed code is rejected.
 - The API key is compared without early exit to keep it off the timing side
   channel.
+- Scoped broker credentials are named and HMAC-signed with `BROKER_API_KEY`.
+  Bearer values and raw token identifiers are never stored. A SHA-256 identifier
+  hash links each signed token to an authoritative database record for immediate
+  scope narrowing, expiry changes, and individual revocation. Rotating
+  `BROKER_API_KEY` still invalidates every scoped token at once.
 - Connection-listing responses never include token columns.
 - Token responses send `Cache-Control: no-store` and `Pragma: no-cache`.
 - Disconnect revokes access upstream for GitHub, Linear, and Notion before

@@ -5,8 +5,13 @@ import {
 } from '@hookfish/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { oauthConnections, oauthStates } from '../src/db/schema'
+import {
+  brokerAccessTokens,
+  oauthConnections,
+  oauthStates,
+} from '../src/db/schema'
 import { defineDatabase, Hookfish } from '../src/index'
+import { mintAccessToken } from '../src/oauth/access-token'
 import { purgeExpiredStates } from '../src/oauth/broker'
 import {
   API_ORIGIN,
@@ -303,6 +308,9 @@ describe('OAuth broker integration', () => {
       await h.fetch('/api/openapi.json')
     ).json()
     expect(openApi.paths['/oauth/tokens/{connection_id}']).toBeDefined()
+    expect(openApi.paths['/admin/tokens']).toBeDefined()
+    expect(openApi.paths['/admin/tokens/{name}']).toBeDefined()
+    expect(openApi.paths['/oauth/access-tokens']).toBeUndefined()
     expect(
       openApi.paths['/oauth/connections/{connection_id}/token'],
     ).toBeUndefined()
@@ -376,6 +384,324 @@ describe('OAuth broker integration', () => {
           method: 'DELETE',
         })
       }
+    }
+  })
+
+  it('mints hierarchical broker tokens and confines them to a subtree', async () => {
+    const connectionIds = [
+      'team',
+      'team/one',
+      'team/nested/two',
+      'teamish/three',
+      'other/four',
+      'shared/five',
+    ]
+
+    for (const connectionId of connectionIds) {
+      const { callback } = await h.authorizeAndCallback({ connectionId })
+      expect(callback.status).toBe(200)
+    }
+
+    const mintResponse = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'team-worker',
+        scopes: ['team', 'shared'],
+        expires_in: 3600,
+      }),
+    })
+    expect(mintResponse.status).toBe(200)
+    expect(mintResponse.headers.get('cache-control')).toBe('no-store')
+    expect(mintResponse.headers.get('pragma')).toBe('no-cache')
+    const minted: {
+      access_token: string
+      token_type: string
+      name: string
+      scopes: string[]
+      expires_at: string
+    } = await mintResponse.json()
+    expect(minted).toMatchObject({
+      name: 'team-worker',
+      token_type: 'Bearer',
+      scopes: ['team/**', 'shared/**'],
+    })
+    expect(new Date(minted.expires_at).getTime()).toBeGreaterThan(Date.now())
+
+    const scopedHeaders = { Authorization: `Bearer ${minted.access_token}` }
+    const listResponse = await h.fetch('/api/oauth/connections', {
+      headers: scopedHeaders,
+    })
+    const list: { connections: Array<{ connection_id: string }> } =
+      await listResponse.json()
+    expect(
+      list.connections.map((connection) => connection.connection_id).sort(),
+    ).toEqual(['shared/five', 'team', 'team/nested/two', 'team/one'])
+
+    const scopedPrefixList = await h.fetch(
+      '/api/oauth/connections?connection_id_prefix=shared',
+      { headers: scopedHeaders },
+    )
+    expect(await scopedPrefixList.json()).toMatchObject({
+      connections: [{ connection_id: 'shared/five' }],
+    })
+    const outsidePrefixList = await h.fetch(
+      '/api/oauth/connections?connection_id_prefix=other',
+      { headers: scopedHeaders },
+    )
+    expect(await outsidePrefixList.json()).toEqual({ connections: [] })
+
+    expect(
+      await h.fetch('/api/oauth/connections/team/nested/two', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 200)
+    expect(
+      await h.fetch('/api/oauth/tokens/team/one', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 200)
+
+    for (const inaccessible of ['teamish/three', 'other/four']) {
+      const response = await h.fetch(`/api/oauth/connections/${inaccessible}`, {
+        headers: scopedHeaders,
+      })
+      const body: { error: { code: string } } = await response.json()
+      expect(response.status).toBe(403)
+      expect(body.error.code).toBe('insufficient_scope')
+    }
+
+    const missingConnectionId = await h.fetch(
+      `/api/oauth/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { ...scopedHeaders, 'content-type': 'application/json' },
+        body: '{}',
+      },
+    )
+    expect(missingConnectionId.status).toBe(400)
+    expect(await missingConnectionId.json()).toMatchObject({
+      error: {
+        code: 'connection_id_required',
+        message: expect.stringContaining(
+          'connection_id or connection_id_prefix',
+        ),
+      },
+    })
+
+    const scopedPrefixAuthorize = await h.fetch(
+      `/api/oauth/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { ...scopedHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id_prefix: 'team/generated' }),
+      },
+    )
+    expect(scopedPrefixAuthorize.status).toBe(200)
+    expect(await scopedPrefixAuthorize.json()).toMatchObject({
+      connection_id: expect.stringMatching(/^team\/generated\//),
+    })
+
+    const outsidePrefixAuthorize = await h.fetch(
+      `/api/oauth/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { ...scopedHeaders, 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id_prefix: 'other/generated' }),
+      },
+    )
+    expect(outsidePrefixAuthorize.status).toBe(403)
+
+    const delegatedResponse = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { ...scopedHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'team-worker.nested-worker',
+        scopes: ['team/nested'],
+        expires_in: 600,
+      }),
+    })
+    expect(delegatedResponse.status).toBe(200)
+    const delegated: { access_token: string; name: string; scopes: string[] } =
+      await delegatedResponse.json()
+    expect(delegated).toMatchObject({
+      name: 'team-worker.nested-worker',
+      scopes: ['team/nested/**'],
+    })
+    expect(
+      await h.fetch('/api/oauth/connections/team/one', {
+        headers: { Authorization: `Bearer ${delegated.access_token}` },
+      }),
+    ).toHaveProperty('status', 403)
+
+    const broaden = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { ...scopedHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'forbidden-root',
+        scopes: ['**'],
+        expires_in: 600,
+      }),
+    })
+    expect(broaden.status).toBe(403)
+
+    const squatGlobalName = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { ...scopedHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'production-api',
+        scopes: ['team/nested'],
+        expires_in: 600,
+      }),
+    })
+    expect(squatGlobalName.status).toBe(403)
+    expect(await squatGlobalName.json()).toMatchObject({
+      error: { code: 'insufficient_scope' },
+    })
+
+    const rootMintResponse = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'production-api',
+        scopes: ['**'],
+        expires_in: 600,
+      }),
+    })
+    const rootMint: { access_token: string } = await rootMintResponse.json()
+    const rootAuthorize = await h.fetch(
+      `/api/oauth/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${rootMint.access_token}`,
+          'content-type': 'application/json',
+        },
+        body: '{}',
+      },
+    )
+    expect(rootAuthorize.status).toBe(200)
+
+    const scopedTokenList = await h.fetch('/api/admin/tokens', {
+      headers: scopedHeaders,
+    })
+    expect(scopedTokenList.status).toBe(403)
+    expect(await scopedTokenList.json()).toMatchObject({
+      error: { code: 'root_access_required' },
+    })
+
+    const tokenListResponse = await h.fetch('/api/admin/tokens')
+    expect(tokenListResponse.status).toBe(200)
+    expect(await tokenListResponse.json()).toEqual({
+      tokens: ['production-api', 'team-worker', 'team-worker.nested-worker'],
+    })
+
+    const duplicateName = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'team-worker', scopes: ['other'] }),
+    })
+    expect(duplicateName.status).toBe(409)
+    expect(await duplicateName.json()).toMatchObject({
+      error: { code: 'token_name_in_use' },
+    })
+
+    const scopedRevoke = await h.fetch('/api/admin/tokens/production-api', {
+      method: 'DELETE',
+      headers: scopedHeaders,
+    })
+    expect(scopedRevoke.status).toBe(403)
+    expect(await scopedRevoke.json()).toMatchObject({
+      error: { code: 'root_access_required' },
+    })
+
+    await h.db
+      .update(brokerAccessTokens)
+      .set({ scopes: ['shared/**'] })
+      .where(eq(brokerAccessTokens.name, 'team-worker'))
+    const narrowedList = await h.fetch('/api/oauth/connections', {
+      headers: scopedHeaders,
+    })
+    expect(await narrowedList.json()).toMatchObject({
+      connections: [{ connection_id: 'shared/five' }],
+    })
+    expect(
+      await h.fetch('/api/oauth/connections/team/one', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 403)
+
+    await h.db
+      .update(brokerAccessTokens)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(brokerAccessTokens.name, 'team-worker.nested-worker'))
+    const shortenedExpiry = await h.fetch(
+      '/api/oauth/connections/team/nested/two',
+      { headers: { Authorization: `Bearer ${delegated.access_token}` } },
+    )
+    expect(shortenedExpiry.status).toBe(401)
+    expect(await shortenedExpiry.json()).toMatchObject({
+      error: { code: 'invalid_access_token' },
+    })
+
+    const revoke = await h.fetch('/api/admin/tokens/team-worker', {
+      method: 'DELETE',
+    })
+    expect(revoke.status).toBe(200)
+    expect(await revoke.json()).toEqual({
+      name: 'team-worker',
+      revoked: true,
+    })
+    expect(
+      await h.fetch('/api/oauth/connections/shared/five', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 401)
+
+    const revokeAgain = await h.fetch('/api/admin/tokens/team-worker', {
+      method: 'DELETE',
+    })
+    expect(await revokeAgain.json()).toEqual({
+      name: 'team-worker',
+      revoked: false,
+    })
+
+    const expired = await mintAccessToken(
+      'test',
+      { name: 'expired-worker', scopes: ['team'], expiresIn: 60 },
+      Date.now() - 120_000,
+    )
+    const expiredResponse = await h.fetch('/api/oauth/connections', {
+      headers: { Authorization: `Bearer ${expired.token}` },
+    })
+    expect(expiredResponse.status).toBe(401)
+    expect(await expiredResponse.json()).toMatchObject({
+      error: { code: 'invalid_access_token' },
+    })
+
+    const unpersisted = await mintAccessToken('test', {
+      name: 'unpersisted-worker',
+      scopes: ['team'],
+      expiresIn: 600,
+    })
+    const unpersistedResponse = await h.fetch('/api/oauth/connections', {
+      headers: { Authorization: `Bearer ${unpersisted.token}` },
+    })
+    expect(unpersistedResponse.status).toBe(401)
+    expect(await unpersistedResponse.json()).toMatchObject({
+      error: { code: 'invalid_access_token' },
+    })
+
+    // The configured key remains the root credential.
+    expect(await h.fetch('/api/oauth/connections/other/four')).toHaveProperty(
+      'status',
+      200,
+    )
+
+    for (const connectionId of connectionIds) {
+      await h.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
     }
   })
 
