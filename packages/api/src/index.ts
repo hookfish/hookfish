@@ -25,7 +25,7 @@ import {
 } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { createAdminRoutes } from './routes/admin'
-import { createOAuthRoutes } from './routes/oauth'
+import { createOAuthRoutes, ORGANIZATION_PATTERN } from './routes/oauth'
 import { statsRoutes } from './routes/stats'
 
 export type ProviderMap = Record<string, OAuthProvider>
@@ -56,7 +56,7 @@ export type HookfishConfig<
   returnTo?: string
   /** Origins allowed by the per-authorization `return_to` option. */
   trustedOrigins?: readonly string[]
-  /** Prefix OAuth management routes with `/:organization`. The provider callback remains global. @default false */
+  /** Prefix OAuth management routes with `/organization/:organization`. The provider callback remains global. @default false */
   organizationRouting?: boolean
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
@@ -134,6 +134,42 @@ function createApiRoutes<Bindings extends object>(
       servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
     })
 
+    // Organization mode still mounts the global OAuth app for the provider
+    // callback. Keep its inactive management operations (and the inverse
+    // organization callback) out of the generated document.
+    if (options.organizationRouting) {
+      for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
+        const isGlobalManagementRoute =
+          pathname.startsWith('/oauth/') &&
+          pathname !== '/oauth/{provider}/callback'
+        const isOrganizationCallback =
+          pathname === '/organization/{organization}/oauth/{provider}/callback'
+
+        if (isGlobalManagementRoute || isOrganizationCallback) {
+          delete document.paths?.[pathname]
+          continue
+        }
+
+        if (pathname.startsWith('/organization/{organization}/')) {
+          pathItem.parameters = [
+            ...(pathItem.parameters ?? []),
+            {
+              name: 'organization',
+              in: 'path',
+              required: true,
+              description: 'Organization namespace for OAuth connections.',
+              schema: {
+                type: 'string',
+                pattern: ORGANIZATION_PATTERN.source,
+                minLength: 1,
+                maxLength: 128,
+              },
+            },
+          ]
+        }
+      }
+    }
+
     if (!includeSwagger) {
       const operationMethods = [
         'get',
@@ -182,14 +218,16 @@ function createApiRoutes<Bindings extends object>(
         routeMode: 'global',
       }),
     )
-    .use('/:organization/oauth/*', cors())
-    .route(
-      '/:organization/oauth',
+
+  if (options.organizationRouting) {
+    api.use('/organization/:organization/oauth/*', cors()).route(
+      '/organization/:organization/oauth',
       createOAuthRoutes(providers, resolveConfig, database, {
         ...options,
         routeMode: 'organization',
       }),
     )
+  }
 
   return api
 }

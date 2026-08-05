@@ -94,7 +94,8 @@ export default defineHookfishConfig({
   // returnTo: 'https://app.example.com/settings/integrations',
   // Permit per-flow return_to paths on these application origins:
   // trustedOrigins: ['https://app.example.com'],
-  // Prefix OAuth management routes with /api/:organization/oauth while
+  // Prefix OAuth management routes with
+  // /api/organization/:organization/oauth while
   // retaining one global provider callback URL:
   // organizationRouting: true,
   // Receive best-effort lifecycle events for audit or telemetry export:
@@ -198,9 +199,10 @@ hierarchical connection folders. Outside production,
 | `DELETE` | `/api/oauth/connections/{connection_id}` | Revoke upstream when supported, then forget a connection |
 
 Set `organizationRouting: true` to move OAuth management endpoints below
-`/api/{organization}/oauth`. For example, Acme lists connections at
-`/api/acme/oauth/connections`, and an authorization without an explicit id is
-minted below `acme/`. Explicit ids and prefixes must also belong to `acme`.
+`/api/organization/{organization}/oauth`. For example, Acme lists connections
+at `/api/organization/acme/oauth/connections`, and an authorization without an
+explicit id is minted below `acme/`. Explicit ids and prefixes must also belong
+to `acme`.
 Admin and stats routes remain deployment-wide. Provider callbacks deliberately
 remain global at `/api/oauth/{provider}/callback`, so a shared provider
 application needs only one registered redirect URI; the hashed server-side

@@ -354,6 +354,11 @@ describe('OAuth broker integration', () => {
       await h.fetch('/api/openapi.json')
     ).json()
     expect(openApi.paths['/oauth/tokens/{connection_id}']).toBeDefined()
+    expect(
+      openApi.paths[
+        '/organization/{organization}/oauth/tokens/{connection_id}'
+      ],
+    ).toBeUndefined()
     expect(openApi.paths['/admin/tokens']).toBeDefined()
     expect(openApi.paths['/admin/tokens/{name}']).toBeDefined()
     expect(openApi.paths['/oauth/access-tokens']).toBeUndefined()
@@ -1026,8 +1031,52 @@ describe('OAuth broker integration', () => {
 
     try {
       expect((await configured.fetch('/api/oauth/providers')).status).toBe(404)
+      expect((await configured.fetch('/api/acme/oauth/providers')).status).toBe(
+        404,
+      )
 
-      const providers = await configured.fetch('/api/acme/oauth/providers')
+      const openApi: {
+        paths: Record<
+          string,
+          {
+            parameters?: Array<{ in: string; name: string; required: boolean }>
+          }
+        >
+      } = await (await configured.fetch('/api/openapi.json')).json()
+      expect(
+        openApi.paths['/organization/{organization}/oauth/providers'],
+      ).toBeDefined()
+      expect(
+        openApi.paths['/organization/{organization}/oauth/providers']
+          ?.parameters,
+      ).toContainEqual({
+        name: 'organization',
+        in: 'path',
+        required: true,
+        description: 'Organization namespace for OAuth connections.',
+        schema: {
+          type: 'string',
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$',
+          minLength: 1,
+          maxLength: 128,
+        },
+      })
+      expect(
+        openApi.paths[
+          '/organization/{organization}/oauth/{provider}/authorize'
+        ],
+      ).toBeDefined()
+      expect(openApi.paths['/oauth/providers']).toBeUndefined()
+      expect(openApi.paths['/oauth/{provider}/authorize']).toBeUndefined()
+      expect(openApi.paths['/oauth/{provider}/callback']).toBeDefined()
+      expect(
+        openApi.paths['/organization/{organization}/oauth/{provider}/callback'],
+      ).toBeUndefined()
+      expect(openApi.paths['/{organization}/oauth/providers']).toBeUndefined()
+
+      const providers = await configured.fetch(
+        '/api/organization/acme/oauth/providers',
+      )
       expect(providers.status).toBe(200)
       const providerBody: {
         providers: Array<{ id: string; callback_url: string }>
@@ -1038,7 +1087,7 @@ describe('OAuth broker integration', () => {
       ).toBe(`${API_ORIGIN}/api/oauth/${configured.providerId}/callback`)
 
       const authorize = await configured.fetch(
-        `/api/acme/oauth/${configured.providerId}/authorize`,
+        `/api/organization/acme/oauth/${configured.providerId}/authorize`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1064,7 +1113,9 @@ describe('OAuth broker integration', () => {
       )
       expect(callback.status).toBe(200)
 
-      const listed = await configured.fetch('/api/acme/oauth/connections')
+      const listed = await configured.fetch(
+        '/api/organization/acme/oauth/connections',
+      )
       const listedBody: { connections: Array<{ connection_id: string }> } =
         await listed.json()
       expect(
@@ -1072,24 +1123,24 @@ describe('OAuth broker integration', () => {
       ).toContain(authorization.connection_id)
 
       const mismatch = await configured.fetch(
-        `/api/globex/oauth/connections/${authorization.connection_id}`,
+        `/api/organization/globex/oauth/connections/${authorization.connection_id}`,
       )
       expect(mismatch.status).toBe(403)
       expect((await mismatch.json()).error.code).toBe('organization_mismatch')
 
       const crossOrganizationRequests = [
         configured.fetch(
-          `/api/globex/oauth/tokens/${authorization.connection_id}`,
+          `/api/organization/globex/oauth/tokens/${authorization.connection_id}`,
         ),
         configured.fetch(
-          `/api/globex/oauth/connections/${authorization.connection_id}`,
+          `/api/organization/globex/oauth/connections/${authorization.connection_id}`,
           { method: 'DELETE' },
         ),
         configured.fetch(
-          `/api/globex/oauth/connections?connection_id_prefix=acme`,
+          `/api/organization/globex/oauth/connections?connection_id_prefix=acme`,
         ),
         configured.fetch(
-          `/api/globex/oauth/${configured.providerId}/authorize`,
+          `/api/organization/globex/oauth/${configured.providerId}/authorize`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1099,7 +1150,7 @@ describe('OAuth broker integration', () => {
           },
         ),
         configured.fetch(
-          `/api/globex/oauth/${configured.providerId}/authorize`,
+          `/api/organization/globex/oauth/${configured.providerId}/authorize`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1113,7 +1164,9 @@ describe('OAuth broker integration', () => {
         expect((await response.json()).error.code).toBe('organization_mismatch')
       }
 
-      const globexList = await configured.fetch('/api/globex/oauth/connections')
+      const globexList = await configured.fetch(
+        '/api/organization/globex/oauth/connections',
+      )
       expect(globexList.status).toBe(200)
       const globexListBody: {
         connections: Array<{ connection_id: string }>
@@ -1137,13 +1190,13 @@ describe('OAuth broker integration', () => {
       }
       expect(
         (
-          await configured.fetch('/api/acme/oauth/providers', {
+          await configured.fetch('/api/organization/acme/oauth/providers', {
             headers: acmeAdminHeaders,
           })
         ).status,
       ).toBe(200)
       const scopedCrossOrganization = await configured.fetch(
-        '/api/globex/oauth/providers',
+        '/api/organization/globex/oauth/providers',
         { headers: acmeAdminHeaders },
       )
       expect(scopedCrossOrganization.status).toBe(403)
@@ -1154,13 +1207,13 @@ describe('OAuth broker integration', () => {
       expect(
         (
           await configured.fetch(
-            `/api/acme/oauth/${configured.providerId}/callback`,
+            `/api/organization/acme/oauth/${configured.providerId}/callback`,
           )
         ).status,
       ).toBe(404)
 
       await configured.fetch(
-        `/api/acme/oauth/connections/${authorization.connection_id}`,
+        `/api/organization/acme/oauth/connections/${authorization.connection_id}`,
         { method: 'DELETE' },
       )
     } finally {
@@ -1185,7 +1238,7 @@ describe('OAuth broker integration', () => {
     try {
       for (const connectionId of invalidPaths) {
         const response = await configured.fetch(
-          `/api/acme/oauth/${configured.providerId}/authorize`,
+          `/api/organization/acme/oauth/${configured.providerId}/authorize`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1200,7 +1253,7 @@ describe('OAuth broker integration', () => {
       }
 
       const invalidPrefix = await configured.fetch(
-        '/api/acme/oauth/connections?connection_id_prefix=acme%2F..%2Fglobex',
+        '/api/organization/acme/oauth/connections?connection_id_prefix=acme%2F..%2Fglobex',
       )
       expect(invalidPrefix.status).toBe(400)
       expect((await invalidPrefix.json()).error.code).toBe(

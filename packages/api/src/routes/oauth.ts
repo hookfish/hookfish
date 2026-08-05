@@ -38,7 +38,7 @@ const brokerAuth = [{ brokerApiKey: [] }]
 
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
-const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+export const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const MAX_ORGANIZATION_CONNECTION_PATH_LENGTH = 512
 
 type OAuthRouteOptions = {
