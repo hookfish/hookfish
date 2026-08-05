@@ -5,7 +5,7 @@ import { requireBrokerApiKey } from './oauth/config'
 const allowedMethods = ['GET', 'POST', 'DELETE'] as const
 type AllowedMethod = (typeof allowedMethods)[number]
 
-export const browserApiPath = '/client'
+export const browserApiPath = '/api/client'
 export const hookfishApiPath = '/api'
 
 const maxRequestBodyBytes = 65_536
@@ -169,7 +169,7 @@ async function boundedRequestBody(
   return body
 }
 
-/** Compose the raw `/api` handler with the optional browser-safe `/client` facade. */
+/** Compose the raw API with the optional browser-safe `/api/client` facade. */
 export function createHookfishBackend<Bindings extends object = object>(
   options: HookfishBackendOptions<Bindings>,
 ): HookfishBackend<Bindings> {
@@ -177,7 +177,10 @@ export function createHookfishBackend<Bindings extends object = object>(
     async fetch(request, suppliedBindings, executionContext) {
       const url = new URL(request.url)
 
-      if (isApiPath(url.pathname, hookfishApiPath)) {
+      if (
+        isApiPath(url.pathname, hookfishApiPath) &&
+        !isApiPath(url.pathname, browserApiPath)
+      ) {
         return options.hookfishFetch(
           request,
           suppliedBindings,

@@ -23,7 +23,6 @@ const db = pglite(
 )
 const hookfish = await Hookfish.init<NodeJS.ProcessEnv>(config, {
   db,
-  runtime: 'express',
 })
 const handleHookfish = getRequestListener((request) =>
   hookfish.fetch(request, process.env),
@@ -32,16 +31,11 @@ const handleHookfish = getRequestListener((request) =>
 const app = express()
 
 app.get('/', (_request, response) => {
-  response.type('text').send('Hookfish is mounted at /api and /client')
+  response.type('text').send('Hookfish is mounted at /api')
 })
 
 app.use((request, response, next) => {
-  if (
-    request.path === '/api' ||
-    request.path.startsWith('/api/') ||
-    request.path === '/client' ||
-    request.path.startsWith('/client/')
-  ) {
+  if (request.path === '/api' || request.path.startsWith('/api/')) {
     void handleHookfish(request, response).catch(next)
     return
   }
@@ -49,13 +43,10 @@ app.use((request, response, next) => {
   next()
 })
 
-const port = Number(
-  process.env.HOOKFISH_BACKEND_PORT ?? process.env.PORT ?? 3000,
-)
+const port = Number(process.env.PORT ?? 3000)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
 app.listen(port, hostname, () => {
   console.log(`Express server on http://${hostname}:${port}`)
   console.log(`Hookfish API on http://${hostname}:${port}/api`)
-  console.log(`Browser API on http://${hostname}:${port}/client`)
 })

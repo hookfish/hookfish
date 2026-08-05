@@ -39,7 +39,7 @@ export type HookfishConfig<Config extends object = object> = {
   /** Application configuration parsed once and passed to a provider factory. */
   config: ZodType<Config>
   providers: HookfishProviders<Config>
-  /** Mount the browser-safe, credential-injecting facade at `/client`. @default false */
+  /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
   includeClient?: boolean
   /** Include server-only operations in OpenAPI. Client operations are always documented. @default true */
   includeSwagger?: boolean
@@ -121,7 +121,7 @@ function createApiRoutes<Bindings extends object>(
         title: 'Hookfish API',
         version: '0.0.0',
       },
-      servers: [{ url: includeSwagger ? '/api' : '/client' }],
+      servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
     })
 
     if (!includeSwagger) {
@@ -188,7 +188,7 @@ export type AppType = ReturnType<typeof createApiRoutes>
 
 export type HookfishRuntime<Bindings extends object = object> = {
   db: DatabaseInput<Bindings>
-  /** Label shown by `/client/health`. @default "fetch" */
+  /** Label shown by `/api/client/health`. @default "fetch" */
   runtime?: HookfishBackendOptions<Bindings>['runtime']
   /** Override `trustedOrigins` with a runtime-specific browser allowlist. */
   browserOrigins?: HookfishBackendOptions<Bindings>['browserOrigins']

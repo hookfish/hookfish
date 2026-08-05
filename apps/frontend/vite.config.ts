@@ -28,7 +28,6 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': backendUrl,
-      '/client': backendUrl,
     },
   },
 })

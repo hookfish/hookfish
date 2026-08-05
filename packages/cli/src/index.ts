@@ -99,7 +99,7 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     FRONTEND_PORT: String(frontendPort),
-    HOOKFISH_BACKEND_PORT: String(backendPort),
+    PORT: String(backendPort),
     HOOKFISH_BACKEND_URL:
       process.env.HOOKFISH_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`,
     HOOKFISH_FRONTEND_URL:

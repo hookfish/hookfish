@@ -7,9 +7,9 @@ lower-level package only when composing a raw Hookfish-compatible API handler
 yourself.
 
 - `/api/*` exposes the raw Hookfish API and OAuth callback surface.
-- `/client/*` is a browser-safe facade that forwards an allowlisted subset to
+- `/api/client/*` is a browser-safe facade that forwards an allowlisted subset to
   Hookfish with a server-side broker credential.
-- `/client/health` reports the selected host runtime.
+- `/api/client/health` reports the selected host runtime.
 
 ```ts
 import { createHookfishBackend } from '@hookfish/backend'

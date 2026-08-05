@@ -300,7 +300,7 @@ describe('OAuth broker integration', () => {
       servers?: Array<{ url: string }>
       paths: Record<string, Record<string, unknown>>
     } = await (await fetchApp('/api/openapi.json')).json()
-    expect(document.servers).toEqual([{ url: '/client' }])
+    expect(document.servers).toEqual([{ url: '/api/client' }])
     expect(document.paths['/oauth/providers']?.get).toBeDefined()
     expect(document.paths['/oauth/{provider}/authorize']?.post).toBeDefined()
     expect(document.paths['/oauth/tokens/{connectionId}']).toBeUndefined()
@@ -319,13 +319,13 @@ describe('OAuth broker integration', () => {
     const fetchApp = (path: string, init?: RequestInit) =>
       app.fetch(new Request(`${API_ORIGIN}${path}`, init), h.env)
 
-    const health = await (await fetchApp('/client/health')).json()
+    const health = await (await fetchApp('/api/client/health')).json()
     expect(health).toMatchObject({ ok: true, runtime: 'integration-test' })
-    expect(await fetchApp('/client/oauth/providers')).toHaveProperty(
+    expect(await fetchApp('/api/client/oauth/providers')).toHaveProperty(
       'status',
       200,
     )
-    expect(await fetchApp('/client/oauth/tokens/secret')).toHaveProperty(
+    expect(await fetchApp('/api/client/oauth/tokens/secret')).toHaveProperty(
       'status',
       403,
     )

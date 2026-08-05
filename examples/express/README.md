@@ -1,7 +1,7 @@
 # Express example
 
 This example mounts the raw Hookfish API at `/api` and the browser facade at
-`/client` in Express 5. The Hono Node adapter translates Express requests to
+`/api/client` in Express 5. The Hono Node adapter translates Express requests to
 the shared Fetch-compatible backend.
 
 It reads `../../apps/frontend/.env`:

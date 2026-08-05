@@ -29,7 +29,7 @@ The CLI runs `turbo dev` with exactly the static Vite frontend and selected
 backend. Available backends are `hono-node`, `express`, `nextjs`, and
 `cloudflare-worker`.
 The backend exposes raw Hookfish routes at `/api`, the browser facade at
-`/client`, and persists PGlite to `pgdata`. Node examples and local Wrangler
+`/api/client`, and persists PGlite to `pgdata`. Node examples and local Wrangler
 read `apps/frontend/.env`; the frontend only receives `VITE_` variables.
 
 Then register the redirect URI in each provider's developer console. Ask the
@@ -85,7 +85,7 @@ const configSchema = z.object({
 
 export default defineHookfishConfig({
   config: configSchema,
-  // Mount the browser-safe facade at /client:
+  // Mount the browser-safe facade at /api/client:
   includeClient: true,
   // Include server-only routes in /api/openapi.json. When false, the same
   // Swagger UI and document expose only client-safe routes:
@@ -137,7 +137,6 @@ import config from '../../../hookfish.config'
 
 const hookfish = await Hookfish.init(config, {
   db: pglite('./pgdata'),
-  runtime: 'node',
 })
 
 export default { fetch: (request) => hookfish.fetch(request, process.env) }
@@ -153,7 +152,6 @@ import config from '../../../hookfish.config'
 const db = postgres((env) => env.HYPERDRIVE.connectionString)
 const hookfish = await Hookfish.init(config, {
   db,
-  runtime: 'cloudflare-worker',
 })
 
 export default {
@@ -220,7 +218,7 @@ boundary across clients, proxies, and URLs.
 Swagger UI always lives at `/api`, with its document at `/api/openapi.json`.
 With `includeSwagger: true`, the document includes the complete server API.
 With `includeSwagger: false`, it includes only client-safe routes and advertises
-`/client` as its server.
+`/api/client` as its server.
 
 ## Usage
 

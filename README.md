@@ -16,7 +16,7 @@ backend runtimes:
 The frontend contains no server functions or database code. Every host exposes:
 
 - `/api/*` — raw Hookfish API, documentation, and OAuth callbacks
-- `/client/*` — allowlisted browser facade with server-side broker credentials
+- `/api/client/*` — allowlisted browser facade with server-side broker credentials
 
 ## Local development
 
@@ -36,8 +36,8 @@ pnpm dev --backend cloudflare-worker
 
 `hookfish dev` delegates to `turbo dev` filtered to the frontend and the selected
 backend. Choose `hono-node` (the default), `express`, `nextjs`, or
-`cloudflare-worker` with `--backend`. The Vite server proxies `/api` and
-`/client` to that backend. The default Hono backend stores PGlite data in
+`cloudflare-worker` with `--backend`. The Vite server proxies `/api` to that
+backend. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
 it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
 and the next allocated port for the backend. `hookfish serve` remains an alias.
@@ -133,9 +133,9 @@ VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend bui
 ```
 
 For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
-and `/client/*` to the selected backend. Before exposing the dashboard in
-production, pass `authorizeBrowserRequest` alongside the runtime database to
-`Hookfish.init` and enforce the application's session/authentication policy.
+to the selected backend. Before exposing the dashboard in production, pass
+`authorizeBrowserRequest` alongside the runtime database to `Hookfish.init` and
+enforce the application's session/authentication policy.
 
 ## Frontend hooks
 
@@ -146,7 +146,7 @@ Hono types:
 import { createHookfishHooks } from '@hookfish/hooks'
 
 const hookfish = createHookfishHooks({
-  baseUrl: 'https://broker.example.com/client',
+  baseUrl: 'https://broker.example.com/api/client',
 })
 
 function RuntimeStats() {

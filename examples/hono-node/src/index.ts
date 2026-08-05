@@ -23,12 +23,9 @@ const db = pglite(
 )
 const hookfish = await Hookfish.init<NodeJS.ProcessEnv>(config, {
   db,
-  runtime: 'node',
 })
 
-const port = Number(
-  process.env.HOOKFISH_BACKEND_PORT ?? process.env.PORT ?? 8787,
-)
+const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 serve(
   {
@@ -44,9 +41,7 @@ serve(
     const publicOrigin =
       process.env.OAUTH_REDIRECT_BASE_URL ?? `http://localhost:${info.port}`
 
-    console.log(`Hookfish backend on ${publicOrigin}`)
-    console.log(`Raw API on ${publicOrigin}/api`)
-    console.log(`Browser API on ${publicOrigin}/client`)
+    console.log(`OAuth broker on ${publicOrigin}/api`)
     console.log(
       configured.length > 0
         ? `Providers configured: ${configured.join(', ')}`

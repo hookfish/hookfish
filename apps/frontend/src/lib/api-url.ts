@@ -7,5 +7,5 @@ const configuredBackendUrl =
  */
 export const backendUrl = (configuredBackendUrl ?? '').replace(/\/$/, '')
 
-export const browserApiUrl = `${backendUrl}/client`
+export const browserApiUrl = `${backendUrl}/api/client`
 export const apiDocsUrl = `${backendUrl}/api`

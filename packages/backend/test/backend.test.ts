@@ -36,7 +36,7 @@ describe('Hookfish backend', () => {
 
     const response = await backend.fetch(
       new Request(
-        'https://backend.example/client/oauth/connections?provider=github',
+        'https://backend.example/api/client/oauth/connections?provider=github',
         {
           headers: {
             Cookie: 'session=browser',
@@ -66,7 +66,7 @@ describe('Hookfish backend', () => {
 
     const response = await backend.fetch(
       new Request(
-        'https://backend.example/client/oauth/github/authorize?source=ui',
+        'https://backend.example/api/client/oauth/github/authorize?source=ui',
         { method: 'POST', body: '{"scopes":[]}' },
       ),
     )
@@ -90,7 +90,7 @@ describe('Hookfish backend', () => {
       hookfishFetch,
     })
     const response = await backend.fetch(
-      new Request('https://backend.example/client/oauth/tokens/team/alice'),
+      new Request('https://backend.example/api/client/oauth/tokens/team/alice'),
     )
 
     expect(response.status).toBe(403)
@@ -123,7 +123,7 @@ describe('Hookfish backend', () => {
       hookfishFetch: async () => Response.json({}),
     })
     const allowed = await backend.fetch(
-      new Request('https://backend.example/client/health', {
+      new Request('https://backend.example/api/client/health', {
         headers: { Origin: 'http://localhost:5173' },
       }),
     )
@@ -132,7 +132,7 @@ describe('Hookfish backend', () => {
     )
 
     const preflight = await backend.fetch(
-      new Request('https://backend.example/client/oauth/github/authorize', {
+      new Request('https://backend.example/api/client/oauth/github/authorize', {
         method: 'OPTIONS',
         headers: { Origin: 'http://localhost:5173' },
       }),
@@ -143,7 +143,7 @@ describe('Hookfish backend', () => {
     )
 
     const denied = await backend.fetch(
-      new Request('https://backend.example/client/health', {
+      new Request('https://backend.example/api/client/health', {
         headers: { Origin: 'https://evil.example' },
       }),
     )
@@ -159,7 +159,7 @@ describe('Hookfish backend', () => {
         Response.json({ error: 'sign in' }, { status: 401 }),
     })
     const response = await backend.fetch(
-      new Request('https://backend.example/client/health'),
+      new Request('https://backend.example/api/client/health'),
     )
 
     expect(response.status).toBe(401)
@@ -173,7 +173,7 @@ describe('Hookfish backend', () => {
       hookfishFetch,
     })
     const response = await backend.fetch(
-      new Request('https://backend.example/client/oauth/github/authorize', {
+      new Request('https://backend.example/api/client/oauth/github/authorize', {
         method: 'POST',
         body: 'x'.repeat(65_537),
       }),
@@ -188,7 +188,9 @@ describe('Hookfish backend', () => {
     const backend = createHookfishBackend({ config: {}, hookfishFetch })
 
     expect(
-      await backend.fetch(new Request('https://backend.example/client/health')),
+      await backend.fetch(
+        new Request('https://backend.example/api/client/health'),
+      ),
     ).toHaveProperty('status', 404)
     expect(hookfishFetch).not.toHaveBeenCalled()
   })

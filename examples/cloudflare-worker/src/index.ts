@@ -10,7 +10,6 @@ const db = postgres<Env>((bindings) => bindings.HYPERDRIVE.connectionString, {
 })
 const hookfish = await Hookfish.init<Env>(config, {
   db,
-  runtime: 'cloudflare-worker',
 })
 
 export default {
