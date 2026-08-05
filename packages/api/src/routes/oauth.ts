@@ -28,6 +28,8 @@ import {
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
+import { ORGANIZATION_PATTERN } from '../oauth/organization'
+import { organizationFromAuthorizationState } from '../oauth/state'
 
 /**
  * References the `brokerApiKey` scheme registered in `src/index.ts`. Attaching
@@ -38,7 +40,6 @@ const brokerAuth = [{ brokerApiKey: [] }]
 
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
-export const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const MAX_ORGANIZATION_CONNECTION_PATH_LENGTH = 512
 
 type OAuthRouteOptions = {
@@ -596,14 +597,26 @@ export function createOAuthRoutes<Bindings extends object>(
 ) {
   const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>(resolveConfig)
-  const connectDatabase = withDatabase(database)
+  const connectManagementDatabase = withDatabase(database, (request) => ({
+    organization: requestOrganization(request, options),
+  }))
+  const connectCallbackDatabase = withDatabase(database, async (request) => ({
+    organization: await organizationFromAuthorizationState(
+      resolveConfig(),
+      request.query('state'),
+    ),
+  }))
 
-  oauthRoutes.use('/providers', connectDatabase, authenticate)
-  oauthRoutes.use('/:provider/authorize', connectDatabase, authenticate)
-  oauthRoutes.use('/:provider/callback', connectDatabase)
-  oauthRoutes.use('/connections', connectDatabase, authenticate)
-  oauthRoutes.use('/connections/*', connectDatabase, authenticate)
-  oauthRoutes.use('/tokens/*', connectDatabase, authenticate)
+  oauthRoutes.use('/providers', connectManagementDatabase, authenticate)
+  oauthRoutes.use(
+    '/:provider/authorize',
+    connectManagementDatabase,
+    authenticate,
+  )
+  oauthRoutes.use('/:provider/callback', connectCallbackDatabase)
+  oauthRoutes.use('/connections', connectManagementDatabase, authenticate)
+  oauthRoutes.use('/connections/*', connectManagementDatabase, authenticate)
+  oauthRoutes.use('/tokens/*', connectManagementDatabase, authenticate)
 
   // The runtime variants are hidden because regex parameters are a Hono
   // extension, not valid OpenAPI path syntax.
@@ -612,7 +625,7 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
   const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
-    const organization = requestOrganization(c.req, options)
+    const { organization } = c.get('databaseContext')
     if (organization) {
       assertConnectionPrefixAccess(c.get('accessGrant'), organization)
     }
@@ -643,7 +656,7 @@ export function createOAuthRoutes<Bindings extends object>(
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
     const config = resolveConfig()
-    const organization = requestOrganization(c.req, options)
+    const { organization } = c.get('databaseContext')
     const connectionIdPrefix =
       body.connection_id_prefix ??
       (organization && !body.connection_id ? organization : undefined)
@@ -669,6 +682,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
     const result = await startAuthorization(
       c.get('db'),
+      config,
       {
         connectionId: body.connection_id,
         connectionIdPrefix,
@@ -850,7 +864,7 @@ export function createOAuthRoutes<Bindings extends object>(
   const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
     const { provider, connection_id_prefix: requestedPrefix } =
       c.req.valid('query')
-    const organization = requestOrganization(c.req, options)
+    const { organization } = c.get('databaseContext')
     if (organization) {
       assertConnectionPrefixAccess(c.get('accessGrant'), organization)
     }
@@ -863,6 +877,7 @@ export function createOAuthRoutes<Bindings extends object>(
       provider,
       connectionIdPrefix,
       connectionScopes: grant.scopes,
+      organization,
     })
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
@@ -872,10 +887,14 @@ export function createOAuthRoutes<Bindings extends object>(
     getConnectionRuntimeRoute,
     async (c) => {
       const { connection_id: connectionId } = c.req.valid('param')
-      const organization = requestOrganization(c.req, options)
+      const { organization } = c.get('databaseContext')
       assertOrganizationConnection(organization, connectionId)
       assertConnectionAccess(c.get('accessGrant'), connectionId)
-      const connection = await getConnection(c.get('db'), connectionId)
+      const connection = await getConnection(
+        c.get('db'),
+        connectionId,
+        organization,
+      )
 
       return c.json({ connection: serializeConnection(connection) }, 200)
     },
@@ -883,7 +902,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
-    const organization = requestOrganization(c.req, options)
+    const { organization } = c.get('databaseContext')
     assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
     const config = resolveConfig()
@@ -892,6 +911,7 @@ export function createOAuthRoutes<Bindings extends object>(
       config,
       connectionId,
       providers,
+      organization,
     )
 
     await emitHookfishEvent(options.onEvent, {
@@ -922,16 +942,21 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
-    const organization = requestOrganization(c.req, options)
+    const { organization } = c.get('databaseContext')
     assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
     const config = resolveConfig()
-    const connection = await findConnection(c.get('db'), connectionId)
+    const connection = await findConnection(
+      c.get('db'),
+      connectionId,
+      organization,
+    )
     const result = await deleteConnection(
       c.get('db'),
       config,
       connectionId,
       providers,
+      organization,
     )
 
     if (result.deleted && connection) {

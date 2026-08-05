@@ -166,7 +166,10 @@ The Hyperdrive config resolves `env.HYPERDRIVE.connectionString` from the
 Wrangler-generated bindings. It disables client caching so each request
 gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
 For another runtime, implement the same small binding contract with
-`defineDatabase((bindings) => database)`.
+`defineDatabase((bindings, context) => database)`. On organization-scoped
+routes, `context.organization` is the validated organization path parameter.
+Shared Postgres adapters use it as row-level connection context; a partitioned
+adapter can use the same value to select an isolated store.
 
 `pnpm migrate` runs migrations against the Node/PGlite database by default.
 Pass `--backend cloudflare-worker` to use a direct Postgres administrative URL.
@@ -205,8 +208,12 @@ explicit id is minted below `acme/`. Explicit ids and prefixes must also belong
 to `acme`.
 Admin and stats routes remain deployment-wide. Provider callbacks deliberately
 remain global at `/api/oauth/{provider}/callback`, so a shared provider
-application needs only one registered redirect URI; the hashed server-side
-state record carries the organization back into the callback.
+application needs only one registered redirect URI. Organization-scoped flows
+carry an authenticated, encrypted storage-partition key in OAuth `state`; the
+corresponding hashed database record keeps callback completion single-use.
+Postgres persists the organization separately on both authorization state and
+connection rows; the connection-id prefix remains a defense-in-depth namespace
+boundary rather than the sole tenant identifier.
 
 Organization connection paths are opaque slash-delimited identifiers, not
 filesystem paths. They are limited to 512 characters and must use NFC Unicode

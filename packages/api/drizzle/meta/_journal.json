@@ -43,6 +43,13 @@
       "when": 1785911430078,
       "tag": "0005_rapid_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785957376553,
+      "tag": "0006_stale_mandarin",
+      "breakpoints": true
     }
   ]
 }

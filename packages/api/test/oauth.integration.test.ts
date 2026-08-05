@@ -11,9 +11,9 @@ import {
   oauthConnections,
   oauthStates,
 } from '../src/db/schema'
-import { defineDatabase, Hookfish } from '../src/index'
+import { type DatabaseContext, defineDatabase, Hookfish } from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
-import { purgeExpiredStates } from '../src/oauth/broker'
+import { listConnections, purgeExpiredStates } from '../src/oauth/broker'
 import {
   API_ORIGIN,
   createHarness,
@@ -1074,6 +1074,12 @@ describe('OAuth broker integration', () => {
       ).toBeUndefined()
       expect(openApi.paths['/{organization}/oauth/providers']).toBeUndefined()
 
+      const invalidRoutedState = await configured.fetch(
+        `/api/oauth/${configured.providerId}/callback?code=test&state=hookfish_state_v1.invalid`,
+      )
+      expect(invalidRoutedState.status).toBe(400)
+      expect((await invalidRoutedState.json()).error.code).toBe('invalid_state')
+
       const providers = await configured.fetch(
         '/api/organization/acme/oauth/providers',
       )
@@ -1112,6 +1118,19 @@ describe('OAuth broker integration', () => {
         `${callbackUrl.pathname}${callbackUrl.search}`,
       )
       expect(callback.status).toBe(200)
+
+      const [storedConnection] = await configured.db
+        .select({ organization: oauthConnections.organization })
+        .from(oauthConnections)
+        .where(eq(oauthConnections.connectionId, authorization.connection_id))
+        .limit(1)
+      expect(storedConnection?.organization).toBe('acme')
+      expect(
+        await listConnections(configured.db, {
+          organization: 'globex',
+          connectionIdPrefix: 'acme',
+        }),
+      ).toEqual([])
 
       const listed = await configured.fetch(
         '/api/organization/acme/oauth/connections',
@@ -1219,6 +1238,59 @@ describe('OAuth broker integration', () => {
     } finally {
       await configured.close()
     }
+  })
+
+  it('passes organization context to request-aware database bindings', async () => {
+    const contexts: DatabaseContext[] = []
+    const app = await Hookfish.init({
+      config: z.object({}).transform(() => h.env),
+      db: defineDatabase((_bindings, context = {}) => {
+        contexts.push(context)
+        return h.db
+      }),
+      providers: h.providers,
+      organizationRouting: true,
+    })
+    const fetchApp = (path: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', 'Bearer test')
+      return app.fetch(
+        new Request(`${API_ORIGIN}${path}`, { ...init, headers }),
+        h.env,
+      )
+    }
+
+    const authorize = await fetchApp(
+      `/api/organization/acme/oauth/${h.providerId}/authorize`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connection_id: 'acme/context-routed' }),
+      },
+    )
+    expect(authorize.status).toBe(200)
+    expect(contexts).toEqual([{ organization: 'acme' }])
+
+    const authorization: { authorize_url: string } = await authorize.json()
+    const state = new URL(authorization.authorize_url).searchParams.get('state')
+    expect(state).toMatch(/^hookfish_state_v1\./)
+    expect(state).not.toContain('acme')
+    const consent = await fetch(authorization.authorize_url, {
+      redirect: 'manual',
+    })
+    const callbackUrl = new URL(consent.headers.get('location')!)
+    expect(
+      (await fetchApp(`${callbackUrl.pathname}${callbackUrl.search}`)).status,
+    ).toBe(200)
+    expect(contexts).toEqual([
+      { organization: 'acme' },
+      { organization: 'acme' },
+    ])
+
+    await fetchApp(
+      '/api/organization/acme/oauth/connections/acme/context-routed',
+      { method: 'DELETE' },
+    )
   })
 
   it('rejects ambiguous organization connection paths', async () => {

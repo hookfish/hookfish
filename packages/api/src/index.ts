@@ -24,8 +24,9 @@ import {
   resolveBrokerConfig,
 } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
+import { ORGANIZATION_PATTERN } from './oauth/organization'
 import { createAdminRoutes } from './routes/admin'
-import { createOAuthRoutes, ORGANIZATION_PATTERN } from './routes/oauth'
+import { createOAuthRoutes } from './routes/oauth'
 import { statsRoutes } from './routes/stats'
 
 export type ProviderMap = Record<string, OAuthProvider>
@@ -346,6 +347,7 @@ export { z } from 'zod'
 export type { HookfishEvent, HookfishEventHandler } from './events'
 export {
   type DatabaseBinding,
+  type DatabaseContext,
   type DatabaseInput,
   defineDatabase,
   migrateDatabase,
