@@ -11,6 +11,7 @@ import { cors } from 'hono/cors'
 
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { BrokerContext } from './oauth/middleware'
+import { createAdminRoutes } from './routes/admin'
 import { createOAuthRoutes } from './routes/oauth'
 import { statsRoutes } from './routes/stats'
 
@@ -42,7 +43,8 @@ function createApiRoutes<Bindings extends object>(
   base.openAPIRegistry.registerComponent('securitySchemes', 'brokerApiKey', {
     type: 'http',
     scheme: 'bearer',
-    description: 'Send BROKER_API_KEY as `Authorization: Bearer <key>`.',
+    description:
+      'Send BROKER_API_KEY for root access, or a named scoped token minted by POST /admin/tokens.',
   })
 
   base.doc('/openapi.json', {
@@ -61,6 +63,8 @@ function createApiRoutes<Bindings extends object>(
   return base
     .use('/stats', cors())
     .route('/stats', statsRoutes)
+    .use('/admin/*', cors())
+    .route('/admin', createAdminRoutes(database))
     .use('/oauth/*', cors())
     .route('/oauth', createOAuthRoutes(providers, database, returnTo))
 }
@@ -126,4 +130,9 @@ export {
   defineDatabase,
   migrateDatabase,
 } from './db/binding'
-export type { Database, OAuthConnection, OAuthState } from './db/schema'
+export type {
+  BrokerAccessToken,
+  Database,
+  OAuthConnection,
+  OAuthState,
+} from './db/schema'

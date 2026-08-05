@@ -1,13 +1,14 @@
 import { createMiddleware } from 'hono/factory'
 import { type DatabaseInput, resolveDatabase } from '../db/binding'
 import type { Database } from '../db/schema'
+import { type AccessGrant, verifyAccessToken } from './access-token'
 import { requireBrokerApiKey } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'
 
 export type BrokerContext<Bindings extends object = object> = {
   Bindings: Bindings
-  Variables: { db: Database }
+  Variables: { db: Database; accessGrant: AccessGrant }
 }
 
 /**
@@ -36,13 +37,19 @@ export function requireApiKey<Bindings extends object>() {
     const header = c.req.header('Authorization') ?? ''
     const presented = header.startsWith('Bearer ') ? header.slice(7) : ''
 
-    if (!presented || !safeEqual(presented, expected)) {
+    if (!presented) {
       throw new BrokerError(
         401,
         'unauthorized',
-        'Missing or invalid Authorization header. Send: Authorization: Bearer $BROKER_API_KEY',
+        'Missing Authorization header. Send: Authorization: Bearer <token>',
       )
     }
+
+    const accessGrant: AccessGrant = safeEqual(presented, expected)
+      ? { kind: 'root', scopes: ['**'] }
+      : await verifyAccessToken(expected, presented)
+
+    c.set('accessGrant', accessGrant)
 
     await next()
   })

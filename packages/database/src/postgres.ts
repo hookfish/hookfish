@@ -1,4 +1,5 @@
 import {
+  brokerAccessTokens,
   type DatabaseBinding,
   defineDatabase,
   oauthConnections,
@@ -10,7 +11,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgresClient from 'postgres'
 
-const schema = { oauthConnections, oauthStates }
+const schema = { brokerAccessTokens, oauthConnections, oauthStates }
 type Schema = typeof schema
 
 export type PostgresConnection<Bindings extends object> =

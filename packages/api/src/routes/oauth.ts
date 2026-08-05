@@ -10,8 +10,13 @@ import {
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
+import {
+  assertConnectionAccess,
+  assertConnectionPrefixAccess,
+  scopesAllowConnection,
+} from '../oauth/access-token'
 import { resolveRedirectUri } from '../oauth/config'
-import { isBrokerError } from '../oauth/errors'
+import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
   requireApiKey,
@@ -107,7 +112,10 @@ function errorResponse(description: string) {
 
 const commonErrors = {
   400: errorResponse('Invalid request'),
-  401: errorResponse('Missing API key, or the connection needs reauthorizing'),
+  401: errorResponse(
+    'Missing or invalid broker credential, or the connection needs reauthorizing',
+  ),
+  403: errorResponse('The broker access token does not cover this connection'),
   404: errorResponse('Unknown provider or no connection for this id'),
   409: errorResponse('Connection id is already linked to another provider'),
   500: errorResponse('Broker is misconfigured'),
@@ -461,6 +469,21 @@ export function createOAuthRoutes<Bindings extends object>(
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
 
+    if (body.connection_id) {
+      assertConnectionAccess(c.get('accessGrant'), body.connection_id)
+    } else if (body.connection_id_prefix) {
+      assertConnectionPrefixAccess(
+        c.get('accessGrant'),
+        body.connection_id_prefix,
+      )
+    } else if (!c.get('accessGrant').scopes.includes('**')) {
+      throw new BrokerError(
+        400,
+        'connection_id_required',
+        'A scoped broker access token must provide a connection_id within its scope.',
+      )
+    }
+
     const result = await startAuthorization(
       c.get('db'),
       c.env,
@@ -544,10 +567,12 @@ export function createOAuthRoutes<Bindings extends object>(
   const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
     const { provider, connection_id_prefix: connectionIdPrefix } =
       c.req.valid('query')
-    const connections = await listConnections(c.get('db'), {
-      provider,
-      connectionIdPrefix,
-    })
+    const grant = c.get('accessGrant')
+    const connections = (
+      await listConnections(c.get('db'), { provider, connectionIdPrefix })
+    ).filter((connection) =>
+      scopesAllowConnection(grant.scopes, connection.connectionId),
+    )
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })
@@ -556,6 +581,7 @@ export function createOAuthRoutes<Bindings extends object>(
     getConnectionRuntimeRoute,
     async (c) => {
       const { connection_id: connectionId } = c.req.valid('param')
+      assertConnectionAccess(c.get('accessGrant'), connectionId)
       const connection = await getConnection(c.get('db'), connectionId)
 
       return c.json({ connection: serializeConnection(connection) }, 200)
@@ -564,6 +590,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    assertConnectionAccess(c.get('accessGrant'), connectionId)
     const token = await getAccessToken(
       c.get('db'),
       c.env,
@@ -590,6 +617,7 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    assertConnectionAccess(c.get('accessGrant'), connectionId)
 
     return c.json(
       await deleteConnection(c.get('db'), c.env, connectionId, providers),

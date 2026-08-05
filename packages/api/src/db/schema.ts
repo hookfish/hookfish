@@ -77,10 +77,30 @@ export const oauthStates = pgTable(
   (table) => [index('oauth_states_expires_idx').on(table.expiresAt)],
 )
 
+/**
+ * Administrative metadata for broker credentials. The signed credential itself is
+ * never stored; this table exists so administrators can enumerate active
+ * token names without exposing their scopes or bearer values.
+ */
+export const brokerAccessTokens = pgTable(
+  'broker_access_tokens',
+  {
+    name: text('name').primaryKey(),
+    scopes: text('scopes').array().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('broker_access_tokens_expires_idx').on(table.expiresAt)],
+)
+
 export type OAuthConnection = typeof oauthConnections.$inferSelect
 export type OAuthState = typeof oauthStates.$inferSelect
+export type BrokerAccessToken = typeof brokerAccessTokens.$inferSelect
 
 type Schema = {
+  brokerAccessTokens: typeof brokerAccessTokens
   oauthConnections: typeof oauthConnections
   oauthStates: typeof oauthStates
 }
