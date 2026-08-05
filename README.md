@@ -35,7 +35,8 @@ pnpm dev --no-open # Keep the browser closed.
 The root `hookfish.config.ts` uses PGlite, persists it at `pgdata`, and applies
 embedded migrations automatically. Set `PGLITE_DATA_DIR` to move it. Commented
 examples in that file show how to switch to Postgres or Hyperdrive. The
-frontend and examples all import the same Hookfish instance.
+frontend and examples all import the same typed configuration and initialize a
+Hookfish instance for their host process.
 
 ## Hono Node example
 

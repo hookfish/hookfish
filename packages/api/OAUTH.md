@@ -42,7 +42,8 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 ## Runtime entrypoints
 
-Each host imports the `Hookfish` instance from the root `hookfish.config.ts`:
+Each host imports the `HookfishConfig` object from the root
+`hookfish.config.ts` and initializes its own request handler:
 
 | command | process | default database |
 |---|---|---|
@@ -61,29 +62,76 @@ a request-aware database binding. The stock config currently uses PGlite:
 
 ```ts
 // hookfish.config.ts
-import { Hookfish } from '@hookfish/api'
+import { defineHookfishConfig, z } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import { NotionProvider } from '@hookfish/provider-notion'
 
 const db = pglite('./pgdata')
+const configSchema = z.object({
+  NOTION_CLIENT_ID: z
+    .string()
+    .optional()
+    .prefault(process.env.NOTION_CLIENT_ID!),
+  NOTION_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .prefault(process.env.NOTION_CLIENT_SECRET!),
+})
 
-export default new Hookfish({
+export default defineHookfishConfig({
+  config: configSchema,
   db,
   // Disable the interactive docs while retaining /api/openapi.json:
   // swaggerUi: false,
   // Override the default development completion page before deploying:
   // returnTo: 'https://app.example.com/settings/integrations',
-  providers: { notion: new NotionProvider() },
+  providers: (config) => ({
+    notion: new NotionProvider({
+      clientId: config.NOTION_CLIENT_ID,
+      clientSecret: config.NOTION_CLIENT_SECRET,
+    }),
+  }),
 })
 ```
+
+Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`,
+`OAUTH_REDIRECT_BASE_URL`, and `NODE_ENV` settings lazily when an OAuth request
+arrives. They do not need to be repeated in `configSchema`. Importing the pure
+config object for commands such as `hookfish migrate` does not parse the schema
+or require OAuth secrets; an operation that needs a missing broker secret
+returns `500 missing_configuration`.
+
+`await Hookfish.init(config)` parses the application `configSchema` once with
+`{}` and resolves the provider source once before returning a ready handler.
+The schema owns provider-specific environment lookup, defaults, coercion, and
+validation; its inferred output type is passed to a provider factory. Provider
+factories may return a map immediately or asynchronously. A static provider map
+and an existing `ProviderRegistry` remain valid when providers do not depend on
+the parsed configuration.
 
 The checked-in config also includes commented `postgres()` examples for a
 connection URL and for resolving a Cloudflare Hyperdrive binding.
 
-Fetch entrypoints only import that instance and pass their runtime bindings:
+Fetch entrypoints import the config and initialize Hookfish once. Node hosts do
+not pass `process.env` on every request. If a host loads an env file itself, it
+does so before dynamically importing the config:
 
 ```ts
-import hookfish from '../../../hookfish.config'
+import { Hookfish } from '@hookfish/api'
+import config from '../../../hookfish.config'
+
+const hookfish = await Hookfish.init(config)
+
+export default { fetch: hookfish.fetch }
+```
+
+Hosts with runtime service bindings still pass those separately:
+
+```ts
+import { Hookfish } from '@hookfish/api'
+import config from '../../../hookfish.config'
+
+const hookfish = await Hookfish.init(config)
 
 export default {
   fetch: (request, env, ctx) => hookfish.fetch(request, env, ctx),
@@ -100,8 +148,9 @@ gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
 For another runtime, implement the same small binding contract with
 `defineDatabase((bindings) => database)`.
 
-`pnpm migrate` loads `hookfish.config.ts` and runs migrations through its `db`
-binding. It fails explicitly when the file or database configuration is absent.
+`pnpm migrate` loads `hookfish.config.ts` and runs migrations directly through
+its `db` binding without initializing Hookfish. It fails explicitly when the
+file or database configuration is absent.
 
 ```sh
 # After switching hookfish.config.ts to the Postgres example
@@ -303,30 +352,51 @@ pnpm add --save-dev @hookfish/cli
 ```
 
 ```ts
-import { Hookfish } from '@hookfish/api'
+import { defineHookfishConfig, z } from '@hookfish/api'
 import { postgres } from '@hookfish/database/postgres'
 import { GitHubProvider } from '@hookfish/provider-github'
 import { NotionProvider } from '@hookfish/provider-notion'
 import { SlackProvider } from '@acme/provider-slack'
 
-const hookfish = new Hookfish({
+const configSchema = z.object({
+  GITHUB_CLIENT_ID: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_ID!),
+  GITHUB_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_SECRET!),
+  SLACK_CLIENT_ID: z
+    .string()
+    .optional()
+    .prefault(process.env.SLACK_CLIENT_ID!),
+  SLACK_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .prefault(process.env.SLACK_CLIENT_SECRET!),
+})
+
+export default defineHookfishConfig({
+  config: configSchema,
   db: postgres(process.env.DATABASE_URL!),
-  providers: {
+  providers: (config) => ({
     github: new GitHubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      clientId: config.GITHUB_CLIENT_ID,
+      clientSecret: config.GITHUB_CLIENT_SECRET,
     }),
     notion: new NotionProvider(),
     slack: new SlackProvider({
-      clientId: process.env.SLACK_CLIENT_ID,
-      clientSecret: process.env.SLACK_CLIENT_SECRET,
+      clientId: config.SLACK_CLIENT_ID,
+      clientSecret: config.SLACK_CLIENT_SECRET,
     }),
-  },
+  }),
 })
 ```
 
-A Hookfish instance's `fetch` property is already bound, so hosts can pass it
-directly or call `hookfish.fetch(request, bindings)`.
+After `const hookfish = await Hookfish.init(config)`, the instance's `fetch`
+property is already bound, so hosts can pass it directly or call
+`hookfish.fetch(request, bindings)`.
 
 The built-ins also read their conventional `<PROVIDER>_CLIENT_ID` and
 `<PROVIDER>_CLIENT_SECRET` variables when constructor values are omitted. A
@@ -387,9 +457,9 @@ The broker never imports this package. The host entrypoint does, so custom
 providers can be installed, registered, and upgraded independently without
 forking the broker repository.
 
-`<ID>_SCOPES` overrides `defaultScopes` per environment, and the `scopes` field
-on the authorize request overrides it per flow. `GET /providers` exposes both
-the defaults as `scopes` and the provider's selection catalog as
+The `scopes` field on each authorize request selects permissions for that flow;
+when omitted, the provider's `defaultScopes` apply. `GET /providers` exposes
+both the defaults as `scopes` and the provider's selection catalog as
 `available_scopes`. It also reports `supports_refresh` and
 `supports_revocation`, so clients do not need provider-specific knowledge.
 

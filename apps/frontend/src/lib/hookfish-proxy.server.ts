@@ -1,10 +1,10 @@
 import { requireBrokerApiKey } from '@hookfish/api/oauth/config'
 import { getRequest } from '@tanstack/react-start/server'
-import hookfishServer from '../../../../hookfish.config'
 import {
   type HookfishProxyRequest,
   isAllowedHookfishProxyRequest,
 } from './hookfish-proxy'
+import { hookfishServer } from './hookfish-server.server'
 
 function errorResponse(
   status: number,
@@ -48,7 +48,6 @@ export async function forwardHookfishProxyRequest(
       headers,
       body: request.body,
     }),
-    process.env,
   )
   const responseHeaders = new Headers(response.headers)
   responseHeaders.set('Cache-Control', 'no-store')

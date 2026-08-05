@@ -1,6 +1,5 @@
 import path from 'node:path'
 import { serve } from '@hono/node-server'
-import { readEnvString } from '@hookfish/api/oauth/config'
 
 const packageRoot = path.resolve(import.meta.dirname, '..')
 const envPath = path.resolve(packageRoot, '../../apps/frontend/.env')
@@ -16,13 +15,15 @@ try {
   )
 }
 
-const { default: hookfish } = await import('../../../hookfish.config')
+const { Hookfish } = await import('@hookfish/api')
+const { default: config } = await import('../../../hookfish.config')
+const hookfish = await Hookfish.init(config)
 
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 serve(
   {
-    fetch: (request: Request) => hookfish.fetch(request, process.env),
+    fetch: (request: Request) => hookfish.fetch(request),
     port,
     hostname,
   },
@@ -32,8 +33,7 @@ serve(
       hookfish.providers.isProviderConfigured(id),
     )
     const publicOrigin =
-      readEnvString(process.env, 'OAUTH_REDIRECT_BASE_URL') ??
-      `http://localhost:${info.port}`
+      process.env.OAUTH_REDIRECT_BASE_URL ?? `http://localhost:${info.port}`
 
     console.log(`OAuth broker on ${publicOrigin}/api`)
     console.log(
