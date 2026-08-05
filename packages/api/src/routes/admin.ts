@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { asc, eq, lte } from 'drizzle-orm'
 import type { DatabaseInput } from '../db/binding'
 import { brokerAccessTokens } from '../db/schema'
+import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertCanDelegate,
   assertRootAccess,
@@ -174,6 +175,7 @@ async function purgeExpiredTokenNames(
 export function createAdminRoutes<Bindings extends object>(
   resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
+  onEvent?: HookfishEventHandler,
 ) {
   const adminRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>(resolveConfig)
@@ -224,6 +226,11 @@ export function createAdminRoutes<Bindings extends object>(
 
     c.header('Cache-Control', 'no-store')
     c.header('Pragma', 'no-cache')
+    await emitHookfishEvent(onEvent, {
+      type: 'broker_token.created',
+      occurredAt: new Date(),
+      tokenName: minted.name,
+    })
     return c.json(
       {
         name: minted.name,
@@ -257,6 +264,14 @@ export function createAdminRoutes<Bindings extends object>(
       .delete(brokerAccessTokens)
       .where(eq(brokerAccessTokens.name, name))
       .returning()
+
+    if (deleted.length > 0) {
+      await emitHookfishEvent(onEvent, {
+        type: 'broker_token.revoked',
+        occurredAt: new Date(),
+        tokenName: name,
+      })
+    }
 
     c.header('Cache-Control', 'no-store')
     return c.json({ name, revoked: deleted.length > 0 }, 200)

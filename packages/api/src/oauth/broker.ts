@@ -7,15 +7,17 @@ import {
   type ProviderTokenResponse,
 } from '@hookfish/provider'
 import { and, eq, lt, or, sql } from 'drizzle-orm'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import {
   type Database,
   type OAuthConnection,
+  type OAuthState,
   oauthConnections,
   oauthStates,
 } from '../db/schema'
 import { readEnvString, resolveProviderConfig } from './config'
 import { generateConnectionId } from './connection-id'
-import { decryptSecret, encryptSecret, randomToken } from './crypto'
+import { decryptSecret, encryptSecret, hashToken, randomToken } from './crypto'
 import { BrokerError } from './errors'
 
 /** How long a pending authorization stays valid. */
@@ -23,6 +25,21 @@ const STATE_TTL_MS = 10 * 60 * 1000
 
 /** Refresh a little early so a token can't expire mid-flight downstream. */
 const REFRESH_LEEWAY_MS = 60 * 1000
+
+function storedErrorStatus(status: number | null): ContentfulStatusCode {
+  switch (status) {
+    case 400:
+    case 401:
+    case 403:
+    case 404:
+    case 409:
+    case 500:
+    case 502:
+      return status
+    default:
+      return 400
+  }
+}
 
 const tokenResponseSchema = z.looseObject({
   access_token: z.string().min(1),
@@ -71,7 +88,9 @@ export type StartAuthorizationInput = {
   /** Places an automatically minted id below this slash-delimited prefix. */
   connectionIdPrefix?: string
   provider: string
+  organization?: string
   redirectUri: string
+  returnTo?: string
   /** Overrides the provider's configured scopes for this one flow. */
   scopes?: string[]
 }
@@ -150,6 +169,7 @@ export async function startAuthorization(
 
   const scopes = input.scopes?.length ? input.scopes : config.scopes
   const state = randomToken(32)
+  const stateHash = await hashToken(state)
   const expiresAt = new Date(Date.now() + STATE_TTL_MS)
   const authorization = await callProvider(() =>
     provider.createAuthorization({
@@ -160,11 +180,13 @@ export async function startAuthorization(
   )
 
   await db.insert(oauthStates).values({
-    id: state,
+    id: stateHash,
     connectionId,
+    organization: input.organization,
     provider: input.provider,
     codeVerifier: authorization.codeVerifier ?? null,
     redirectUri: input.redirectUri,
+    returnTo: input.returnTo,
     scopes,
     expiresAt,
   })
@@ -259,76 +281,232 @@ export async function completeAuthorization(
   env: object,
   input: { provider: string; code: string; state: string },
   providers: ProviderRegistry = defaultProviderRegistry,
-): Promise<OAuthConnection> {
-  // Single-use: delete-and-return so a replayed code can't be redeemed twice.
+): Promise<{
+  connection: OAuthConnection
+  state: OAuthState
+  replayed: boolean
+}> {
+  const stateHash = await hashToken(input.state)
+  const stateIds = or(
+    eq(oauthStates.id, stateHash),
+    // Accept an authorization started immediately before the state-hashing
+    // rollout. New states are never persisted in plaintext.
+    eq(oauthStates.id, input.state),
+  )
   const [pending] = await db
-    .delete(oauthStates)
+    .update(oauthStates)
+    .set({ status: 'processing' })
     .where(
       and(
-        eq(oauthStates.id, input.state),
+        stateIds,
         eq(oauthStates.provider, input.provider),
+        eq(oauthStates.status, 'pending'),
       ),
     )
     .returning()
 
   if (!pending) {
+    const [existing] = await db
+      .select()
+      .from(oauthStates)
+      .where(and(stateIds, eq(oauthStates.provider, input.provider)))
+      .limit(1)
+
+    if (!existing) {
+      throw new BrokerError(
+        400,
+        'invalid_state',
+        'Authorization state is unknown.',
+      )
+    }
+
+    if (existing.status === 'completed') {
+      return {
+        connection: await getConnection(db, existing.connectionId),
+        state: existing,
+        replayed: true,
+      }
+    }
+
+    if (existing.status === 'failed') {
+      throw new BrokerError(
+        storedErrorStatus(existing.errorStatus),
+        existing.errorCode ?? 'authorization_failed',
+        existing.errorMessage ?? 'Authorization failed. Start the flow again.',
+      )
+    }
+
     throw new BrokerError(
-      400,
-      'invalid_state',
-      'Authorization state is unknown or has already been used.',
+      409,
+      'callback_in_progress',
+      'This authorization callback is already being processed.',
     )
   }
 
   if (pending.expiresAt.getTime() < Date.now()) {
-    throw new BrokerError(
+    const error = new BrokerError(
       400,
       'expired_state',
       'Authorization state expired. Start the flow again.',
     )
+    await markAuthorizationFailed(db, pending.id, error)
+    throw error
   }
 
-  const config = resolveProviderConfig(input.provider, providers)
+  try {
+    const config = resolveProviderConfig(input.provider, providers)
 
-  // The check in `startAuthorization` goes stale as soon as a second flow is
-  // opened on the same id, so re-check before spending the authorization code.
-  await assertProviderMatches(db, pending.connectionId, input.provider)
+    // The check in `startAuthorization` goes stale as soon as a second flow is
+    // opened on the same id, so re-check before spending the authorization code.
+    await assertProviderMatches(db, pending.connectionId, input.provider)
 
-  const response = await callProvider(() =>
-    config.provider.exchangeCode({
-      code: input.code,
-      redirectUri: pending.redirectUri,
-      codeVerifier: pending.codeVerifier ?? undefined,
-    }),
+    const response = await callProvider(() =>
+      config.provider.exchangeCode({
+        code: input.code,
+        redirectUri: pending.redirectUri,
+        codeVerifier: pending.codeVerifier ?? undefined,
+      }),
+    )
+    const fields = await toStoredFields(env, response, pending.scopes)
+
+    const [connection] = await db
+      .insert(oauthConnections)
+      .values({
+        connectionId: pending.connectionId,
+        provider: input.provider,
+        ...fields,
+      })
+      .onConflictDoUpdate({
+        target: oauthConnections.connectionId,
+        set: { ...fields, updatedAt: new Date() },
+        // Reconnecting the same link upserts; a different provider must not take
+        // the id over. Enforced in the statement itself, so two callbacks racing
+        // past the checks above can't rebind it either -- the loser updates no
+        // rows and returns nothing.
+        setWhere: eq(oauthConnections.provider, input.provider),
+      })
+      .returning()
+
+    if (!connection) {
+      throw new BrokerError(
+        409,
+        'connection_id_in_use',
+        `Connection "${pending.connectionId}" was linked to another provider while this flow was in progress. Start again with a new id.`,
+      )
+    }
+
+    const [completed] = await db
+      .update(oauthStates)
+      .set({ status: 'completed', completedAt: new Date() })
+      .where(eq(oauthStates.id, pending.id))
+      .returning()
+
+    return { connection, state: completed ?? pending, replayed: false }
+  } catch (error) {
+    await markAuthorizationFailed(db, pending.id, error)
+    throw error
+  }
+}
+
+async function markAuthorizationFailed(
+  db: Database,
+  stateId: string,
+  error: unknown,
+): Promise<void> {
+  const brokerError =
+    error instanceof BrokerError
+      ? error
+      : new BrokerError(500, 'internal_error', 'Unexpected broker error.')
+
+  await db
+    .update(oauthStates)
+    .set({
+      status: 'failed',
+      errorStatus: brokerError.status,
+      errorCode: brokerError.code,
+      errorMessage: brokerError.message,
+      completedAt: new Date(),
+    })
+    .where(eq(oauthStates.id, stateId))
+}
+
+export async function failAuthorization(
+  db: Database,
+  input: {
+    provider: string
+    state: string
+    errorCode: string
+    errorMessage: string
+  },
+): Promise<{ state: OAuthState; replayed: boolean }> {
+  const stateHash = await hashToken(input.state)
+  const stateIds = or(
+    eq(oauthStates.id, stateHash),
+    eq(oauthStates.id, input.state),
   )
-  const fields = await toStoredFields(env, response, pending.scopes)
-
-  const [connection] = await db
-    .insert(oauthConnections)
-    .values({
-      connectionId: pending.connectionId,
-      provider: input.provider,
-      ...fields,
+  const [failed] = await db
+    .update(oauthStates)
+    .set({
+      status: 'failed',
+      errorStatus: 400,
+      errorCode: input.errorCode,
+      errorMessage: input.errorMessage,
+      completedAt: new Date(),
     })
-    .onConflictDoUpdate({
-      target: oauthConnections.connectionId,
-      set: { ...fields, updatedAt: new Date() },
-      // Reconnecting the same link upserts; a different provider must not take
-      // the id over. Enforced in the statement itself, so two callbacks racing
-      // past the checks above can't rebind it either -- the loser updates no
-      // rows and returns nothing.
-      setWhere: eq(oauthConnections.provider, input.provider),
-    })
+    .where(
+      and(
+        stateIds,
+        eq(oauthStates.provider, input.provider),
+        eq(oauthStates.status, 'pending'),
+      ),
+    )
     .returning()
 
-  if (!connection) {
+  if (failed) return { state: failed, replayed: false }
+
+  const [existing] = await db
+    .select()
+    .from(oauthStates)
+    .where(and(stateIds, eq(oauthStates.provider, input.provider)))
+    .limit(1)
+
+  if (!existing) {
     throw new BrokerError(
-      409,
-      'connection_id_in_use',
-      `Connection "${pending.connectionId}" was linked to another provider while this flow was in progress. Start again with a new id.`,
+      400,
+      'invalid_state',
+      'Authorization state is unknown.',
     )
   }
 
-  return connection
+  if (existing.status === 'failed') {
+    return { state: existing, replayed: true }
+  }
+
+  throw new BrokerError(
+    409,
+    'callback_in_progress',
+    'This authorization callback is already being processed or completed.',
+  )
+}
+
+export async function getAuthorizationState(
+  db: Database,
+  provider: string,
+  state: string,
+): Promise<OAuthState | undefined> {
+  const stateHash = await hashToken(state)
+  const [authorization] = await db
+    .select()
+    .from(oauthStates)
+    .where(
+      and(
+        or(eq(oauthStates.id, stateHash), eq(oauthStates.id, state)),
+        eq(oauthStates.provider, provider),
+      ),
+    )
+    .limit(1)
+
+  return authorization
 }
 
 // ---------------------------------------------------------------------------

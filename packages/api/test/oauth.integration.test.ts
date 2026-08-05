@@ -782,7 +782,7 @@ describe('OAuth broker integration', () => {
     })
   })
 
-  it('rejects a replayed callback state', async () => {
+  it('makes a completed callback replay idempotent', async () => {
     const { connectionId, callback } = await h.authorizeAndCallback()
     expect(callback.status).toBe(200)
 
@@ -791,10 +791,7 @@ describe('OAuth broker integration', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
     })
-    const authorizeJson: {
-      authorize_url: string
-      state: string
-    } = await authorizeRes.json()
+    const authorizeJson: { authorize_url: string } = await authorizeRes.json()
 
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -807,9 +804,8 @@ describe('OAuth broker integration', () => {
     expect(firstCallback.status).toBe(200)
 
     const replay = await h.fetch(callbackPath)
-    expect(replay.status).toBe(400)
-    const body: { error: { code: string } } = await replay.json()
-    expect(body.error.code).toBe('invalid_state')
+    expect(replay.status).toBe(200)
+    expect(await replay.text()).toContain('Connection complete')
 
     await h.fetch(`/api/oauth/connections/${connectionId}`, {
       method: 'DELETE',
@@ -891,7 +887,7 @@ describe('OAuth broker integration', () => {
     expect(body.error.code).toBe('token_exchange_failed')
   })
 
-  it('uses the configured returnTo URL and ignores request overrides', async () => {
+  it('uses the configured returnTo URL', async () => {
     const configured = await createHarness({
       returnTo: 'https://frontend.localhost/settings',
     })
@@ -902,10 +898,7 @@ describe('OAuth broker integration', () => {
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            connection_id: 'with-return-to',
-            return_to: 'https://attacker.example/ignored',
-          }),
+          body: JSON.stringify({ connection_id: 'with-return-to' }),
         },
       )
       const authorization: { authorize_url: string } = await authorize.json()
@@ -918,13 +911,185 @@ describe('OAuth broker integration', () => {
       )
 
       expect(callback.status).toBe(302)
-      expect(callback.headers.get('location')).toBe(
-        `https://frontend.localhost/settings?connected=${configured.providerId}`,
+      const destination = new URL(callback.headers.get('location')!)
+      expect(destination.origin + destination.pathname).toBe(
+        'https://frontend.localhost/settings',
+      )
+      expect(destination.searchParams.get('connected')).toBe(
+        configured.providerId,
+      )
+      expect(destination.searchParams.get('hookfish_status')).toBe('connected')
+      expect(destination.searchParams.get('connection_id')).toBe(
+        'with-return-to',
       )
 
       await configured.fetch('/api/oauth/connections/with-return-to', {
         method: 'DELETE',
       })
+    } finally {
+      await configured.close()
+    }
+  })
+
+  it('accepts only trusted per-flow return URLs', async () => {
+    const configured = await createHarness({
+      trustedOrigins: ['https://frontend.localhost'],
+    })
+
+    try {
+      const untrusted = await configured.fetch(
+        `/api/oauth/${configured.providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            connection_id: 'untrusted-return',
+            return_to: 'https://attacker.example/steal',
+          }),
+        },
+      )
+      expect(untrusted.status).toBe(400)
+      expect((await untrusted.json()).error.code).toBe('untrusted_return_to')
+
+      const authorize = await configured.fetch(
+        `/api/oauth/${configured.providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            connection_id: 'trusted-return',
+            return_to:
+              'https://frontend.localhost/settings/integrations?source=test',
+          }),
+        },
+      )
+      const authorization: { authorize_url: string } = await authorize.json()
+      expect(authorization).not.toHaveProperty('state')
+      const consent = await fetch(authorization.authorize_url, {
+        redirect: 'manual',
+      })
+      const callbackUrl = new URL(consent.headers.get('location')!)
+      const callback = await configured.fetch(
+        `${callbackUrl.pathname}${callbackUrl.search}`,
+      )
+
+      expect(callback.status).toBe(302)
+      const destination = new URL(callback.headers.get('location')!)
+      expect(destination.origin).toBe('https://frontend.localhost')
+      expect(destination.pathname).toBe('/settings/integrations')
+      expect(destination.searchParams.get('source')).toBe('test')
+      expect(destination.searchParams.get('hookfish_status')).toBe('connected')
+
+      await configured.fetch('/api/oauth/connections/trusted-return', {
+        method: 'DELETE',
+      })
+    } finally {
+      await configured.close()
+    }
+  })
+
+  it('optionally scopes OAuth management routes by organization', async () => {
+    const configured = await createHarness({ organizationRouting: true })
+
+    try {
+      expect((await configured.fetch('/api/oauth/providers')).status).toBe(404)
+
+      const providers = await configured.fetch('/api/acme/oauth/providers')
+      expect(providers.status).toBe(200)
+      const providerBody: {
+        providers: Array<{ id: string; callback_url: string }>
+      } = await providers.json()
+      expect(
+        providerBody.providers.find(({ id }) => id === configured.providerId)
+          ?.callback_url,
+      ).toBe(`${API_ORIGIN}/api/oauth/${configured.providerId}/callback`)
+
+      const authorize = await configured.fetch(
+        `/api/acme/oauth/${configured.providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        },
+      )
+      expect(authorize.status).toBe(200)
+      const authorization: {
+        connection_id: string
+        authorize_url: string
+      } = await authorize.json()
+      expect(authorization.connection_id.startsWith('acme/')).toBe(true)
+
+      const consent = await fetch(authorization.authorize_url, {
+        redirect: 'manual',
+      })
+      const callbackUrl = new URL(consent.headers.get('location')!)
+      expect(callbackUrl.pathname).toBe(
+        `/api/oauth/${configured.providerId}/callback`,
+      )
+      const callback = await configured.fetch(
+        `${callbackUrl.pathname}${callbackUrl.search}`,
+      )
+      expect(callback.status).toBe(200)
+
+      const listed = await configured.fetch('/api/acme/oauth/connections')
+      const listedBody: { connections: Array<{ connection_id: string }> } =
+        await listed.json()
+      expect(
+        listedBody.connections.map(({ connection_id }) => connection_id),
+      ).toContain(authorization.connection_id)
+
+      const mismatch = await configured.fetch(
+        `/api/globex/oauth/connections/${authorization.connection_id}`,
+      )
+      expect(mismatch.status).toBe(403)
+      expect((await mismatch.json()).error.code).toBe('organization_mismatch')
+
+      expect(
+        (
+          await configured.fetch(
+            `/api/acme/oauth/${configured.providerId}/callback`,
+          )
+        ).status,
+      ).toBe(404)
+
+      await configured.fetch(
+        `/api/acme/oauth/connections/${authorization.connection_id}`,
+        { method: 'DELETE' },
+      )
+    } finally {
+      await configured.close()
+    }
+  })
+
+  it('emits best-effort lifecycle events', async () => {
+    const events: Array<{ type: string; connectionId?: string }> = []
+    const configured = await createHarness({
+      onEvent: (event) => {
+        events.push(event)
+      },
+    })
+
+    try {
+      const connected = await configured.authorizeAndCallback({
+        connectionId: 'audited-connection',
+      })
+      expect(connected.callback.status).toBe(200)
+      await configured.fetch('/api/oauth/tokens/audited-connection')
+      await configured.fetch('/api/oauth/connections/audited-connection', {
+        method: 'DELETE',
+      })
+
+      expect(events.map(({ type }) => type)).toEqual([
+        'authorization.started',
+        'authorization.connected',
+        'connection.token_retrieved',
+        'connection.disconnected',
+      ])
+      expect(
+        events.every(
+          ({ connectionId }) => connectionId === 'audited-connection',
+        ),
+      ).toBe(true)
     } finally {
       await configured.close()
     }
@@ -945,16 +1110,28 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns provider denial and invalid callback errors', async () => {
+    const startDeniedFlow = async () => {
+      const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const body: { authorize_url: string } = await response.json()
+      return new URL(body.authorize_url).searchParams.get('state')!
+    }
+
+    const deniedState = await startDeniedFlow()
     const denied = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied&error_description=nope`,
+      `/api/oauth/${h.providerId}/callback?error=access_denied&error_description=nope&state=${deniedState}`,
     )
     expect(denied.status).toBe(400)
     expect(await denied.json()).toEqual({
       error: { code: 'access_denied', message: 'nope' },
     })
 
+    const deniedDefaultState = await startDeniedFlow()
     const deniedDefault = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied`,
+      `/api/oauth/${h.providerId}/callback?error=access_denied&state=${deniedDefaultState}`,
     )
     expect(deniedDefault.status).toBe(400)
     const deniedBody: { error: { message: string } } =
@@ -1112,13 +1289,21 @@ describe('OAuth broker integration', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'expired-state' }),
     })
-    const authorizeJson: { authorize_url: string; state: string } =
-      await authorizeRes.json()
+    const authorizeJson: { authorize_url: string } = await authorizeRes.json()
+    const state = new URL(authorizeJson.authorize_url).searchParams.get(
+      'state',
+    )!
 
     await h.db
       .update(oauthStates)
       .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(oauthStates.id, authorizeJson.state))
+      .where(eq(oauthStates.connectionId, 'expired-state'))
+
+    const [storedState] = await h.db
+      .select({ id: oauthStates.id })
+      .from(oauthStates)
+      .where(eq(oauthStates.connectionId, 'expired-state'))
+    expect(storedState?.id).not.toBe(state)
 
     const consentRes = await fetch(authorizeJson.authorize_url, {
       redirect: 'manual',
@@ -1284,6 +1469,23 @@ describe('OAuth broker integration', () => {
     })
     const res = await app.fetch(
       new Request(`${API_ORIGIN}/api/oauth/providers`),
+    )
+
+    expect(res.status).toBe(500)
+    const body: { error: { code: string } } = await res.json()
+    expect(body.error.code).toBe('missing_configuration')
+  })
+
+  it('requires a fixed OAuth redirect base URL in production', async () => {
+    const app = await createHookfish({
+      NODE_ENV: 'production',
+      BROKER_API_KEY: 'production-key',
+      OAUTH_REDIRECT_BASE_URL: undefined,
+    })
+    const res = await app.fetch(
+      new Request(`${API_ORIGIN}/api/oauth/providers`, {
+        headers: { Authorization: 'Bearer production-key' },
+      }),
     )
 
     expect(res.status).toBe(500)
