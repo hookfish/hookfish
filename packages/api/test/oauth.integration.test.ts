@@ -307,6 +307,30 @@ describe('OAuth broker integration', () => {
     expect(document.paths['/admin/tokens']).toBeUndefined()
   })
 
+  it('mounts the configured client facade on the Hookfish fetch handler', async () => {
+    const app = await Hookfish.init(
+      {
+        config: z.object({}).transform(() => h.env),
+        providers: h.providers,
+        includeClient: true,
+      },
+      { db: h.db, runtime: 'integration-test' },
+    )
+    const fetchApp = (path: string, init?: RequestInit) =>
+      app.fetch(new Request(`${API_ORIGIN}${path}`, init), h.env)
+
+    const health = await (await fetchApp('/client/health')).json()
+    expect(health).toMatchObject({ ok: true, runtime: 'integration-test' })
+    expect(await fetchApp('/client/oauth/providers')).toHaveProperty(
+      'status',
+      200,
+    )
+    expect(await fetchApp('/client/oauth/tokens/secret')).toHaveProperty(
+      'status',
+      403,
+    )
+  })
+
   it('supports path-compatible connection ids', async () => {
     const connectionId = 'a/b-c/d'
     const { callback } = await h.authorizeAndCallback({ connectionId })

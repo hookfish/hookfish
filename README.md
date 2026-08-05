@@ -134,8 +134,8 @@ VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend bui
 
 For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
 and `/client/*` to the selected backend. Before exposing the dashboard in
-production, configure `authorizeBrowserRequest` in `@hookfish/backend` with the
-application's session/authentication policy.
+production, pass `authorizeBrowserRequest` alongside the runtime database to
+`Hookfish.init` and enforce the application's session/authentication policy.
 
 ## Frontend hooks
 

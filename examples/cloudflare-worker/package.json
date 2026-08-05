@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@hookfish/api": "workspace:*",
-    "@hookfish/backend": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/providers": "workspace:*"
   },

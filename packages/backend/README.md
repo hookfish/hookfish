@@ -2,6 +2,10 @@
 
 Fetch-compatible composition layer for a Hookfish deployment.
 
+`Hookfish.init(...).fetch` applies this composition automatically. Import this
+lower-level package only when composing a raw Hookfish-compatible API handler
+yourself.
+
 - `/api/*` exposes the raw Hookfish API and OAuth callback surface.
 - `/client/*` is a browser-safe facade that forwards an allowlisted subset to
   Hookfish with a server-side broker credential.
@@ -13,7 +17,7 @@ import config from './hookfish.config'
 
 const backend = createHookfishBackend({
   config,
-  hookfishFetch: hookfish.fetch,
+  hookfishFetch: rawApiFetch,
   brokerApiKey: (env) => env.BROKER_API_KEY,
 })
 

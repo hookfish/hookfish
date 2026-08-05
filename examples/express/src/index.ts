@@ -16,20 +16,17 @@ try {
 }
 
 const { Hookfish } = await import('@hookfish/api')
-const { createHookfishBackend } = await import('@hookfish/backend')
 const { pglite } = await import('@hookfish/database/pglite')
 const { default: config } = await import('../../../hookfish.config')
 const db = pglite(
   process.env.PGLITE_DATA_DIR ?? path.resolve(packageRoot, '../../pgdata'),
 )
-const hookfish = await Hookfish.init(config, { db })
-const backend = createHookfishBackend<NodeJS.ProcessEnv>({
-  config,
-  hookfishFetch: hookfish.fetch,
+const hookfish = await Hookfish.init<NodeJS.ProcessEnv>(config, {
+  db,
   runtime: 'express',
 })
-const handleBackend = getRequestListener((request) =>
-  backend.fetch(request, process.env),
+const handleHookfish = getRequestListener((request) =>
+  hookfish.fetch(request, process.env),
 )
 
 const app = express()
@@ -45,7 +42,7 @@ app.use((request, response, next) => {
     request.path === '/client' ||
     request.path.startsWith('/client/')
   ) {
-    void handleBackend(request, response).catch(next)
+    void handleHookfish(request, response).catch(next)
     return
   }
 

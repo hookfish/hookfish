@@ -5,6 +5,7 @@ import {
   oauthConnections,
   oauthStates,
 } from '@hookfish/api/database'
+import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
@@ -74,10 +75,9 @@ export function postgres<Bindings extends object = object>(
   }
 
   return defineDatabase(getDatabase, async (bindings) => {
-    const { migrationsFolder } = await import('@hookfish/api/migrations')
     const { client, database } = createDatabase(getConnectionString(bindings))
     try {
-      await migrate(database, { migrationsFolder })
+      await migrate(database, { migrationsFolder: migrationsFolder() })
     } finally {
       await client.end()
     }

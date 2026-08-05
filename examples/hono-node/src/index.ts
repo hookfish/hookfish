@@ -16,16 +16,13 @@ try {
 }
 
 const { Hookfish } = await import('@hookfish/api')
-const { createHookfishBackend } = await import('@hookfish/backend')
 const { pglite } = await import('@hookfish/database/pglite')
 const { default: config } = await import('../../../hookfish.config')
 const db = pglite(
   process.env.PGLITE_DATA_DIR ?? path.resolve(packageRoot, '../../pgdata'),
 )
-const hookfish = await Hookfish.init(config, { db })
-const backend = createHookfishBackend<NodeJS.ProcessEnv>({
-  config,
-  hookfishFetch: hookfish.fetch,
+const hookfish = await Hookfish.init<NodeJS.ProcessEnv>(config, {
+  db,
   runtime: 'node',
 })
 
@@ -35,7 +32,7 @@ const port = Number(
 const hostname = process.env.HOST ?? '127.0.0.1'
 serve(
   {
-    fetch: (request: Request) => backend.fetch(request, process.env),
+    fetch: (request: Request) => hookfish.fetch(request, process.env),
     port,
     hostname,
   },

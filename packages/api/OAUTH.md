@@ -44,8 +44,8 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 ## Runtime entrypoints
 
-Each host initializes Hookfish with a runtime-specific database and wraps it in
-the Fetch-compatible `@hookfish/backend` composition layer:
+Each host initializes Hookfish with a runtime-specific database and mounts its
+Fetch-compatible handler directly:
 
 | command | process | default database |
 |---|---|---|
@@ -132,30 +132,32 @@ an env file itself, it does so before dynamically importing the config:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
-import { createHookfishBackend } from '@hookfish/backend'
 import { pglite } from '@hookfish/database/pglite'
 import config from '../../../hookfish.config'
 
-const hookfish = await Hookfish.init(config, { db: pglite('./pgdata') })
-const backend = createHookfishBackend({ config, hookfishFetch: hookfish.fetch })
+const hookfish = await Hookfish.init(config, {
+  db: pglite('./pgdata'),
+  runtime: 'node',
+})
 
-export default { fetch: (request) => backend.fetch(request, process.env) }
+export default { fetch: (request) => hookfish.fetch(request, process.env) }
 ```
 
 Hosts with runtime service bindings still pass those separately:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
-import { createHookfishBackend } from '@hookfish/backend'
 import { postgres } from '@hookfish/database/postgres'
 import config from '../../../hookfish.config'
 
 const db = postgres((env) => env.HYPERDRIVE.connectionString)
-const hookfish = await Hookfish.init(config, { db })
-const backend = createHookfishBackend({ config, hookfishFetch: hookfish.fetch })
+const hookfish = await Hookfish.init(config, {
+  db,
+  runtime: 'cloudflare-worker',
+})
 
 export default {
-  fetch: (request, env, ctx) => backend.fetch(request, env, ctx),
+  fetch: (request, env, ctx) => hookfish.fetch(request, env, ctx),
 }
 ```
 

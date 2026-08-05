@@ -1,14 +1,14 @@
-import { handleBackend } from '../../../lib/backend'
+import { handleHookfish } from '../../../lib/hookfish'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export {
-  handleBackend as DELETE,
-  handleBackend as GET,
-  handleBackend as HEAD,
-  handleBackend as OPTIONS,
-  handleBackend as PATCH,
-  handleBackend as POST,
-  handleBackend as PUT,
+  handleHookfish as DELETE,
+  handleHookfish as GET,
+  handleHookfish as HEAD,
+  handleHookfish as OPTIONS,
+  handleHookfish as PATCH,
+  handleHookfish as POST,
+  handleHookfish as PUT,
 }

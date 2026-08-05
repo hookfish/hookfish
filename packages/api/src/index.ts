@@ -10,7 +10,12 @@ import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 import type { ZodType } from 'zod'
 
-import { isAllowedClientRequest } from './client'
+import {
+  type BrowserRequestAuthorizer,
+  createHookfishBackend,
+  type HookfishBackendOptions,
+  isAllowedClientRequest,
+} from './client'
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { HookfishEventHandler } from './events'
 import { type BrokerConfig, resolveBrokerConfig } from './oauth/config'
@@ -183,6 +188,14 @@ export type AppType = ReturnType<typeof createApiRoutes>
 
 export type HookfishRuntime<Bindings extends object = object> = {
   db: DatabaseInput<Bindings>
+  /** Label shown by `/client/health`. @default "fetch" */
+  runtime?: HookfishBackendOptions<Bindings>['runtime']
+  /** Override `trustedOrigins` with a runtime-specific browser allowlist. */
+  browserOrigins?: HookfishBackendOptions<Bindings>['browserOrigins']
+  /** Override the root credential injected by the browser facade. */
+  brokerApiKey?: HookfishBackendOptions<Bindings>['brokerApiKey']
+  /** Apply application/session authorization before serving browser routes. */
+  authorizeBrowserRequest?: BrowserRequestAuthorizer<Bindings>
 }
 
 /**
@@ -233,7 +246,16 @@ export class Hookfish<
       options,
       this.includeSwagger,
     )
-    this.app = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
+    const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
+    this.app = createHookfishBackend({
+      config: options,
+      hookfishFetch: (request, bindings, executionContext) =>
+        rawApp.fetch(request, bindings ?? {}, executionContext),
+      runtime: runtime.runtime,
+      browserOrigins: runtime.browserOrigins,
+      brokerApiKey: runtime.brokerApiKey,
+      authorizeBrowserRequest: runtime.authorizeBrowserRequest,
+    })
   }
 
   static async init<

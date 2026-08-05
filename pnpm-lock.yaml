@@ -150,9 +150,6 @@ importers:
       '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@hookfish/backend':
-        specifier: workspace:*
-        version: link:../../packages/backend
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -178,9 +175,6 @@ importers:
       '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@hookfish/backend':
-        specifier: workspace:*
-        version: link:../../packages/backend
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -212,9 +206,6 @@ importers:
       '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@hookfish/backend':
-        specifier: workspace:*
-        version: link:../../packages/backend
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -237,9 +228,6 @@ importers:
       '@hookfish/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@hookfish/backend':
-        specifier: workspace:*
-        version: link:../../packages/backend
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
