@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev --hostname ${HOST:-127.0.0.1} --port ${PORT:-3000}",
+    "dev": "next dev --hostname ${HOST:-127.0.0.1} --port ${HOOKFISH_BACKEND_PORT:-${PORT:-3000}}",
     "build": "next build",
     "start": "next start --hostname ${HOST:-127.0.0.1} --port ${PORT:-3000}",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hookfish/api": "workspace:*",
+    "@hookfish/backend": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/providers": "workspace:*",
     "next": "^16.3.0",

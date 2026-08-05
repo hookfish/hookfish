@@ -10,6 +10,10 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@hookfish/backend#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "@hookfish/database#build": {
       "dependsOn": ["^build"],
       "outputs": []

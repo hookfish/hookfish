@@ -18,19 +18,18 @@ function About() {
         <CardHeader>
           <CardTitle>About this stack</CardTitle>
           <CardDescription>
-            A Node application with TanStack Start and a mounted Hono API.
+            A portable React SPA backed by a Fetch-compatible API.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm text-muted-foreground">
           <p>
-            TanStack Start renders the React frontend and owns app-specific
-            server functions. The same long-lived Node process mounts Hono at
-            `/api` and connects it to PGlite or Postgres.
+            TanStack Router owns client-side navigation. The frontend can point
+            at any Hookfish backend runtime without importing server code.
           </p>
           <p>
-            The frontend reads the single Hono stats endpoint with React Query.
-            Mutations and app-owned reads use TanStack server functions instead
-            of importing server package types.
+            A browser-safe facade keeps broker credentials on the backend while
+            Node, Cloudflare Workers, and future runtimes choose their own
+            database adapters.
           </p>
         </CardContent>
       </Card>

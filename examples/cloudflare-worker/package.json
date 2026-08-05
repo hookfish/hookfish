@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --env-file ../../apps/frontend/.env",
+    "dev": "wrangler dev --env-file ../../apps/frontend/.env --port ${HOOKFISH_BACKEND_PORT:-8787}",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "deploy": "wrangler deploy",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@hookfish/api": "workspace:*",
+    "@hookfish/backend": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/providers": "workspace:*"
   },

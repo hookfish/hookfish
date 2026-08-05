@@ -12,7 +12,20 @@ import {
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { hookfish } from '../lib/hookfish'
-import { getHealth } from '../lib/server-functions'
+import { browserApiUrl } from '../lib/api-url'
+
+type HealthResponse = {
+  ok: true
+  runtime: string
+  checkedAt: string
+}
+
+async function getHealth(): Promise<HealthResponse> {
+  const response = await fetch(`${browserApiUrl}/health`)
+  if (!response.ok)
+    throw new Error(`Health request failed (${response.status})`)
+  return response.json()
+}
 
 export const Route = createFileRoute('/')({
   component: Dashboard,
@@ -20,7 +33,7 @@ export const Route = createFileRoute('/')({
 
 function Dashboard() {
   const healthQuery = useQuery({
-    queryKey: ['server-function', 'health'],
+    queryKey: ['backend', browserApiUrl, 'health'],
     queryFn: () => getHealth(),
   })
 
@@ -37,7 +50,7 @@ function Dashboard() {
         </h1>
         <p className="text-muted-foreground">
           Manage OAuth providers and connections through typed Hono RPC hooks.
-          TanStack Start keeps the broker API key on the server.
+          The backend facade keeps the broker API key off the browser.
         </p>
       </section>
 
@@ -54,7 +67,7 @@ function Dashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Health</CardTitle>
-            <CardDescription>Current server function response</CardDescription>
+            <CardDescription>Current backend response</CardDescription>
           </CardHeader>
           <CardContent>
             {healthQuery.isPending ? (

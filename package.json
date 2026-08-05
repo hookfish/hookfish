@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "node ./packages/cli/bin/hookfish.mjs serve",
+    "dev": "node ./packages/cli/bin/hookfish.mjs dev",
     "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck && turbo cf-typecheck",
@@ -24,6 +24,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
     "@hookfish/api": "workspace:*",
+    "@hookfish/backend": "workspace:*",
     "@hookfish/cli": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/provider": "workspace:*",

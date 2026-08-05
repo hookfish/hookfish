@@ -16,29 +16,45 @@ try {
 }
 
 const { Hookfish } = await import('@hookfish/api')
+const { createHookfishBackend } = await import('@hookfish/backend')
 const { default: config } = await import('../../../hookfish.config')
 const hookfish = await Hookfish.init(config)
-const handleHookfish = getRequestListener((request) => hookfish.fetch(request))
+const backend = createHookfishBackend<NodeJS.ProcessEnv>({
+  hookfishFetch: hookfish.fetch,
+  browserOrigins: config.trustedOrigins,
+  runtime: 'express',
+})
+const handleBackend = getRequestListener((request) =>
+  backend.fetch(request, process.env),
+)
 
 const app = express()
 
 app.get('/', (_request, response) => {
-  response.type('text').send('Hookfish is mounted at /api')
+  response.type('text').send('Hookfish is mounted at /api and /client')
 })
 
 app.use((request, response, next) => {
-  if (request.path === '/api' || request.path.startsWith('/api/')) {
-    void handleHookfish(request, response).catch(next)
+  if (
+    request.path === '/api' ||
+    request.path.startsWith('/api/') ||
+    request.path === '/client' ||
+    request.path.startsWith('/client/')
+  ) {
+    void handleBackend(request, response).catch(next)
     return
   }
 
   next()
 })
 
-const port = Number(process.env.PORT ?? 3000)
+const port = Number(
+  process.env.HOOKFISH_BACKEND_PORT ?? process.env.PORT ?? 3000,
+)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
 app.listen(port, hostname, () => {
   console.log(`Express server on http://${hostname}:${port}`)
   console.log(`Hookfish API on http://${hostname}:${port}/api`)
+  console.log(`Browser API on http://${hostname}:${port}/client`)
 })

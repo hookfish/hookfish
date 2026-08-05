@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { clearLine, cursorTo } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { register } from 'tsx/esm/api'
 
 /**
@@ -66,6 +66,54 @@ async function exitWith(code: number): Promise<never> {
   process.exit(code)
 }
 
+function parsePort(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const port = Number(value)
+  return Number.isInteger(port) && port > 0 && port < 65_535 ? port : undefined
+}
+
+function followingPort(port: number | undefined): number | undefined {
+  return port && port < 65_534 ? port + 1 : undefined
+}
+
+function developmentEnvironment(): NodeJS.ProcessEnv {
+  const envPath = path.join(findWorkspaceRoot(), 'apps/frontend/.env')
+  if (existsSync(envPath)) process.loadEnvFile(envPath)
+
+  const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
+  const requestedPort = parsePort(process.env.PORT)
+  const frontendPort =
+    parsePort(process.env.FRONTEND_PORT) ??
+    allocatedPort ??
+    requestedPort ??
+    5173
+  const backendPort =
+    parsePort(process.env.HOOKFISH_BACKEND_PORT) ??
+    followingPort(allocatedPort) ??
+    followingPort(requestedPort) ??
+    8787
+
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    FRONTEND_PORT: String(frontendPort),
+    HOOKFISH_BACKEND_PORT: String(backendPort),
+    HOOKFISH_BACKEND_URL:
+      process.env.HOOKFISH_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`,
+    HOOKFISH_FRONTEND_URL:
+      process.env.HOOKFISH_FRONTEND_URL ?? `http://127.0.0.1:${frontendPort}`,
+  }
+
+  const hyperdriveLocalConnectionString =
+    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE ??
+    process.env.DATABASE_URL
+  if (hyperdriveLocalConnectionString) {
+    environment.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE =
+      hyperdriveLocalConnectionString
+  }
+
+  return environment
+}
+
 const migrationFrames = ['⣷', '⣯', '⣟', '⡿', '⢿', '⣻', '⣽', '⣾']
 
 async function withMigrationProgress(migrate: () => Promise<void>) {
@@ -103,24 +151,62 @@ async function withMigrationProgress(migrate: () => Promise<void>) {
 
 const program = new Command()
 
+const developmentBackends = new Map<string, string>([
+  ['hono-node', '@hookfish/example-hono-node'],
+  ['express', '@hookfish/example-express'],
+  ['nextjs', '@hookfish/example-nextjs'],
+  ['cloudflare-worker', '@hookfish/example-cloudflare-worker'],
+])
+
+function developmentBackendPackage(backend: string): string {
+  const packageName = developmentBackends.get(backend)
+  if (!packageName) {
+    throw new Error(`Unsupported development backend: ${backend}`)
+  }
+  return packageName
+}
+
 program.name('hookfish').description('OAuth broker CLI')
 
 program
-  .command('serve')
-  .description('Run the frontend with the Hookfish API mounted at /api')
+  .command('dev')
+  .alias('serve')
+  .description('Run the frontend with a selected backend')
+  .addOption(
+    new Option('-b, --backend <name>', 'Backend example to run')
+      .choices([...developmentBackends.keys()])
+      .default('hono-node'),
+  )
   .option('--no-open', 'Do not open the frontend in a browser')
-  .action(async (options: { open: boolean }) => {
-    const args = ['--filter', '@hookfish/frontend', 'dev']
-    if (options.open) args.push('--open')
-
-    await exitWith(await run('pnpm', args))
+  .action(async (options: { backend: string; open: boolean }) => {
+    const backendPackage = developmentBackendPackage(options.backend)
+    const args = [
+      'exec',
+      'turbo',
+      'dev',
+      '--env-mode=loose',
+      '--filter=@hookfish/frontend',
+      `--filter=${backendPackage}`,
+    ]
+    const environment = developmentEnvironment()
+    await exitWith(
+      await run('pnpm', args, {
+        ...environment,
+        HOOKFISH_OPEN: options.open ? 'true' : 'false',
+      }),
+    )
   })
 
 program
   .command('migrate')
-  .description('Run migrations using the database in hookfish.config.ts')
-  .action(async () => {
-    const configPath = path.join(findWorkspaceRoot(), 'hookfish.config.ts')
+  .description('Run migrations using a Hookfish runtime config')
+  .option(
+    '-c, --config <path>',
+    'Hookfish config path relative to the workspace root',
+    'hookfish.config.ts',
+  )
+  .action(async (options: { config: string }) => {
+    const configPath = path.resolve(findWorkspaceRoot(), options.config)
     if (!existsSync(configPath)) {
       program.error(`Hookfish config not found: ${configPath}`)
     }
@@ -141,7 +227,7 @@ program
 
       if (!db || typeof migrate !== 'function') {
         program.error(
-          'hookfish.config.ts must default-export a HookfishConfig whose database supports migrations.',
+          `${options.config} must default-export a HookfishConfig whose database supports migrations.`,
         )
       }
 

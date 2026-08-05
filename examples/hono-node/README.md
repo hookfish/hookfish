@@ -1,10 +1,9 @@
 # Hono Node example
 
-This example hosts Hookfish as a standalone Hono server on Node. Its Fetch
-entrypoint imports the shared root `hookfish.config.ts`, which currently uses
-PGlite. That file includes a commented Postgres alternative.
+This example hosts the raw Hookfish API at `/api` and the browser facade at
+`/client` on Node. It imports the root PGlite configuration.
 
-It reads the same `../../apps/frontend/.env` file as the Node frontend:
+It reads `../../apps/frontend/.env`:
 
 ```sh
 cp ../../apps/frontend/.env.example ../../apps/frontend/.env

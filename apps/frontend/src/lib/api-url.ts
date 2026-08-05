@@ -1,9 +1,11 @@
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL
+const configuredBackendUrl =
+  import.meta.env.VITE_BACKEND_URL ?? import.meta.env.VITE_API_BASE_URL
 
 /**
- * Empty string = same origin (Hono is mounted on the frontend at `/api/*`).
- * Override with `VITE_API_BASE_URL` when pointing at a standalone API process.
+ * Empty string uses the Vite development proxy or a same-origin deployment.
+ * Override with `VITE_BACKEND_URL` to point the SPA at another backend host.
  */
-export const apiBaseUrl = (configuredApiBaseUrl ?? '').replace(/\/$/, '')
+export const backendUrl = (configuredBackendUrl ?? '').replace(/\/$/, '')
 
-export const apiDocsUrl = `${apiBaseUrl}/api`
+export const browserApiUrl = `${backendUrl}/client`
+export const apiDocsUrl = `${backendUrl}/api`

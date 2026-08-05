@@ -1,20 +1,19 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "../../node_modules/.tmp/example-cloudflare-worker.tsbuildinfo",
+    "tsBuildInfoFile": "../../node_modules/.tmp/backend.tsbuildinfo",
     "target": "es2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "strictNullChecks": true,
+    "strict": true,
     "skipLibCheck": true,
-    "types": ["node"],
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/index.ts", "hookfish.config.ts", "worker-configuration.d.ts"]
+  "include": ["src", "test", "vitest.config.ts"]
 }

@@ -1,8 +1,6 @@
 import { createHookfishHooks } from '@hookfish/hooks'
-import { requestHookfish } from './hookfish.functions'
-import { createHookfishServerFetch } from './hookfish-proxy'
+import { browserApiUrl } from './api-url'
 
 export const hookfish = createHookfishHooks({
-  baseUrl: '/api',
-  fetch: createHookfishServerFetch(requestHookfish),
+  baseUrl: browserApiUrl,
 })

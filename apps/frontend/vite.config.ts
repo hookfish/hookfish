@@ -1,28 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
-import { nitro } from 'nitro/vite'
 import path from 'node:path'
+
+const backendUrl =
+  process.env.HOOKFISH_BACKEND_URL ??
+  `http://127.0.0.1:${process.env.HOOKFISH_BACKEND_PORT ?? '8787'}`
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    tanstackStart({
-      srcDirectory: '.',
-      router: {
-        entry: 'src/router.tsx',
-        routesDirectory: './src/routes',
-        generatedRouteTree: './src/routeTree.gen.ts',
-      },
-      server: {
-        entry: 'src/server.ts',
-      },
-    }),
-    nitro({
-      // PGlite resolves its Postgres data bundle relative to its package at
-      // runtime, so preserve the package instead of folding it into one chunk.
-      traceDeps: ['@electric-sql/pglite*'],
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
     }),
     tailwindcss(),
     react(),
@@ -32,7 +23,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  ssr: {
-    external: ['@electric-sql/pglite'],
+  server: {
+    open: process.env.HOOKFISH_OPEN === 'true',
+    strictPort: true,
+    proxy: {
+      '/api': backendUrl,
+      '/client': backendUrl,
+    },
   },
 })
