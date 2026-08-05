@@ -244,7 +244,6 @@ export async function createHarness(
   })
   const database = pglite(dataDir)
   const db = await database.getDatabase({})
-  const app = new Hookfish({ providers, db, returnTo: options.returnTo })
 
   const env: BrokerEnv = {
     ...process.env,
@@ -261,6 +260,13 @@ export async function createHarness(
     STUB_NOSCOPE_CLIENT_ID: 'stub-noscope-client',
     STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
+  const configSchema = z.object({}).transform(() => env)
+  const app = await Hookfish.init({
+    config: configSchema,
+    providers,
+    db,
+    returnTo: options.returnTo,
+  })
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers)

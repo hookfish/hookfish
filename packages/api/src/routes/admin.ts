@@ -10,7 +10,7 @@ import {
   mintAccessToken,
   normalizeTokenName,
 } from '../oauth/access-token'
-import { requireBrokerApiKey } from '../oauth/config'
+import { type BrokerConfig, requireBrokerApiKey } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
@@ -172,10 +172,11 @@ async function purgeExpiredTokenNames(
 }
 
 export function createAdminRoutes<Bindings extends object>(
+  resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
 ) {
   const adminRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
-  const authenticate = requireApiKey<Bindings>()
+  const authenticate = requireApiKey<Bindings>(resolveConfig)
   const connectDatabase = withDatabase(database)
 
   adminRoutes.use('/tokens', connectDatabase, authenticate)
@@ -195,7 +196,7 @@ export function createAdminRoutes<Bindings extends object>(
       expiresAtSeconds,
     )
     const minted = await mintAccessToken(
-      requireBrokerApiKey(c.env),
+      requireBrokerApiKey(resolveConfig()),
       { name, scopes, expiresIn },
       nowMs,
     )

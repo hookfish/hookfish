@@ -5,6 +5,7 @@ import {
 } from '@hookfish/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import {
   brokerAccessTokens,
   oauthConnections,
@@ -23,6 +24,17 @@ import {
 
 describe('OAuth broker integration', () => {
   let h: TestHarness
+
+  async function createHookfish(
+    overrides: Partial<TestHarness['env']> = {},
+  ): Promise<Hookfish> {
+    const config = { ...h.env, ...overrides }
+    return Hookfish.init({
+      config: z.object({}).transform(() => config),
+      providers: h.providers,
+      db: h.db,
+    })
+  }
 
   beforeAll(async () => {
     h = await createHarness()
@@ -270,7 +282,8 @@ describe('OAuth broker integration', () => {
   })
 
   it('can disable Swagger UI without disabling the OpenAPI document', async () => {
-    const app = new Hookfish({
+    const app = await Hookfish.init({
+      config: z.object({}).transform(() => h.env),
       providers: h.providers,
       db: h.db,
       swaggerUi: false,
@@ -993,14 +1006,15 @@ describe('OAuth broker integration', () => {
     expect(credsBody.error.code).toBe('missing_configuration')
   })
 
-  it('applies STUB_SCOPES env overrides on authorize', async () => {
-    h.env.STUB_SCOPES = 'alpha, beta'
+  it('applies scopes requested by the authorize API', async () => {
     const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'scope-override' }),
+      body: JSON.stringify({
+        connection_id: 'scope-override',
+        scopes: ['alpha', 'beta'],
+      }),
     })
-    h.env.STUB_SCOPES = undefined
 
     expect(res.status).toBe(200)
     const body: { authorize_url: string } = await res.json()
@@ -1175,48 +1189,50 @@ describe('OAuth broker integration', () => {
   })
 
   it('rejects a missing or invalid encryption key', async () => {
-    const previous = h.env.OAUTH_ENCRYPTION_KEY
+    const startFlow = async (connectionId: string) => {
+      const authorizeRes = await h.fetch(
+        `/api/oauth/${h.providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: connectionId }),
+        },
+      )
+      const authorizeJson: { authorize_url: string } = await authorizeRes.json()
+      const consentRes = await fetch(authorizeJson.authorize_url, {
+        redirect: 'manual',
+      })
+      return consentRes.headers.get('location')!
+    }
 
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ connection_id: 'missing-enc-key' }),
+    const missingKeyApp = await createHookfish({
+      OAUTH_ENCRYPTION_KEY: undefined,
     })
-    const authorizeJson: { authorize_url: string } = await authorizeRes.json()
-    const consentRes = await fetch(authorizeJson.authorize_url, {
-      redirect: 'manual',
-    })
-    const location = consentRes.headers.get('location')!
+    const stats = await missingKeyApp.fetch(
+      new Request(`${API_ORIGIN}/api/stats`),
+    )
+    expect(stats.status).toBe(200)
 
-    h.env.OAUTH_ENCRYPTION_KEY = undefined
-    const missingKey = await h.fetch(
-      new URL(location).pathname + new URL(location).search,
+    const missingLocation = await startFlow('missing-enc-key')
+    const missingCallback = new URL(missingLocation)
+    const missingKey = await missingKeyApp.fetch(
+      new Request(
+        `${API_ORIGIN}${missingCallback.pathname}${missingCallback.search}`,
+      ),
     )
     expect(missingKey.status).toBe(500)
     const missingKeyBody: { error: { code: string } } = await missingKey.json()
     expect(missingKeyBody.error.code).toBe('missing_configuration')
 
-    h.env.OAUTH_ENCRYPTION_KEY = previous
-    const authorizeRes2 = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ connection_id: 'bad-enc-key' }),
-      },
-    )
-    const authorizeJson2: { authorize_url: string } = await authorizeRes2.json()
-    const consentRes2 = await fetch(authorizeJson2.authorize_url, {
-      redirect: 'manual',
-    })
-    const location2 = consentRes2.headers.get('location')!
-
     // Valid base64, but not 32 bytes — hits the length check in importKey.
-    h.env.OAUTH_ENCRYPTION_KEY = 'YWJj' // "abc"
-    const badKey = await h.fetch(
-      new URL(location2).pathname + new URL(location2).search,
+    const invalidLocation = await startFlow('bad-enc-key')
+    const invalidCallback = new URL(invalidLocation)
+    const badKeyApp = await createHookfish({ OAUTH_ENCRYPTION_KEY: 'YWJj' })
+    const badKey = await badKeyApp.fetch(
+      new Request(
+        `${API_ORIGIN}${invalidCallback.pathname}${invalidCallback.search}`,
+      ),
     )
-    h.env.OAUTH_ENCRYPTION_KEY = previous
 
     expect(badKey.status).toBe(500)
     const badKeyBody: { error: { code: string } } = await badKey.json()
@@ -1229,9 +1245,14 @@ describe('OAuth broker integration', () => {
     })
     expect(callback.status).toBe(200)
 
-    h.env.OAUTH_ENCRYPTION_KEY = OTHER_ENCRYPTION_KEY
-    const tokenRes = await h.fetch(`/api/oauth/tokens/${connectionId}`)
-    h.env.OAUTH_ENCRYPTION_KEY = TEST_ENCRYPTION_KEY
+    const rotatedKeyApp = await createHookfish({
+      OAUTH_ENCRYPTION_KEY: OTHER_ENCRYPTION_KEY,
+    })
+    const tokenRes = await rotatedKeyApp.fetch(
+      new Request(`${API_ORIGIN}/api/oauth/tokens/${connectionId}`, {
+        headers: { Authorization: 'Bearer test' },
+      }),
+    )
 
     expect(tokenRes.status).toBe(500)
     const body: { error: { code: string } } = await tokenRes.json()
@@ -1242,32 +1263,28 @@ describe('OAuth broker integration', () => {
     })
   })
 
-  it('defaults BROKER_API_KEY to test outside production', async () => {
-    const previousNodeEnv = h.env.NODE_ENV
-    const previousKey = h.env.BROKER_API_KEY
-    h.env.NODE_ENV = 'development'
-    h.env.BROKER_API_KEY = undefined
-
-    const res = await h.fetch('/api/oauth/providers', {
-      headers: { Authorization: 'Bearer test' },
+  it('treats blank NODE_ENV as development', async () => {
+    const app = await createHookfish({
+      NODE_ENV: '   ',
+      BROKER_API_KEY: undefined,
     })
-
-    h.env.NODE_ENV = previousNodeEnv
-    h.env.BROKER_API_KEY = previousKey
+    const res = await app.fetch(
+      new Request(`${API_ORIGIN}/api/oauth/providers`, {
+        headers: { Authorization: 'Bearer test' },
+      }),
+    )
 
     expect(res.status).toBe(200)
   })
 
   it('requires BROKER_API_KEY in production when unset', async () => {
-    const previousNodeEnv = h.env.NODE_ENV
-    const previousKey = h.env.BROKER_API_KEY
-    h.env.NODE_ENV = 'production'
-    h.env.BROKER_API_KEY = undefined
-
-    const res = await h.fetch('/api/oauth/providers')
-
-    h.env.NODE_ENV = previousNodeEnv
-    h.env.BROKER_API_KEY = previousKey
+    const app = await createHookfish({
+      NODE_ENV: 'production',
+      BROKER_API_KEY: undefined,
+    })
+    const res = await app.fetch(
+      new Request(`${API_ORIGIN}/api/oauth/providers`),
+    )
 
     expect(res.status).toBe(500)
     const body: { error: { code: string } } = await res.json()
@@ -1275,11 +1292,12 @@ describe('OAuth broker integration', () => {
   })
 
   it('falls back to the request origin when OAUTH_REDIRECT_BASE_URL is unset', async () => {
-    const previous = h.env.OAUTH_REDIRECT_BASE_URL
-    h.env.OAUTH_REDIRECT_BASE_URL = undefined
-
-    const res = await h.fetch('/api/oauth/providers')
-    h.env.OAUTH_REDIRECT_BASE_URL = previous
+    const app = await createHookfish({ OAUTH_REDIRECT_BASE_URL: undefined })
+    const res = await app.fetch(
+      new Request(`${API_ORIGIN}/api/oauth/providers`, {
+        headers: { Authorization: 'Bearer test' },
+      }),
+    )
 
     expect(res.status).toBe(200)
     const body: {
@@ -1323,10 +1341,61 @@ describe('OAuth broker integration', () => {
     if (original) h.providers.register({ notion: original })
   })
 
+  it('parses configuration once and resolves an async provider factory once', async () => {
+    const provider = h.providers.getProvider(h.providerId)
+    if (!provider) throw new Error('Stub provider is missing.')
+
+    let parseCount = 0
+    let factoryCount = 0
+    const configSchema = z
+      .object({
+        NODE_ENV: z.string().default('test'),
+        OAUTH_ENCRYPTION_KEY: z.string().default(TEST_ENCRYPTION_KEY),
+        BROKER_API_KEY: z.string().default('factory-key'),
+      })
+      .transform((config) => {
+        parseCount += 1
+        return config
+      })
+    const hookfish = await Hookfish.init({
+      config: configSchema,
+      providers: async (config) => {
+        factoryCount += 1
+        expect(config.BROKER_API_KEY).toBe('factory-key')
+        return { dynamic: provider }
+      },
+      db: h.db,
+    })
+    const request = () =>
+      hookfish.fetch(
+        new Request(`${API_ORIGIN}/api/oauth/providers`, {
+          headers: { Authorization: 'Bearer factory-key' },
+        }),
+      )
+
+    expect(hookfish.providers.getProvider('dynamic')).toBe(provider)
+
+    expect((await request()).status).toBe(200)
+    expect((await request()).status).toBe(200)
+    expect(parseCount).toBe(1)
+    expect(factoryCount).toBe(1)
+  })
+
+  it('rejects an invalid configuration while initializing Hookfish', async () => {
+    await expect(
+      Hookfish.init({
+        config: z.object({ BROKER_API_KEY: z.string() }),
+        providers: h.providers,
+        db: h.db,
+      }),
+    ).rejects.toThrow()
+  })
+
   it('resolves a request-aware database binding and exposes a bound fetch', async () => {
     type Bindings = typeof h.env & { DATABASE: typeof h.db }
     let resolvedBindings: Bindings | undefined
-    const hookfish = new Hookfish<Bindings>({
+    const hookfish = await Hookfish.init<Bindings>({
+      config: z.object({}).transform(() => h.env),
       providers: h.providers,
       db: defineDatabase((bindings: Bindings) => {
         resolvedBindings = bindings

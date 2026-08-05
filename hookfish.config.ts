@@ -1,12 +1,23 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Hookfish } from '@hookfish/api'
+import { defineHookfishConfig, z } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import {
   GitHubProvider,
   LinearProvider,
   NotionProvider,
 } from '@hookfish/providers'
+
+const configSchema = z.object({
+  GITHUB_CLIENT_ID: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_ID!),
+  GITHUB_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_SECRET!),
+})
 
 const db = pglite(
   process.env.PGLITE_DATA_DIR ??
@@ -24,16 +35,20 @@ const db = pglite(
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
 
-export default new Hookfish({
+export default defineHookfishConfig({
+  config: configSchema,
   db,
-  // Disable the interactive docs in deployments where `/api` should not load
-  // Swagger UI. The machine-readable `/api/openapi.json` remains available.
-  // swaggerUi: false,
-  // Override the default development completion page before deploying:
+  // swaggerUi: false, // Disable interactive docs; OpenAPI remains available.
   returnTo: 'http://localhost:5173',
-  providers: {
-    github: new GitHubProvider(),
+  providers: (config) => ({
+    // Providers can receive credentials explicitly from validated config.
+    github: new GitHubProvider({
+      clientId: config.GITHUB_CLIENT_ID,
+      clientSecret: config.GITHUB_CLIENT_SECRET,
+    }),
+    // Or retain their conventional <PROVIDER>_CLIENT_ID / _CLIENT_SECRET
+    // environment lookup when constructor credentials are omitted.
     linear: new LinearProvider(),
     notion: new NotionProvider(),
-  },
+  }),
 })

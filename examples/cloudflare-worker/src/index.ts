@@ -1,4 +1,7 @@
-import hookfish from '../../../hookfish.config'
+import { Hookfish } from '@hookfish/api'
+import config from '../../../hookfish.config'
+
+const hookfish = await Hookfish.init(config)
 
 export default {
   fetch(request, env, ctx) {

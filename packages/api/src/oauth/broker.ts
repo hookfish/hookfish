@@ -120,7 +120,6 @@ async function assertProviderMatches(
 
 export async function startAuthorization(
   db: Database,
-  env: object,
   input: StartAuthorizationInput,
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{
@@ -129,7 +128,7 @@ export async function startAuthorization(
   expiresAt: Date
   connectionId: string
 }> {
-  const config = resolveProviderConfig(env, input.provider, providers)
+  const config = resolveProviderConfig(input.provider, providers)
   const { provider } = config
 
   if (input.connectionId && input.connectionIdPrefix) {
@@ -288,7 +287,7 @@ export async function completeAuthorization(
     )
   }
 
-  const config = resolveProviderConfig(env, input.provider, providers)
+  const config = resolveProviderConfig(input.provider, providers)
 
   // The check in `startAuthorization` goes stale as soon as a second flow is
   // opened on the same id, so re-check before spending the authorization code.
@@ -342,7 +341,7 @@ async function refreshConnection(
   connection: OAuthConnection,
   providers: ProviderRegistry,
 ): Promise<OAuthConnection> {
-  const config = resolveProviderConfig(env, connection.provider, providers)
+  const config = resolveProviderConfig(connection.provider, providers)
   const encryptionKey = requireEncryptionKey(env)
 
   if (!connection.refreshToken || !config.provider.refreshToken) {

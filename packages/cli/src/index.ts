@@ -128,25 +128,25 @@ program
 
     const unregister = register()
     try {
-      const config = await import(pathToFileURL(configPath).href)
-      const hookfish = Reflect.get(config, 'default')
+      const configModule = await import(pathToFileURL(configPath).href)
+      const config = Reflect.get(configModule, 'default')
       const db =
-        typeof hookfish === 'object' && hookfish !== null
-          ? Reflect.get(hookfish, 'db')
+        typeof config === 'object' && config !== null
+          ? Reflect.get(config, 'db')
           : undefined
       const migrate =
-        typeof hookfish === 'object' && hookfish !== null
-          ? Reflect.get(hookfish, 'migrate')
+        typeof db === 'object' && db !== null
+          ? Reflect.get(db, 'migrate')
           : undefined
 
       if (!db || typeof migrate !== 'function') {
         program.error(
-          'hookfish.config.ts must default-export a Hookfish instance with a database config.',
+          'hookfish.config.ts must default-export a HookfishConfig whose database supports migrations.',
         )
       }
 
       await withMigrationProgress(() =>
-        Reflect.apply(migrate, hookfish, [process.env]),
+        Reflect.apply(migrate, db, [process.env]),
       )
     } finally {
       await unregister()

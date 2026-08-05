@@ -1,15 +1,77 @@
 import type { OAuthProvider, ProviderRegistry } from '@hookfish/provider'
+import { z } from 'zod'
 import { BrokerError } from './errors'
 
 /**
- * Conventional Hookfish configuration bindings. Hosts may pass any additional
- * runtime-owned bindings through `Hookfish.fetch`.
+ * Conventional Hookfish configuration fields. The application's config schema
+ * may add provider-specific values; runtime service bindings remain separate.
  */
 export type BrokerEnv = {
+  NODE_ENV?: string
   OAUTH_ENCRYPTION_KEY?: string
   BROKER_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
   [key: string]: unknown
+}
+
+const optionalEnvironmentString = z.preprocess(
+  (value) =>
+    typeof value === 'string' && value.trim().length === 0 ? undefined : value,
+  z.string().trim().optional(),
+)
+
+const brokerConfigSchema = z.object({
+  NODE_ENV: z.preprocess(
+    (value) =>
+      typeof value === 'string' && value.trim().length === 0
+        ? undefined
+        : value,
+    z.string().trim().default('development'),
+  ),
+  OAUTH_ENCRYPTION_KEY: optionalEnvironmentString,
+  BROKER_API_KEY: optionalEnvironmentString,
+  OAUTH_REDIRECT_BASE_URL: optionalEnvironmentString,
+})
+
+export type BrokerConfig = z.infer<typeof brokerConfigSchema>
+
+function ambientEnvironment(): object {
+  const processValue = Reflect.get(globalThis, 'process')
+  if (typeof processValue !== 'object' || processValue === null) return {}
+
+  const environment = Reflect.get(processValue, 'env')
+  return typeof environment === 'object' && environment !== null
+    ? environment
+    : {}
+}
+
+function configValue(
+  config: object,
+  ambient: object,
+  key: keyof BrokerConfig,
+): unknown {
+  return Reflect.has(config, key)
+    ? Reflect.get(config, key)
+    : Reflect.get(ambient, key)
+}
+
+/**
+ * Hookfish owns its broker settings. Application schemas only need to declare
+ * values consumed by application code or provider factories.
+ */
+export function resolveBrokerConfig(config: object): BrokerConfig {
+  const ambient = ambientEnvironment()
+
+  return brokerConfigSchema.parse({
+    NODE_ENV: configValue(config, ambient, 'NODE_ENV'),
+    OAUTH_ENCRYPTION_KEY: configValue(config, ambient, 'OAUTH_ENCRYPTION_KEY'),
+    BROKER_API_KEY: configValue(config, ambient, 'BROKER_API_KEY'),
+    OAUTH_REDIRECT_BASE_URL: configValue(
+      config,
+      ambient,
+      'OAUTH_REDIRECT_BASE_URL',
+    ),
+  })
 }
 
 export function readEnvString(env: object, key: string): string | undefined {
@@ -40,12 +102,7 @@ export type ProviderConfig = {
   scopes: string[]
 }
 
-function envPrefix(providerId: string): string {
-  return providerId.toUpperCase().replace(/[^A-Z0-9]/g, '_')
-}
-
 export function resolveProviderConfig(
-  env: object,
   providerId: string,
   providers: ProviderRegistry,
 ): ProviderConfig {
@@ -59,17 +116,9 @@ export function resolveProviderConfig(
     )
   }
 
-  const prefix = envPrefix(providerId)
-  const scopeOverride = readEnvString(env, `${prefix}_SCOPES`)
-
   return {
     provider,
-    scopes: scopeOverride
-      ? scopeOverride
-          .split(/[\s,]+/)
-          .map((scope) => scope.trim())
-          .filter((scope) => scope.length > 0)
-      : [...(provider.defaultScopes ?? [])],
+    scopes: [...(provider.defaultScopes ?? [])],
   }
 }
 
@@ -89,14 +138,7 @@ export function resolveRedirectUri(
 }
 
 function readAmbientNodeEnv(): string | undefined {
-  if (!('process' in globalThis)) return undefined
-
-  const proc = Reflect.get(globalThis, 'process')
-  if (typeof proc !== 'object' || proc === null || !('env' in proc)) {
-    return undefined
-  }
-
-  const value = Reflect.get(proc.env, 'NODE_ENV')
+  const value = Reflect.get(ambientEnvironment(), 'NODE_ENV')
   return typeof value === 'string' ? value : undefined
 }
 

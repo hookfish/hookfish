@@ -1,5 +1,5 @@
 import handler, { createServerEntry } from '@tanstack/react-start/server-entry'
-import hookfish from '../../../hookfish.config'
+import { hookfishServer } from '@/lib/hookfish-server.server'
 
 /**
  * Same-origin `/api/*` is served by the shared Hookfish instance. Everything
@@ -10,7 +10,7 @@ export default createServerEntry({
     const { pathname } = new URL(request.url)
 
     if (pathname === '/api' || pathname.startsWith('/api/')) {
-      return hookfish.fetch(request, process.env)
+      return hookfishServer.fetch(request)
     }
 
     return handler.fetch(request)

@@ -2,7 +2,7 @@ import { createMiddleware } from 'hono/factory'
 import { type DatabaseInput, resolveDatabase } from '../db/binding'
 import type { Database } from '../db/schema'
 import { type AccessGrant, authenticateAccessToken } from './access-token'
-import { requireBrokerApiKey } from './config'
+import { type BrokerConfig, requireBrokerApiKey } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'
 
@@ -31,9 +31,11 @@ export function withDatabase<Bindings extends object>(
  * The OAuth callback is deliberately exempt: it is hit by the user's browser
  * and is authenticated instead by the single-use `state` value.
  */
-export function requireApiKey<Bindings extends object>() {
+export function requireApiKey<Bindings extends object>(
+  resolveConfig: () => BrokerConfig,
+) {
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
-    const expected = requireBrokerApiKey(c.env)
+    const expected = requireBrokerApiKey(resolveConfig())
     const header = c.req.header('Authorization') ?? ''
     const presented = header.startsWith('Bearer ') ? header.slice(7) : ''
 

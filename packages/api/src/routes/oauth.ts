@@ -13,7 +13,7 @@ import {
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
-import { resolveRedirectUri } from '../oauth/config'
+import { type BrokerConfig, resolveRedirectUri } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
@@ -230,7 +230,7 @@ const authorizeRoute = createRoute({
             }),
             scopes: z.array(z.string()).optional().openapi({
               description:
-                'Overrides the configured scopes for this flow. Leave empty to use the provider defaults from <PROVIDER>_SCOPES or the registry -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
+                'Scopes requested for this flow. Leave empty to use the provider defaults -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.',
               default: [],
               example: [],
             }),
@@ -422,11 +422,12 @@ const disconnectRuntimeRoute = createRoute({
 
 export function createOAuthRoutes<Bindings extends object>(
   providers: ProviderRegistry,
+  resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
   returnTo?: string,
 ) {
   const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
-  const authenticate = requireApiKey<Bindings>()
+  const authenticate = requireApiKey<Bindings>(resolveConfig)
   const connectDatabase = withDatabase(database)
 
   oauthRoutes.use('/providers', connectDatabase, authenticate)
@@ -443,6 +444,7 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
   const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
+    const config = resolveConfig()
     return c.json(
       {
         providers: providers.listProviders().map(([slug, provider]) => {
@@ -452,7 +454,7 @@ export function createOAuthRoutes<Bindings extends object>(
             configured: providers.isProviderConfigured(slug),
             // Derived from this request, so it stays correct across branches,
             // `pnpm dev` vs. `server dev`, and deployed environments.
-            callback_url: resolveRedirectUri(c.env, c.req.url, slug),
+            callback_url: resolveRedirectUri(config, c.req.url, slug),
             scopes: [...(provider.defaultScopes ?? [])],
             available_scopes: [...(provider.availableScopes ?? [])],
             supports_refresh: provider.refreshToken !== undefined,
@@ -468,6 +470,7 @@ export function createOAuthRoutes<Bindings extends object>(
   const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
+    const config = resolveConfig()
 
     if (body.connection_id) {
       assertConnectionAccess(c.get('accessGrant'), body.connection_id)
@@ -486,12 +489,11 @@ export function createOAuthRoutes<Bindings extends object>(
 
     const result = await startAuthorization(
       c.get('db'),
-      c.env,
       {
         connectionId: body.connection_id,
         connectionIdPrefix: body.connection_id_prefix,
         provider,
-        redirectUri: resolveRedirectUri(c.env, c.req.url, provider),
+        redirectUri: resolveRedirectUri(config, c.req.url, provider),
         scopes: body.scopes,
       },
       providers,
@@ -538,9 +540,10 @@ export function createOAuthRoutes<Bindings extends object>(
       )
     }
 
+    const config = resolveConfig()
     const connection = await completeAuthorization(
       c.get('db'),
-      c.env,
+      config,
       { provider, code: query.code, state: query.state },
       providers,
     )
@@ -591,9 +594,10 @@ export function createOAuthRoutes<Bindings extends object>(
   const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     assertConnectionAccess(c.get('accessGrant'), connectionId)
+    const config = resolveConfig()
     const token = await getAccessToken(
       c.get('db'),
-      c.env,
+      config,
       connectionId,
       providers,
     )
@@ -618,9 +622,10 @@ export function createOAuthRoutes<Bindings extends object>(
   const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
     assertConnectionAccess(c.get('accessGrant'), connectionId)
+    const config = resolveConfig()
 
     return c.json(
-      await deleteConnection(c.get('db'), c.env, connectionId, providers),
+      await deleteConnection(c.get('db'), config, connectionId, providers),
       200,
     )
   })
