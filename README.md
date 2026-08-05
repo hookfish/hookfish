@@ -77,9 +77,10 @@ pnpm --filter @hookfish/example-nextjs dev
 pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-`hookfish.shared.ts` owns the common provider and browser policy. Each runtime
-config supplies its own database, so Node and Worker variants no longer require
-editing one shared database selection.
+The root `hookfish.config.ts` owns providers, browser policy, and documentation
+visibility for every backend. Each example only selects its runtime database
+and host adapter, so switching between Node/PGlite and Workers/Hyperdrive does
+not require editing application configuration.
 
 ## Cloudflare Worker backend
 
@@ -107,7 +108,7 @@ Apply the Worker database migrations through a direct administrative URL:
 
 ```sh
 HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  pnpm migrate --config examples/cloudflare-worker/hookfish.config.ts
+  pnpm migrate --backend cloudflare-worker
 ```
 
 Store production credentials as Worker secrets and deploy:
@@ -169,7 +170,7 @@ pnpm dev --backend cloudflare-worker
 pnpm build
 pnpm preview
 pnpm migrate
-pnpm migrate --config examples/cloudflare-worker/hookfish.config.ts
+pnpm migrate --backend cloudflare-worker
 pnpm cf-typegen
 pnpm cf-typecheck
 pnpm typecheck

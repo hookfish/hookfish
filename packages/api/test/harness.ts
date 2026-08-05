@@ -266,15 +266,17 @@ export async function createHarness(
     STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
   const configSchema = z.object({}).transform(() => env)
-  const app = await Hookfish.init({
-    config: configSchema,
-    providers,
-    db,
-    returnTo: options.returnTo,
-    trustedOrigins: options.trustedOrigins,
-    organizationRouting: options.organizationRouting,
-    onEvent: options.onEvent,
-  })
+  const app = await Hookfish.init(
+    {
+      config: configSchema,
+      providers,
+      returnTo: options.returnTo,
+      trustedOrigins: options.trustedOrigins,
+      organizationRouting: options.organizationRouting,
+      onEvent: options.onEvent,
+    },
+    { db },
+  )
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers)

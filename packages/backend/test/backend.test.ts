@@ -8,7 +8,10 @@ import {
 describe('Hookfish backend', () => {
   it('passes the raw Hookfish API through unchanged', async () => {
     const hookfishFetch = vi.fn(async () => new Response('raw'))
-    const backend = createHookfishBackend({ hookfishFetch })
+    const backend = createHookfishBackend({
+      config: {},
+      hookfishFetch,
+    })
     const request = new Request('https://backend.example/api/openapi.json')
 
     expect(await (await backend.fetch(request)).text()).toBe('raw')
@@ -26,6 +29,7 @@ describe('Hookfish backend', () => {
       return Response.json({ connections: [] })
     })
     const backend = createHookfishBackend({
+      config: { includeClient: true },
       hookfishFetch,
       brokerApiKey: 'root-secret',
     })
@@ -55,6 +59,7 @@ describe('Hookfish backend', () => {
       return Response.json({ authorize_url: 'https://provider.example' })
     })
     const backend = createHookfishBackend({
+      config: { includeClient: true },
       hookfishFetch,
       brokerApiKey: 'root-secret',
     })
@@ -80,7 +85,10 @@ describe('Hookfish backend', () => {
     expect(isAllowedBrowserApiRequest('PUT', '/api/stats')).toBe(false)
 
     const hookfishFetch = vi.fn(async () => Response.json({ unexpected: true }))
-    const backend = createHookfishBackend({ hookfishFetch })
+    const backend = createHookfishBackend({
+      config: { includeClient: true },
+      hookfishFetch,
+    })
     const response = await backend.fetch(
       new Request('https://backend.example/client/oauth/tokens/team/alice'),
     )
@@ -92,6 +100,7 @@ describe('Hookfish backend', () => {
   it('serves backend health without forwarding to Hookfish', async () => {
     const hookfishFetch = vi.fn(async () => new Response())
     const backend = createHookfishBackend({
+      config: { includeClient: true },
       hookfishFetch,
       runtime: 'cloudflare-worker',
     })
@@ -105,10 +114,13 @@ describe('Hookfish backend', () => {
     expect(hookfishFetch).not.toHaveBeenCalled()
   })
 
-  it('handles explicit cross-origin access and preflight', async () => {
+  it('uses configured trusted origins for cross-origin access and preflight', async () => {
     const backend = createHookfishBackend({
+      config: {
+        includeClient: true,
+        trustedOrigins: ['http://localhost:5173'],
+      },
       hookfishFetch: async () => Response.json({}),
-      browserOrigins: ['http://localhost:5173'],
     })
     const allowed = await backend.fetch(
       new Request('https://backend.example/client/health', {
@@ -141,6 +153,7 @@ describe('Hookfish backend', () => {
   it('runs application authorization before browser requests', async () => {
     const hookfishFetch = vi.fn(async () => Response.json({}))
     const backend = createHookfishBackend({
+      config: { includeClient: true },
       hookfishFetch,
       authorizeBrowserRequest: () =>
         Response.json({ error: 'sign in' }, { status: 401 }),
@@ -155,7 +168,10 @@ describe('Hookfish backend', () => {
 
   it('rejects oversized browser request bodies', async () => {
     const hookfishFetch = vi.fn(async () => Response.json({}))
-    const backend = createHookfishBackend({ hookfishFetch })
+    const backend = createHookfishBackend({
+      config: { includeClient: true },
+      hookfishFetch,
+    })
     const response = await backend.fetch(
       new Request('https://backend.example/client/oauth/github/authorize', {
         method: 'POST',
@@ -164,6 +180,16 @@ describe('Hookfish backend', () => {
     )
 
     expect(response.status).toBe(413)
+    expect(hookfishFetch).not.toHaveBeenCalled()
+  })
+
+  it('does not mount the client facade unless enabled', async () => {
+    const hookfishFetch = vi.fn(async () => Response.json({}))
+    const backend = createHookfishBackend({ config: {}, hookfishFetch })
+
+    expect(
+      await backend.fetch(new Request('https://backend.example/client/health')),
+    ).toHaveProperty('status', 404)
     expect(hookfishFetch).not.toHaveBeenCalled()
   })
 })

@@ -3,9 +3,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { clearLine, cursorTo } from 'node:readline'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { Command, Option } from 'commander'
-import { register } from 'tsx/esm/api'
 
 /**
  * Resolve the project root from the caller's cwd first so `npx @hookfish/cli`
@@ -76,9 +75,13 @@ function followingPort(port: number | undefined): number | undefined {
   return port && port < 65_534 ? port + 1 : undefined
 }
 
-function developmentEnvironment(): NodeJS.ProcessEnv {
+function loadDevelopmentEnvironment(): void {
   const envPath = path.join(findWorkspaceRoot(), 'apps/frontend/.env')
   if (existsSync(envPath)) process.loadEnvFile(envPath)
+}
+
+function developmentEnvironment(): NodeJS.ProcessEnv {
+  loadDevelopmentEnvironment()
 
   const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
   const requestedPort = parsePort(process.env.PORT)
@@ -199,44 +202,39 @@ program
 
 program
   .command('migrate')
-  .description('Run migrations using a Hookfish runtime config')
-  .option(
-    '-c, --config <path>',
-    'Hookfish config path relative to the workspace root',
-    'hookfish.config.ts',
+  .description('Run migrations for a selected backend database')
+  .addOption(
+    new Option('-b, --backend <name>', 'Backend database to migrate')
+      .choices([...developmentBackends.keys()])
+      .default('hono-node'),
   )
-  .action(async (options: { config: string }) => {
-    const configPath = path.resolve(findWorkspaceRoot(), options.config)
-    if (!existsSync(configPath)) {
-      program.error(`Hookfish config not found: ${configPath}`)
-    }
-    console.log(`Reading config file '${configPath}'`)
+  .action(async (options: { backend: string }) => {
+    loadDevelopmentEnvironment()
 
-    const unregister = register()
-    try {
-      const configModule = await import(pathToFileURL(configPath).href)
-      const config = Reflect.get(configModule, 'default')
-      const db =
-        typeof config === 'object' && config !== null
-          ? Reflect.get(config, 'db')
-          : undefined
-      const migrate =
-        typeof db === 'object' && db !== null
-          ? Reflect.get(db, 'migrate')
-          : undefined
-
-      if (!db || typeof migrate !== 'function') {
+    if (options.backend === 'cloudflare-worker') {
+      const connectionString =
+        process.env.HOOKFISH_MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL
+      if (!connectionString) {
         program.error(
-          `${options.config} must default-export a HookfishConfig whose database supports migrations.`,
+          'Set HOOKFISH_MIGRATION_DATABASE_URL or DATABASE_URL to migrate the Worker Postgres database.',
         )
+        return
       }
-
-      await withMigrationProgress(() =>
-        Reflect.apply(migrate, db, [process.env]),
-      )
-    } finally {
-      await unregister()
+      const { postgres } = await import('@hookfish/database/postgres')
+      const database = postgres(connectionString)
+      await withMigrationProgress(async () => {
+        await database.migrate?.({})
+      })
+      return
     }
+
+    const { pglite } = await import('@hookfish/database/pglite')
+    const database = pglite(
+      process.env.PGLITE_DATA_DIR ?? path.join(findWorkspaceRoot(), 'pgdata'),
+    )
+    await withMigrationProgress(async () => {
+      await database.migrate?.({})
+    })
   })
 
 await program.parseAsync(process.argv)

@@ -29,11 +29,13 @@ describe('OAuth broker integration', () => {
     overrides: Partial<TestHarness['env']> = {},
   ): Promise<Hookfish> {
     const config = { ...h.env, ...overrides }
-    return Hookfish.init({
-      config: z.object({}).transform(() => config),
-      providers: h.providers,
-      db: h.db,
-    })
+    return Hookfish.init(
+      {
+        config: z.object({}).transform(() => config),
+        providers: h.providers,
+      },
+      { db: h.db },
+    )
   }
 
   beforeAll(async () => {
@@ -281,18 +283,28 @@ describe('OAuth broker integration', () => {
     }
   })
 
-  it('can disable Swagger UI without disabling the OpenAPI document', async () => {
-    const app = await Hookfish.init({
-      config: z.object({}).transform(() => h.env),
-      providers: h.providers,
-      db: h.db,
-      swaggerUi: false,
-    })
+  it('can limit OpenAPI to client-safe operations', async () => {
+    const app = await Hookfish.init(
+      {
+        config: z.object({}).transform(() => h.env),
+        providers: h.providers,
+        includeSwagger: false,
+      },
+      { db: h.db },
+    )
     const fetchApp = (path: string) =>
       app.fetch(new Request(`${API_ORIGIN}${path}`), h.env)
 
-    expect((await fetchApp('/api')).status).toBe(404)
-    expect((await fetchApp('/api/openapi.json')).status).toBe(200)
+    expect((await fetchApp('/api')).status).toBe(200)
+    const document: {
+      servers?: Array<{ url: string }>
+      paths: Record<string, Record<string, unknown>>
+    } = await (await fetchApp('/api/openapi.json')).json()
+    expect(document.servers).toEqual([{ url: '/client' }])
+    expect(document.paths['/oauth/providers']?.get).toBeDefined()
+    expect(document.paths['/oauth/{provider}/authorize']?.post).toBeDefined()
+    expect(document.paths['/oauth/tokens/{connectionId}']).toBeUndefined()
+    expect(document.paths['/admin/tokens']).toBeUndefined()
   })
 
   it('supports path-compatible connection ids', async () => {
@@ -1676,15 +1688,17 @@ describe('OAuth broker integration', () => {
         parseCount += 1
         return config
       })
-    const hookfish = await Hookfish.init({
-      config: configSchema,
-      providers: async (config) => {
-        factoryCount += 1
-        expect(config.BROKER_API_KEY).toBe('factory-key')
-        return { dynamic: provider }
+    const hookfish = await Hookfish.init(
+      {
+        config: configSchema,
+        providers: async (config) => {
+          factoryCount += 1
+          expect(config.BROKER_API_KEY).toBe('factory-key')
+          return { dynamic: provider }
+        },
       },
-      db: h.db,
-    })
+      { db: h.db },
+    )
     const request = () =>
       hookfish.fetch(
         new Request(`${API_ORIGIN}/api/oauth/providers`, {
@@ -1702,25 +1716,31 @@ describe('OAuth broker integration', () => {
 
   it('rejects an invalid configuration while initializing Hookfish', async () => {
     await expect(
-      Hookfish.init({
-        config: z.object({ BROKER_API_KEY: z.string() }),
-        providers: h.providers,
-        db: h.db,
-      }),
+      Hookfish.init(
+        {
+          config: z.object({ BROKER_API_KEY: z.string() }),
+          providers: h.providers,
+        },
+        { db: h.db },
+      ),
     ).rejects.toThrow()
   })
 
   it('resolves a request-aware database binding and exposes a bound fetch', async () => {
     type Bindings = typeof h.env & { DATABASE: typeof h.db }
     let resolvedBindings: Bindings | undefined
-    const hookfish = await Hookfish.init<Bindings>({
-      config: z.object({}).transform(() => h.env),
-      providers: h.providers,
-      db: defineDatabase((bindings: Bindings) => {
-        resolvedBindings = bindings
-        return bindings.DATABASE
-      }),
-    })
+    const hookfish = await Hookfish.init<Bindings>(
+      {
+        config: z.object({}).transform(() => h.env),
+        providers: h.providers,
+      },
+      {
+        db: defineDatabase((bindings: Bindings) => {
+          resolvedBindings = bindings
+          return bindings.DATABASE
+        }),
+      },
+    )
     const bindings = { ...h.env, DATABASE: h.db }
     const { fetch: hookfishFetch } = hookfish
     const res = await hookfishFetch(

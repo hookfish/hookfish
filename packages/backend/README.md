@@ -9,11 +9,12 @@ Fetch-compatible composition layer for a Hookfish deployment.
 
 ```ts
 import { createHookfishBackend } from '@hookfish/backend'
+import config from './hookfish.config'
 
 const backend = createHookfishBackend({
+  config,
   hookfishFetch: hookfish.fetch,
   brokerApiKey: (env) => env.BROKER_API_KEY,
-  browserOrigins: ['http://localhost:5173'],
 })
 
 export default {
@@ -25,4 +26,6 @@ export default {
 
 Set `authorizeBrowserRequest` before exposing the facade as a production
 dashboard. The facade protects the broker credential; it does not define your
-application's user/session model.
+application's user/session model. `config.includeClient` controls whether the
+facade is mounted, and `config.trustedOrigins` supplies its cross-origin
+allowlist unless `browserOrigins` is explicitly overridden.

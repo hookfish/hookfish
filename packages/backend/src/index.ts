@@ -1,5 +1,9 @@
-import type { Hookfish } from '@hookfish/api'
+import type { Hookfish, HookfishConfig } from '@hookfish/api'
+import { isAllowedClientRequest } from '@hookfish/api/client'
 import { requireBrokerApiKey } from '@hookfish/api/oauth/config'
+
+export { isAllowedClientRequest } from '@hookfish/api/client'
+export const isAllowedBrowserApiRequest = isAllowedClientRequest
 
 export const browserApiPath = '/client'
 export const hookfishApiPath = '/api'
@@ -26,8 +30,10 @@ export type BrowserRequestAuthorizer<Bindings extends object> = (
 ) => Response | undefined | Promise<Response | undefined>
 
 export type HookfishBackendOptions<Bindings extends object = object> = {
+  /** Shared Hookfish application configuration. */
+  config: Pick<HookfishConfig, 'includeClient' | 'trustedOrigins'>
   hookfishFetch: HookfishFetch<Bindings>
-  /** Browser origins permitted to call `/client/*` across origins. */
+  /** Override the configured browser origins for runtime-specific deployments. */
   browserOrigins?:
     | readonly string[]
     | ((bindings: Bindings | undefined) => readonly string[])
@@ -60,37 +66,6 @@ function isApiPath(pathname: string, prefix: string): boolean {
 function parseMethod(method: string): AllowedMethod | undefined {
   const normalized = method.toUpperCase()
   return allowedMethods.find((candidate) => candidate === normalized)
-}
-
-export function isAllowedBrowserApiRequest(
-  method: string,
-  pathname: string,
-): boolean {
-  let decodedPathname: string
-  try {
-    decodedPathname = decodeURIComponent(pathname)
-  } catch {
-    return false
-  }
-
-  if (method === 'GET') {
-    return (
-      decodedPathname === '/api/stats' ||
-      decodedPathname === '/api/oauth/providers' ||
-      decodedPathname === '/api/oauth/connections' ||
-      decodedPathname.startsWith('/api/oauth/connections/')
-    )
-  }
-
-  if (method === 'POST') {
-    return /^\/api\/oauth\/[^/]+\/authorize$/.test(decodedPathname)
-  }
-
-  return (
-    method === 'DELETE' &&
-    decodedPathname.startsWith('/api/oauth/connections/') &&
-    decodedPathname.length > '/api/oauth/connections/'.length
-  )
 }
 
 function corsOrigin<Bindings extends object>(
@@ -173,14 +148,17 @@ export function createHookfishBackend<Bindings extends object = object>(
         )
       }
 
-      if (!isApiPath(url.pathname, browserApiPath)) {
+      if (
+        !options.config.includeClient ||
+        !isApiPath(url.pathname, browserApiPath)
+      ) {
         return new Response('Not Found', { status: 404 })
       }
 
       const origin = corsOrigin(
         request,
         suppliedBindings,
-        options.browserOrigins,
+        options.browserOrigins ?? options.config.trustedOrigins,
       )
       if (origin === null) {
         return jsonError(
@@ -221,7 +199,7 @@ export function createHookfishBackend<Bindings extends object = object>(
 
       const method = parseMethod(request.method)
       const targetPath = `${hookfishApiPath}${url.pathname.slice(browserApiPath.length)}`
-      if (!method || !isAllowedBrowserApiRequest(method, targetPath)) {
+      if (!method || !isAllowedClientRequest(method, targetPath)) {
         return addCorsHeaders(
           jsonError(
             403,

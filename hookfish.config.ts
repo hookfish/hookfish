@@ -1,20 +1,35 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { pglite } from '@hookfish/database/pglite'
-import { createHookfishConfig } from './hookfish.shared'
+import { defineHookfishConfig, z } from '@hookfish/api'
+import {
+  GitHubProvider,
+  LinearProvider,
+  NotionProvider,
+} from '@hookfish/providers'
 
-const db = pglite(
-  process.env.PGLITE_DATA_DIR ??
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'pgdata'),
-)
+const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
-// To use Postgres instead:
-// import { postgres } from '@hookfish/database/postgres'
-// const db = postgres(process.env.DATABASE_URL ?? '')
+const configSchema = z.object({
+  GITHUB_CLIENT_ID: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_ID!),
+  GITHUB_CLIENT_SECRET: z
+    .string()
+    .optional()
+    .prefault(process.env.GITHUB_CLIENT_SECRET!),
+})
 
-// The Cloudflare Worker supplies Hyperdrive in its own hookfish.config.ts so
-// both runtime variants can run without changing this Node configuration.
-
-export default createHookfishConfig({
-  db,
+export default defineHookfishConfig({
+  config: configSchema,
+  includeClient: true,
+  includeSwagger: true,
+  returnTo: frontendUrl,
+  trustedOrigins: [frontendUrl],
+  providers: (config) => ({
+    github: new GitHubProvider({
+      clientId: config.GITHUB_CLIENT_ID,
+      clientSecret: config.GITHUB_CLIENT_SECRET,
+    }),
+    linear: new LinearProvider(),
+    notion: new NotionProvider(),
+  }),
 })
