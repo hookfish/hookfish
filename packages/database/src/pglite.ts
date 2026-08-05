@@ -29,9 +29,11 @@ export function pglite<Bindings extends object = object>(
   options: PgliteDatabaseOptions = {},
 ): DatabaseBinding<Bindings> {
   let pending: Promise<Database> | undefined
-  const migrationsFolder = options.migrationsFolder ?? bundledMigrations
+  const resolveMigrationsFolder = () =>
+    options.migrationsFolder ?? bundledMigrations()
 
   const migrateClient = async (client: PGlite) => {
+    const migrationsFolder = resolveMigrationsFolder()
     if (migrationsFolder !== false) {
       await migrate(drizzle(client, { schema }), { migrationsFolder })
     }

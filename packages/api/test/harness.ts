@@ -268,8 +268,8 @@ export async function createHarness(
   const configSchema = z.object({}).transform(() => env)
   const app = await Hookfish.init({
     config: configSchema,
-    providers,
     db,
+    providers,
     returnTo: options.returnTo,
     trustedOrigins: options.trustedOrigins,
     organizationRouting: options.organizationRouting,

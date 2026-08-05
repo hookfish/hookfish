@@ -1,7 +1,17 @@
 import { Hookfish } from '@hookfish/api'
+import { postgres } from '@hookfish/database/postgres'
 import config from '../../../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const db = postgres<Env>((bindings) => bindings.HYPERDRIVE.connectionString, {
+  cache: false,
+  fetchTypes: false,
+  max: 5,
+  prepare: true,
+})
+const hookfish = await Hookfish.init({
+  ...config,
+  db,
+})
 
 export default {
   fetch(request, env, ctx) {

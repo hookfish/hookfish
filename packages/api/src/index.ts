@@ -10,9 +10,19 @@ import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 import type { ZodType } from 'zod'
 
+import {
+  type BrowserRequestAuthorizer,
+  createHookfishBackend,
+  type HookfishBackendOptions,
+  isAllowedClientRequest,
+} from './client'
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { HookfishEventHandler } from './events'
-import { type BrokerConfig, resolveBrokerConfig } from './oauth/config'
+import {
+  type BrokerConfig,
+  requireBrokerApiKey,
+  resolveBrokerConfig,
+} from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { createAdminRoutes } from './routes/admin'
 import { createOAuthRoutes } from './routes/oauth'
@@ -36,9 +46,12 @@ export type HookfishConfig<
   /** Application configuration parsed once and passed to a provider factory. */
   config: ZodType<Config>
   providers: HookfishProviders<Config>
+  /** Default database binding. A runtime host may override it in `Hookfish.init`. */
   db: DatabaseInput<Bindings>
-  /** Serve the interactive Swagger UI at `/api`. The OpenAPI document remains available. @default true */
-  swaggerUi?: boolean
+  /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
+  includeClient?: boolean
+  /** Include server-only operations in OpenAPI. Client operations are always documented. @default true */
+  includeSwagger?: boolean
   /** Fixed destination after a successful OAuth callback. Omit for the development completion page. */
   returnTo?: string
   /** Origins allowed by the per-authorization `return_to` option. */
@@ -100,7 +113,7 @@ function createApiRoutes<Bindings extends object>(
     HookfishConfig<Bindings>,
     'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
   >,
-  swaggerUi = true,
+  includeSwagger = true,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -111,18 +124,47 @@ function createApiRoutes<Bindings extends object>(
       'Send BROKER_API_KEY for root access, or a named scoped token minted by POST /admin/tokens.',
   })
 
-  base.doc('/openapi.json', {
-    openapi: '3.1.0',
-    info: {
-      title: 'Hookfish API',
-      version: '0.0.0',
-    },
-    servers: [{ url: '/api' }],
+  base.get('/openapi.json', (context) => {
+    const document = base.getOpenAPI31Document({
+      openapi: '3.1.0',
+      info: {
+        title: 'Hookfish API',
+        version: '0.0.0',
+      },
+      servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
+    })
+
+    if (!includeSwagger) {
+      const operationMethods = [
+        'get',
+        'put',
+        'post',
+        'delete',
+        'options',
+        'head',
+        'patch',
+        'trace',
+      ] as const
+
+      for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
+        const apiPath = pathname.startsWith('/api')
+          ? pathname
+          : `/api${pathname}`
+        for (const method of operationMethods) {
+          if (!isAllowedClientRequest(method, apiPath)) {
+            delete pathItem[method]
+          }
+        }
+        if (!operationMethods.some((method) => pathItem[method])) {
+          delete document.paths?.[pathname]
+        }
+      }
+    }
+
+    return context.json(document)
   })
 
-  if (swaggerUi) {
-    base.get('/', swaggerUI({ url: '/api/openapi.json' }))
-  }
+  base.get('/', swaggerUI({ url: '/api/openapi.json' }))
 
   const api = base
     .use('/stats', cors())
@@ -154,6 +196,17 @@ function createApiRoutes<Bindings extends object>(
 
 export type AppType = ReturnType<typeof createApiRoutes>
 
+export type HookfishRuntime<Bindings extends object = object> = {
+  /** Label shown by `/api/client/health`. @default "fetch" */
+  runtime?: HookfishBackendOptions<Bindings>['runtime']
+  /** Override `trustedOrigins` with a runtime-specific browser allowlist. */
+  browserOrigins?: HookfishBackendOptions<Bindings>['browserOrigins']
+  /** Override the root credential injected by the browser facade. */
+  brokerApiKey?: HookfishBackendOptions<Bindings>['brokerApiKey']
+  /** Apply application/session authorization before serving browser routes. */
+  authorizeBrowserRequest?: BrowserRequestAuthorizer<Bindings>
+}
+
 /**
  * A self-contained Hookfish request handler.
  *
@@ -167,6 +220,8 @@ export class Hookfish<
   readonly config: Config
   readonly providers: ProviderRegistry
   readonly db: DatabaseInput<Bindings>
+  readonly includeClient: boolean
+  readonly includeSwagger: boolean
   readonly returnTo: string | undefined
   private readonly app: {
     fetch(
@@ -178,6 +233,7 @@ export class Hookfish<
 
   private constructor(
     options: HookfishConfig<Bindings, Config>,
+    runtime: HookfishRuntime<Bindings>,
     config: Config,
     providers: ProviderRegistry,
   ) {
@@ -189,15 +245,28 @@ export class Hookfish<
     }
     this.providers = providers
     this.db = options.db
+    this.includeClient = options.includeClient ?? false
+    this.includeSwagger = options.includeSwagger ?? true
     this.returnTo = options.returnTo
     const api = createApiRoutes(
       providers,
       resolveConfig,
-      options.db,
+      this.db,
       options,
-      options.swaggerUi,
+      this.includeSwagger,
     )
-    this.app = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
+    const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
+    this.app = createHookfishBackend({
+      config: options,
+      hookfishFetch: (request, bindings, executionContext) =>
+        rawApp.fetch(request, bindings ?? {}, executionContext),
+      runtime: runtime.runtime,
+      browserOrigins: runtime.browserOrigins,
+      brokerApiKey:
+        runtime.brokerApiKey ??
+        ((bindings) => requireBrokerApiKey(bindings ?? resolveConfig())),
+      authorizeBrowserRequest: runtime.authorizeBrowserRequest,
+    })
   }
 
   static async init<
@@ -205,11 +274,12 @@ export class Hookfish<
     Config extends object = object,
   >(
     options: HookfishConfig<Bindings, Config>,
+    runtime: HookfishRuntime<Bindings> = {},
   ): Promise<Hookfish<Bindings, Config>> {
     validateHookfishOptions(options)
     const config = options.config.parse({})
     const providers = await resolveProviderSource(options.providers, config)
-    return new Hookfish(options, config, providers)
+    return new Hookfish(options, runtime, config, providers)
   }
 
   readonly fetch = (

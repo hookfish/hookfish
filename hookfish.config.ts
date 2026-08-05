@@ -8,6 +8,8 @@ import {
   NotionProvider,
 } from '@hookfish/providers'
 
+const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
+
 const configSchema = z.object({
   GITHUB_CLIENT_ID: z
     .string()
@@ -28,19 +30,21 @@ const db = pglite(
 // import { postgres } from '@hookfish/database/postgres'
 // const db = postgres(process.env.DATABASE_URL ?? '')
 
-// On Cloudflare Workers, use Hyperdrive instead:
+// On Cloudflare Workers, override the default with Hyperdrive instead:
 // import { postgres } from '@hookfish/database/postgres'
-// const db = postgres<{ HYPERDRIVE: { connectionString: string } }>(
+// const cloudflareDb = postgres<{ HYPERDRIVE: { connectionString: string } }>(
 //   (bindings) => bindings.HYPERDRIVE.connectionString,
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
+// const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
 
 export default defineHookfishConfig({
   config: configSchema,
   db,
-  // swaggerUi: false, // Disable interactive docs; OpenAPI remains available.
-  returnTo: 'http://localhost:5173',
-  trustedOrigins: ['http://localhost:5173'], // Allow per-flow return paths on these origins.
+  includeClient: true,
+  includeSwagger: true,
+  returnTo: frontendUrl,
+  trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
   // organizationRouting: true, // Use /api/:organization/oauth management routes.
   // onEvent: async (event) => auditLog.write(event),
   providers: (config) => ({

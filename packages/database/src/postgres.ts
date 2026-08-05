@@ -77,7 +77,7 @@ export function postgres<Bindings extends object = object>(
   return defineDatabase(getDatabase, async (bindings) => {
     const { client, database } = createDatabase(getConnectionString(bindings))
     try {
-      await migrate(database, { migrationsFolder })
+      await migrate(database, { migrationsFolder: migrationsFolder() })
     } finally {
       await client.end()
     }

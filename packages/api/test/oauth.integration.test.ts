@@ -31,8 +31,8 @@ describe('OAuth broker integration', () => {
     const config = { ...h.env, ...overrides }
     return Hookfish.init({
       config: z.object({}).transform(() => config),
-      providers: h.providers,
       db: h.db,
+      providers: h.providers,
     })
   }
 
@@ -281,18 +281,51 @@ describe('OAuth broker integration', () => {
     }
   })
 
-  it('can disable Swagger UI without disabling the OpenAPI document', async () => {
+  it('can limit OpenAPI to client-safe operations', async () => {
     const app = await Hookfish.init({
       config: z.object({}).transform(() => h.env),
-      providers: h.providers,
       db: h.db,
-      swaggerUi: false,
+      providers: h.providers,
+      includeSwagger: false,
     })
     const fetchApp = (path: string) =>
       app.fetch(new Request(`${API_ORIGIN}${path}`), h.env)
 
-    expect((await fetchApp('/api')).status).toBe(404)
-    expect((await fetchApp('/api/openapi.json')).status).toBe(200)
+    expect((await fetchApp('/api')).status).toBe(200)
+    const document: {
+      servers?: Array<{ url: string }>
+      paths: Record<string, Record<string, unknown>>
+    } = await (await fetchApp('/api/openapi.json')).json()
+    expect(document.servers).toEqual([{ url: '/api/client' }])
+    expect(document.paths['/oauth/providers']?.get).toBeDefined()
+    expect(document.paths['/oauth/{provider}/authorize']?.post).toBeDefined()
+    expect(document.paths['/oauth/tokens/{connectionId}']).toBeUndefined()
+    expect(document.paths['/admin/tokens']).toBeUndefined()
+  })
+
+  it('mounts the configured client facade on the Hookfish fetch handler', async () => {
+    const app = await Hookfish.init(
+      {
+        config: z.object({}).transform(() => h.env),
+        db: h.db,
+        providers: h.providers,
+        includeClient: true,
+      },
+      { runtime: 'integration-test' },
+    )
+    const fetchApp = (path: string, init?: RequestInit) =>
+      app.fetch(new Request(`${API_ORIGIN}${path}`, init), h.env)
+
+    const health = await (await fetchApp('/api/client/health')).json()
+    expect(health).toMatchObject({ ok: true, runtime: 'integration-test' })
+    expect(await fetchApp('/api/client/oauth/providers')).toHaveProperty(
+      'status',
+      200,
+    )
+    expect(await fetchApp('/api/client/oauth/tokens/secret')).toHaveProperty(
+      'status',
+      403,
+    )
   })
 
   it('supports path-compatible connection ids', async () => {
@@ -1678,12 +1711,12 @@ describe('OAuth broker integration', () => {
       })
     const hookfish = await Hookfish.init({
       config: configSchema,
+      db: h.db,
       providers: async (config) => {
         factoryCount += 1
         expect(config.BROKER_API_KEY).toBe('factory-key')
         return { dynamic: provider }
       },
-      db: h.db,
     })
     const request = () =>
       hookfish.fetch(
@@ -1704,8 +1737,8 @@ describe('OAuth broker integration', () => {
     await expect(
       Hookfish.init({
         config: z.object({ BROKER_API_KEY: z.string() }),
-        providers: h.providers,
         db: h.db,
+        providers: h.providers,
       }),
     ).rejects.toThrow()
   })
@@ -1715,11 +1748,11 @@ describe('OAuth broker integration', () => {
     let resolvedBindings: Bindings | undefined
     const hookfish = await Hookfish.init<Bindings>({
       config: z.object({}).transform(() => h.env),
-      providers: h.providers,
       db: defineDatabase((bindings: Bindings) => {
         resolvedBindings = bindings
         return bindings.DATABASE
       }),
+      providers: h.providers,
     })
     const bindings = { ...h.env, DATABASE: h.db }
     const { fetch: hookfishFetch } = hookfish

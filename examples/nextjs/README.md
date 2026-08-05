@@ -1,8 +1,8 @@
 # Next.js example
 
-This example mounts Hookfish at `/api` with a Next.js App Router optional
-catch-all route. It uses the Node.js runtime because the shared root
-`hookfish.config.ts` defaults to PGlite.
+This example mounts Hookfish and its browser facade below `/api` with a Next.js
+App Router optional catch-all route. It uses the PGlite database from the root
+config.
 
 Next loads local environment variables from this package, so copy the shared
 template before starting it:

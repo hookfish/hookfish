@@ -1,24 +1,24 @@
-# TanStack Start + Hono
+# Hookfish
 
-Node-first full-stack application with reusable API and provider packages:
+A portable OAuth broker with a static React dashboard and Fetch-compatible
+backend runtimes:
 
-- `apps/frontend` — TanStack Start SSR on Node, with Hookfish mounted at `/api`
-- `examples/hono-node` — standalone Hono server on Node
-- `examples/express` — Express server with Hookfish mounted at `/api`
-- `examples/nextjs` — Next.js App Router application with Hookfish route handlers
-- `examples/cloudflare-worker` — Cloudflare Worker using Hyperdrive/Postgres
-- `hookfish.config.ts` — shared database, provider, and Hookfish configuration
+- `apps/frontend` — Vite SPA with TanStack Router and React Query
+- `packages/backend` — browser-safe facade plus raw Hookfish API composition
 - `packages/api` — shared Hono API and OAuth broker
-- `packages/hooks` — typed Hono RPC clients, React Query options, and hooks
-- `packages/database` — request-aware Postgres and local PGlite bindings
+- `packages/hooks` — typed Hono RPC clients, query options, and React hooks
+- `packages/database` — local PGlite and request-aware Postgres bindings
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
+- `examples/hono-node` — default Node backend using PGlite
+- `examples/express` and `examples/nextjs` — alternative Node hosts
+- `examples/cloudflare-worker` — Worker backend using Hyperdrive/Postgres
 
-The frontend stays on Node. Cloudflare configuration, Wrangler, and generated
-runtime types are isolated to the Worker example.
+The frontend contains no server functions or database code. Every host exposes:
 
-## Local frontend development
+- `/api/*` — raw Hookfish API, documentation, and OAuth callbacks
+- `/api/client/*` — allowlisted browser facade with server-side broker credentials
 
-The Node frontend defaults to PGlite, so no database service is required.
+## Local development
 
 ```sh
 pnpm install
@@ -26,131 +26,127 @@ cp apps/frontend/.env.example apps/frontend/.env
 # Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
 
 pnpm dev
-# Equivalent: pnpm exec hookfish serve
-# Opens http://127.0.0.1:5173 automatically.
+# Equivalent: pnpm exec hookfish dev --backend hono-node
+# Frontend: http://127.0.0.1:5173
+# Backend:  http://127.0.0.1:8787
 
-pnpm dev --no-open # Keep the browser closed.
+pnpm dev --no-open
+pnpm dev --backend cloudflare-worker
 ```
 
-The root `hookfish.config.ts` uses PGlite, persists it at `pgdata`, and applies
-embedded migrations automatically. Set `PGLITE_DATA_DIR` to move it. Commented
-examples in that file show how to switch to Postgres or Hyperdrive. The
-frontend and examples all import the same typed configuration and initialize a
-Hookfish instance for their host process.
+`hookfish dev` delegates to `turbo dev` filtered to the frontend and the selected
+backend. Choose `hono-node` (the default), `express`, `nextjs`, or
+`cloudflare-worker` with `--backend`. The Vite server proxies `/api` to that
+backend. The default Hono backend stores PGlite data in
+`pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
+it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
+and the next allocated port for the backend. `hookfish serve` remains an alias.
 
-## Hono Node example
+## Pointing the SPA at another backend
 
-The standalone example reads the same `apps/frontend/.env` file:
+Run any backend, then either make the Vite proxy target it:
 
 ```sh
+HOOKFISH_BACKEND_URL=http://127.0.0.1:3000 \
+  pnpm --filter @hookfish/frontend dev
+```
+
+Or call it directly from the browser:
+
+```sh
+VITE_BACKEND_URL=http://127.0.0.1:3000 \
+  pnpm --filter @hookfish/frontend dev
+```
+
+Direct cross-origin calls require the frontend origin to match
+`HOOKFISH_FRONTEND_URL` in the backend environment. The default is
+`http://127.0.0.1:5173`. The proxy approach stays same-origin and is generally
+more convenient for local backend matrix testing.
+
+Available backends:
+
+```sh
+# PGlite on http://127.0.0.1:8787
 pnpm --filter @hookfish/example-hono-node dev
-```
 
-## Express example
-
-The Express example adapts Hookfish's Fetch handler to Node's request and
-response objects. It reads the same `apps/frontend/.env` file:
-
-```sh
+# PGlite on http://127.0.0.1:3000
 pnpm --filter @hookfish/example-express dev
-# → http://127.0.0.1:3000/api
-```
-
-## Next.js example
-
-The Next.js App Router example forwards every `/api/*` route to Hookfish. Next
-loads environment variables from the example's `.env.local` file:
-
-```sh
-cp apps/frontend/.env.example examples/nextjs/.env.local
 pnpm --filter @hookfish/example-nextjs dev
-# → http://127.0.0.1:3000/api
+
+# Hyperdrive/Postgres on http://127.0.0.1:8787
+pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-## Cloudflare Worker example
+The root `hookfish.config.ts` owns the default PGlite database, providers,
+browser policy, and documentation visibility. Node examples use it unchanged;
+the Worker replaces only `db` with its Hyperdrive/Postgres binding.
 
-Before running the Worker, replace the active PGlite database in
-`hookfish.config.ts` with its commented Hyperdrive configuration.
+## Cloudflare Worker backend
 
-Authenticate Wrangler and create a Hyperdrive configuration for Postgres:
+Create a Hyperdrive configuration and replace `<YOUR_HYPERDRIVE_ID>` in
+`examples/cloudflare-worker/wrangler.jsonc`:
 
 ```sh
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler login
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler hyperdrive create hookfish-db \
   --connection-string="postgres://user:pass@host:5432/dbname"
-```
-
-Replace `<YOUR_HYPERDRIVE_ID>` in
-`examples/cloudflare-worker/wrangler.jsonc`, then regenerate the checked-in
-Cloudflare runtime and binding declarations:
-
-```sh
 pnpm cf-typegen
 pnpm cf-typecheck
 ```
 
-Do not add a handwritten `Env` or binding interface. Change `wrangler.jsonc`
-and rerun `pnpm cf-typegen` whenever a binding changes.
-
-The Worker also reads `apps/frontend/.env` during local development. Workers
-need Postgres, so add the local Hyperdrive connection string to that file:
+For local Wrangler development, set `DATABASE_URL` in `apps/frontend/.env` to a
+direct Postgres connection. `hookfish dev` maps it to Wrangler's local
+Hyperdrive binding. Standalone Wrangler development can instead use its native
+variable name:
 
 ```sh
-# apps/frontend/.env
 CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@127.0.0.1:5432/dbname
-
-pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-Run migrations before deployment. The CLI loads `hookfish.config.ts` and uses
-its configured database. For Postgres deployment, switch to the commented
-Postgres configuration and set `DATABASE_URL`:
+Apply the Worker database migrations through a direct administrative URL:
 
 ```sh
-DATABASE_URL=postgres://user:pass@host:5432/dbname pnpm migrate
+HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@host:5432/dbname \
+  pnpm migrate --backend cloudflare-worker
 ```
 
-Store deployed credentials with Wrangler, repeating for each provider used by
-the Worker:
+Store production credentials as Worker secrets and deploy:
 
 ```sh
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
-```
-
-Deploy the Worker example:
-
-```sh
 pnpm --filter @hookfish/example-cloudflare-worker deploy
-# Equivalent root command; only this example defines a deploy task.
-pnpm deploy
 ```
 
-## Production Node frontend
+Wrangler generates `Env` from `wrangler.jsonc`; do not add a handwritten
+binding interface. Change the config and rerun `pnpm cf-typegen` whenever a
+binding changes.
 
-Build the Nitro Node server and start its generated entrypoint:
+## Production frontend
+
+The frontend build is static:
 
 ```sh
-pnpm build
-pnpm --filter @hookfish/frontend start
+VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend build
+# Publish apps/frontend/dist with SPA fallback to index.html.
 ```
 
-Provide secrets as process environment variables. The root Hookfish config uses
-PGlite by default. For production Postgres, switch to the commented Postgres
-configuration and run migrations before starting.
-
-More detail on the broker, custom providers, and endpoints is in
-[packages/api/OAUTH.md](packages/api/OAUTH.md).
+For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
+to the selected backend. Before exposing the dashboard in production, pass an
+`authorizeBrowserRequest` runtime option to `Hookfish.init` and enforce the
+application's session/authentication policy.
 
 ## Frontend hooks
 
-`@hookfish/hooks` wraps the API's exported Hono RPC type with reusable React
-Query options and hooks:
+`@hookfish/hooks` consumes the browser facade using the raw API's inferred
+Hono types:
 
 ```ts
 import { createHookfishHooks } from '@hookfish/hooks'
 
-const hookfish = createHookfishHooks({ baseUrl: '/api' })
+const hookfish = createHookfishHooks({
+  baseUrl: 'https://broker.example.com/api/client',
+})
 
 function RuntimeStats() {
   const stats = hookfish.useStats()
@@ -158,34 +154,27 @@ function RuntimeStats() {
 }
 ```
 
-The TanStack Start frontend sends protected hook operations through an
-allowlisted server function that injects `BROKER_API_KEY`; the secret never
-enters the browser bundle. Access-token retrieval remains server-only and is
-intentionally omitted from both the hooks and the server-function proxy.
+The facade only forwards stats, provider metadata, connection metadata,
+authorization starts, and disconnects. Token retrieval and administration
+remain server-only. More detail is in [packages/api/OAUTH.md](packages/api/OAUTH.md).
 
 ## Commands
 
 ```sh
-pnpm dev            # Node SSR + mounted Hookfish API; opens the browser
-pnpm dev --no-open  # Start without opening the browser
+pnpm dev
+pnpm dev --no-open
+pnpm dev --backend express
+pnpm dev --backend nextjs
+pnpm dev --backend cloudflare-worker
 pnpm build
 pnpm preview
 pnpm migrate
-pnpm cf-typegen     # regenerate Worker declarations with Wrangler
-pnpm cf-typecheck   # verify generated Worker declarations
+pnpm migrate --backend cloudflare-worker
+pnpm cf-typegen
+pnpm cf-typecheck
 pnpm typecheck
 pnpm lint
 pnpm fmt
 pnpm test
-pnpm deploy         # deploy the Cloudflare Worker example
-```
-
-The product CLI intentionally exposes only the mounted frontend, migrations,
-and help:
-
-```sh
-pnpm exec hookfish serve
-pnpm exec hookfish serve --no-open
-pnpm exec hookfish migrate
-pnpm exec hookfish help
+pnpm deploy
 ```

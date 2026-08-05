@@ -22,13 +22,15 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 ```
 
 ```sh
-pnpm exec hookfish serve
+pnpm exec hookfish dev --backend hono-node
 ```
 
-The CLI runs the TanStack Start Node frontend, with Hookfish mounted directly at
-`/api` and PGlite persisting to `pgdata`—no database or separate API process to
-provision. The frontend, Node example, and local Worker all read
-`apps/frontend/.env`; Wrangler receives it through its `--env-file` option.
+The CLI runs `turbo dev` with exactly the static Vite frontend and selected
+backend. Available backends are `hono-node`, `express`, `nextjs`, and
+`cloudflare-worker`.
+The backend exposes raw Hookfish routes at `/api`, the browser facade at
+`/api/client`, and persists PGlite to `pgdata`. Node examples and local Wrangler
+read `apps/frontend/.env`; the frontend only receives `VITE_` variables.
 
 Then register the redirect URI in each provider's developer console. Ask the
 running broker for the exact string rather than guessing it—the host depends on
@@ -36,29 +38,32 @@ how you reach the API, and providers match `redirect_uri` byte for byte:
 
 ```sh
 curl -H "Authorization: Bearer $BROKER_API_KEY" \
-  http://127.0.0.1:5173/api/oauth/providers \
+  http://127.0.0.1:8787/api/oauth/providers \
   | jq -r '.providers[] | "\(.id)\t\(.callback_url)"'
 ```
 
 ## Runtime entrypoints
 
-Each host imports the `HookfishConfig` object from the root
-`hookfish.config.ts` and initializes its own request handler:
+Each host initializes Hookfish and mounts its Fetch-compatible handler directly:
 
 | command | process | default database |
 |---|---|---|
-| `pnpm exec hookfish serve` | TanStack Start Node SSR + Hookfish | `pgdata` |
-| `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono API | `pgdata` |
-| `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker API | Switch config to Hyperdrive first |
+| `pnpm exec hookfish dev --backend hono-node` | Vite SPA + Hono Node backend | `pgdata` |
+| `pnpm exec hookfish dev --backend express` | Vite SPA + Express backend | `pgdata` |
+| `pnpm exec hookfish dev --backend nextjs` | Vite SPA + Next.js backend | `pgdata` |
+| `pnpm exec hookfish dev --backend cloudflare-worker` | Vite SPA + Cloudflare Worker | Hyperdrive/Postgres |
+| `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono backend | `pgdata` |
+| `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker backend | Hyperdrive/Postgres |
 
-Set `PGLITE_DATA_DIR` to move the embedded database. The root config contains
-commented alternatives for Postgres and Cloudflare Hyperdrive.
+Set `PGLITE_DATA_DIR` to move the embedded Node database. Providers, browser
+policy, and documentation visibility live in the root `hookfish.config.ts`.
+Node examples use its default database unchanged; the Worker replaces `db`
+with its Hyperdrive/Postgres binding.
 
 ### Configuring Hookfish
 
-Database and provider configuration lives in the repository root so every host
-uses the same setup. A database may be a ready Drizzle database, a promise, or
-a request-aware database binding. The stock config currently uses PGlite:
+The root config owns the default database, providers, and browser policy. A
+database may be a ready Drizzle database, a promise, or a request-aware binding:
 
 ```ts
 // hookfish.config.ts
@@ -66,7 +71,6 @@ import { defineHookfishConfig, z } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import { NotionProvider } from '@hookfish/provider-notion'
 
-const db = pglite('./pgdata')
 const configSchema = z.object({
   NOTION_CLIENT_ID: z
     .string()
@@ -80,9 +84,12 @@ const configSchema = z.object({
 
 export default defineHookfishConfig({
   config: configSchema,
-  db,
-  // Disable the interactive docs while retaining /api/openapi.json:
-  // swaggerUi: false,
+  db: pglite(process.env.PGLITE_DATA_DIR ?? './pgdata'),
+  // Mount the browser-safe facade at /api/client:
+  includeClient: true,
+  // Include server-only routes in /api/openapi.json. When false, the same
+  // Swagger UI and document expose only client-safe routes:
+  includeSwagger: true,
   // Override the default development completion page before deploying:
   // returnTo: 'https://app.example.com/settings/integrations',
   // Permit per-flow return_to paths on these application origins:
@@ -103,13 +110,13 @@ export default defineHookfishConfig({
 
 Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`,
 `OAUTH_REDIRECT_BASE_URL`, and `NODE_ENV` settings lazily when an OAuth request
-arrives. They do not need to be repeated in `configSchema`. Importing the pure
-config object for commands such as `hookfish migrate` does not parse the schema
-or require OAuth secrets; an operation that needs a missing broker secret
-returns `500 missing_configuration`.
+arrives. They do not need to be repeated in `configSchema`. Importing the
+config module from a runtime host does not require OAuth secrets; an operation
+that needs a missing broker secret returns `500 missing_configuration`.
 
-`await Hookfish.init(config)` parses the application `configSchema` once with
-`{}` and resolves the provider source once before returning a ready handler.
+`await Hookfish.init(config)` parses the application `configSchema` once
+with `{}` and resolves the provider source once before returning a ready
+handler.
 The schema owns provider-specific environment lookup, defaults, coercion, and
 validation; its inferred output type is passed to a provider factory. Provider
 factories may return a map immediately or asynchronously. A static provider map
@@ -120,12 +127,8 @@ Production deployments must set `OAUTH_REDIRECT_BASE_URL`; development and test
 instances may derive it from the incoming request origin. This keeps registered
 callback URLs independent of forwarded or untrusted Host headers.
 
-The checked-in config also includes commented `postgres()` examples for a
-connection URL and for resolving a Cloudflare Hyperdrive binding.
-
-Fetch entrypoints import the config and initialize Hookfish once. Node hosts do
-not pass `process.env` on every request. If a host loads an env file itself, it
-does so before dynamically importing the config:
+Fetch entrypoints initialize Hookfish and the backend once. If a Node host loads
+an env file itself, it does so before dynamically importing the config:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
@@ -133,16 +136,21 @@ import config from '../../../hookfish.config'
 
 const hookfish = await Hookfish.init(config)
 
-export default { fetch: hookfish.fetch }
+export default { fetch: (request) => hookfish.fetch(request, process.env) }
 ```
 
-Hosts with runtime service bindings still pass those separately:
+Hosts can replace the configured database without changing anything else:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
+import { postgres } from '@hookfish/database/postgres'
 import config from '../../../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const db = postgres((env) => env.HYPERDRIVE.connectionString)
+const hookfish = await Hookfish.init({
+  ...config,
+  db,
+})
 
 export default {
   fetch: (request, env, ctx) => hookfish.fetch(request, env, ctx),
@@ -153,20 +161,18 @@ export default {
 `postgres()` accepts either a URL or a resolver called with the bindings passed
 to `Hookfish.fetch(request, bindings)`.
 
-The commented Hyperdrive config resolves `env.HYPERDRIVE.connectionString` from
-the Wrangler-generated bindings. It disables client caching so each request
+The Hyperdrive config resolves `env.HYPERDRIVE.connectionString` from the
+Wrangler-generated bindings. It disables client caching so each request
 gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
 For another runtime, implement the same small binding contract with
 `defineDatabase((bindings) => database)`.
 
-`pnpm migrate` loads `hookfish.config.ts` and runs migrations directly through
-its `db` binding without initializing Hookfish. It fails explicitly when the
-file or database configuration is absent.
+`pnpm migrate` runs migrations against the Node/PGlite database by default.
+Pass `--backend cloudflare-worker` to use a direct Postgres administrative URL.
 
 ```sh
-# After switching hookfish.config.ts to the Postgres example
-DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
-  pnpm --filter @hookfish/example-hono-node dev
+HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
+  pnpm migrate --backend cloudflare-worker
 ```
 
 ## Endpoints
@@ -207,9 +213,10 @@ and bidirectional formatting characters, and encoded values that decode into
 path structure. This keeps the first segment an unambiguous organization
 boundary across clients, proxies, and URLs.
 
-Swagger UI lives at `/api` by default. Set `swaggerUi: false` in
-`hookfish.config.ts` to disable the interactive page; `/api/openapi.json`
-remains available for tooling.
+Swagger UI always lives at `/api`, with its document at `/api/openapi.json`.
+With `includeSwagger: true`, the document includes the complete server API.
+With `includeSwagger: false`, it includes only client-safe routes and advertises
+`/api/client` as its server.
 
 ## Usage
 
@@ -393,7 +400,6 @@ pnpm add --save-dev @hookfish/cli
 
 ```ts
 import { defineHookfishConfig, z } from '@hookfish/api'
-import { postgres } from '@hookfish/database/postgres'
 import { GitHubProvider } from '@hookfish/provider-github'
 import { NotionProvider } from '@hookfish/provider-notion'
 import { SlackProvider } from '@acme/provider-slack'
@@ -419,7 +425,8 @@ const configSchema = z.object({
 
 export default defineHookfishConfig({
   config: configSchema,
-  db: postgres(process.env.DATABASE_URL!),
+  includeClient: true,
+  includeSwagger: true,
   providers: (config) => ({
     github: new GitHubProvider({
       clientId: config.GITHUB_CLIENT_ID,
@@ -434,8 +441,8 @@ export default defineHookfishConfig({
 })
 ```
 
-After `const hookfish = await Hookfish.init(config)`, the instance's `fetch`
-property is already bound, so hosts can pass it directly or call
+After `const hookfish = await Hookfish.init(config)`, the instance's
+`fetch` property is already bound, so hosts can pass it directly or call
 `hookfish.fetch(request, bindings)`.
 
 The built-ins also read their conventional `<PROVIDER>_CLIENT_ID` and

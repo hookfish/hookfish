@@ -16,6 +16,10 @@
       "types": "./src/db/index.ts",
       "default": "./src/db/index.ts"
     },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
     "./migrations": {
       "types": "./src/migrations.ts",
       "default": "./src/migrations.ts"
