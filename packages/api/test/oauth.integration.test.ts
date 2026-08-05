@@ -5,7 +5,11 @@ import {
 } from '@hookfish/provider'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { oauthConnections, oauthStates } from '../src/db/schema'
+import {
+  brokerAccessTokens,
+  oauthConnections,
+  oauthStates,
+} from '../src/db/schema'
 import { defineDatabase, Hookfish } from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
 import { purgeExpiredStates } from '../src/oauth/broker'
@@ -305,6 +309,7 @@ describe('OAuth broker integration', () => {
     ).json()
     expect(openApi.paths['/oauth/tokens/{connection_id}']).toBeDefined()
     expect(openApi.paths['/admin/tokens']).toBeDefined()
+    expect(openApi.paths['/admin/tokens/{name}']).toBeDefined()
     expect(openApi.paths['/oauth/access-tokens']).toBeUndefined()
     expect(
       openApi.paths['/oauth/connections/{connection_id}/token'],
@@ -601,6 +606,66 @@ describe('OAuth broker integration', () => {
       error: { code: 'token_name_in_use' },
     })
 
+    const scopedRevoke = await h.fetch('/api/admin/tokens/production-api', {
+      method: 'DELETE',
+      headers: scopedHeaders,
+    })
+    expect(scopedRevoke.status).toBe(403)
+    expect(await scopedRevoke.json()).toMatchObject({
+      error: { code: 'root_access_required' },
+    })
+
+    await h.db
+      .update(brokerAccessTokens)
+      .set({ scopes: ['shared/**'] })
+      .where(eq(brokerAccessTokens.name, 'team-worker'))
+    const narrowedList = await h.fetch('/api/oauth/connections', {
+      headers: scopedHeaders,
+    })
+    expect(await narrowedList.json()).toMatchObject({
+      connections: [{ connection_id: 'shared/five' }],
+    })
+    expect(
+      await h.fetch('/api/oauth/connections/team/one', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 403)
+
+    await h.db
+      .update(brokerAccessTokens)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(brokerAccessTokens.name, 'team-worker.nested-worker'))
+    const shortenedExpiry = await h.fetch(
+      '/api/oauth/connections/team/nested/two',
+      { headers: { Authorization: `Bearer ${delegated.access_token}` } },
+    )
+    expect(shortenedExpiry.status).toBe(401)
+    expect(await shortenedExpiry.json()).toMatchObject({
+      error: { code: 'invalid_access_token' },
+    })
+
+    const revoke = await h.fetch('/api/admin/tokens/team-worker', {
+      method: 'DELETE',
+    })
+    expect(revoke.status).toBe(200)
+    expect(await revoke.json()).toEqual({
+      name: 'team-worker',
+      revoked: true,
+    })
+    expect(
+      await h.fetch('/api/oauth/connections/shared/five', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 401)
+
+    const revokeAgain = await h.fetch('/api/admin/tokens/team-worker', {
+      method: 'DELETE',
+    })
+    expect(await revokeAgain.json()).toEqual({
+      name: 'team-worker',
+      revoked: false,
+    })
+
     const expired = await mintAccessToken(
       'test',
       { name: 'expired-worker', scopes: ['team'], expiresIn: 60 },
@@ -611,6 +676,19 @@ describe('OAuth broker integration', () => {
     })
     expect(expiredResponse.status).toBe(401)
     expect(await expiredResponse.json()).toMatchObject({
+      error: { code: 'invalid_access_token' },
+    })
+
+    const unpersisted = await mintAccessToken('test', {
+      name: 'unpersisted-worker',
+      scopes: ['team'],
+      expiresIn: 600,
+    })
+    const unpersistedResponse = await h.fetch('/api/oauth/connections', {
+      headers: { Authorization: `Bearer ${unpersisted.token}` },
+    })
+    expect(unpersistedResponse.status).toBe(401)
+    expect(await unpersistedResponse.json()).toMatchObject({
       error: { code: 'invalid_access_token' },
     })
 

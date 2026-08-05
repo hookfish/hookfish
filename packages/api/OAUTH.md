@@ -123,6 +123,7 @@ hierarchical connection folders. Outside production,
 | `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
 | `POST` | `/api/admin/tokens` | Mint a named, expiring broker credential for one or more connection scopes |
 | `GET` | `/api/admin/tokens` | List active broker credentials by name only (root access required) |
+| `DELETE` | `/api/admin/tokens/{name}` | Immediately revoke a named broker credential (root access required) |
 | `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id` or `connection_id_prefix`) |
 | `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` and `?connection_id_prefix=` optional) |
@@ -277,6 +278,19 @@ The listing deliberately returns names only—never bearer values, scopes, or
 expiration metadata. Names are unique among active tokens and may be reused
 after the previous token expires.
 
+Revoke a token immediately with the root credential:
+
+```sh
+curl -X DELETE -H "Authorization: Bearer $BROKER_API_KEY" \
+  http://127.0.0.1:5173/api/admin/tokens/team-worker
+```
+
+The broker stores only a SHA-256 hash of each token's random identifier. Every
+scoped request must match an unexpired database record after its HMAC signature
+is verified. The record's scopes and expiration are authoritative, so narrowing
+either value takes effect on the next request; deleting the record invalidates
+the bearer credential without rotating `BROKER_API_KEY`.
+
 ## Adding a provider
 
 Provider slugs belong to the application, not to provider classes. Add the
@@ -404,10 +418,10 @@ pnpm --filter @hookfish/provider-github test
 - The API key is compared without early exit to keep it off the timing side
   channel.
 - Scoped broker credentials are named and HMAC-signed with `BROKER_API_KEY`.
-  Their bearer values are stateless and never stored; only administrative
-  metadata is retained for name listing. Rotating `BROKER_API_KEY` invalidates
-  all of them. Individual revocation is not supported, so use short lifetimes
-  for untrusted clients.
+  Bearer values and raw token identifiers are never stored. A SHA-256 identifier
+  hash links each signed token to an authoritative database record for immediate
+  scope narrowing, expiry changes, and individual revocation. Rotating
+  `BROKER_API_KEY` still invalidates every scoped token at once.
 - Connection-listing responses never include token columns.
 - Token responses send `Cache-Control: no-store` and `Pragma: no-cache`.
 - Disconnect revokes access upstream for GitHub, Linear, and Notion before

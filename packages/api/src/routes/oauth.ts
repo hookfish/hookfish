@@ -429,12 +429,12 @@ export function createOAuthRoutes<Bindings extends object>(
   const authenticate = requireApiKey<Bindings>()
   const connectDatabase = withDatabase(database)
 
-  oauthRoutes.use('/providers', authenticate)
-  oauthRoutes.use('/:provider/authorize', authenticate, connectDatabase)
+  oauthRoutes.use('/providers', connectDatabase, authenticate)
+  oauthRoutes.use('/:provider/authorize', connectDatabase, authenticate)
   oauthRoutes.use('/:provider/callback', connectDatabase)
-  oauthRoutes.use('/connections', authenticate, connectDatabase)
-  oauthRoutes.use('/connections/*', authenticate, connectDatabase)
-  oauthRoutes.use('/tokens/*', authenticate, connectDatabase)
+  oauthRoutes.use('/connections', connectDatabase, authenticate)
+  oauthRoutes.use('/connections/*', connectDatabase, authenticate)
+  oauthRoutes.use('/tokens/*', connectDatabase, authenticate)
 
   // The runtime variants are hidden because regex parameters are a Hono
   // extension, not valid OpenAPI path syntax.

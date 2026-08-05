@@ -14,6 +14,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "token_id_hash": {
+          "name": "token_id_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "scopes": {
           "name": "scopes",
           "type": "text[]",
@@ -35,6 +41,21 @@
         }
       },
       "indexes": {
+        "broker_access_tokens_token_id_hash_idx": {
+          "name": "broker_access_tokens_token_id_hash_idx",
+          "columns": [
+            {
+              "expression": "token_id_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "broker_access_tokens_expires_idx": {
           "name": "broker_access_tokens_expires_idx",
           "columns": [

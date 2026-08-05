@@ -86,13 +86,17 @@ export const brokerAccessTokens = pgTable(
   'broker_access_tokens',
   {
     name: text('name').primaryKey(),
+    tokenIdHash: text('token_id_hash').notNull(),
     scopes: text('scopes').array().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
-  (table) => [index('broker_access_tokens_expires_idx').on(table.expiresAt)],
+  (table) => [
+    uniqueIndex('broker_access_tokens_token_id_hash_idx').on(table.tokenIdHash),
+    index('broker_access_tokens_expires_idx').on(table.expiresAt),
+  ],
 )
 
 export type OAuthConnection = typeof oauthConnections.$inferSelect

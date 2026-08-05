@@ -1,3 +1,6 @@
+import { and, eq, gt } from 'drizzle-orm'
+import type { Database } from '../db/schema'
+import { brokerAccessTokens } from '../db/schema'
 import { BrokerError } from './errors'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
@@ -63,6 +66,14 @@ async function importSigningKey(rootApiKey: string): Promise<CryptoKey> {
     false,
     ['sign', 'verify'],
   )
+}
+
+async function hashTokenId(tokenId: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(tokenId),
+  )
+  return toBase64Url(new Uint8Array(digest))
 }
 
 function invalidToken(): BrokerError {
@@ -261,6 +272,7 @@ export async function mintAccessToken(
   now = Date.now(),
 ): Promise<{
   token: string
+  tokenIdHash: string
   name: string
   scopes: string[]
   expiresAt: number
@@ -281,26 +293,31 @@ export async function mintAccessToken(
 
   const issuedAt = Math.floor(now / 1000)
   const expiresAt = issuedAt + input.expiresIn
+  const tokenId = randomId()
   const payload: AccessTokenPayload = {
     v: TOKEN_VERSION,
     name,
     scopes,
     iat: issuedAt,
     exp: expiresAt,
-    jti: randomId(),
+    jti: tokenId,
   }
   const encodedPayload = toBase64Url(
     new TextEncoder().encode(JSON.stringify(payload)),
   )
   const signingInput = `${TOKEN_PREFIX}.${encodedPayload}`
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    await importSigningKey(rootApiKey),
-    new TextEncoder().encode(signingInput),
-  )
+  const [signature, tokenIdHash] = await Promise.all([
+    crypto.subtle.sign(
+      'HMAC',
+      await importSigningKey(rootApiKey),
+      new TextEncoder().encode(signingInput),
+    ),
+    hashTokenId(tokenId),
+  ])
 
   return {
     token: `${signingInput}.${toBase64Url(new Uint8Array(signature))}`,
+    tokenIdHash,
     name,
     scopes,
     expiresAt,
@@ -311,7 +328,7 @@ export async function verifyAccessToken(
   rootApiKey: string,
   token: string,
   now = Date.now(),
-): Promise<ScopedAccessGrant> {
+): Promise<ScopedAccessGrant & { tokenIdHash: string }> {
   try {
     const [prefix, encodedPayload, encodedSignature, extra] = token.split('.')
     if (
@@ -365,11 +382,57 @@ export async function verifyAccessToken(
       name: normalizeTokenName(name),
       scopes: normalizeConnectionScopes(scopes),
       expiresAt,
+      tokenIdHash: await hashTokenId(tokenId),
     }
   } catch (error) {
     if (error instanceof BrokerError && error.code === 'invalid_access_token') {
       throw error
     }
+    throw invalidToken()
+  }
+}
+
+/**
+ * A valid signature proves the token was minted by this broker. The persisted
+ * record remains authoritative so revocation, scope narrowing, and shortened
+ * expiration take effect on the next request.
+ */
+export async function authenticateAccessToken(
+  db: Database,
+  rootApiKey: string,
+  token: string,
+  now = Date.now(),
+): Promise<ScopedAccessGrant> {
+  const verified = await verifyAccessToken(rootApiKey, token, now)
+  const [stored] = await db
+    .select({
+      name: brokerAccessTokens.name,
+      scopes: brokerAccessTokens.scopes,
+      expiresAt: brokerAccessTokens.expiresAt,
+    })
+    .from(brokerAccessTokens)
+    .where(
+      and(
+        eq(brokerAccessTokens.name, verified.name),
+        eq(brokerAccessTokens.tokenIdHash, verified.tokenIdHash),
+        gt(brokerAccessTokens.expiresAt, new Date(now)),
+      ),
+    )
+    .limit(1)
+
+  if (!stored) throw invalidToken()
+
+  try {
+    return {
+      kind: 'scoped',
+      name: stored.name,
+      scopes: normalizeConnectionScopes(stored.scopes),
+      expiresAt: Math.min(
+        verified.expiresAt,
+        Math.floor(stored.expiresAt.getTime() / 1000),
+      ),
+    }
+  } catch {
     throw invalidToken()
   }
 }

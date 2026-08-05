@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import { asc, lte } from 'drizzle-orm'
+import { asc, eq, lte } from 'drizzle-orm'
 import type { DatabaseInput } from '../db/binding'
 import { brokerAccessTokens } from '../db/schema'
 import {
@@ -129,6 +129,39 @@ const listTokensRoute = createRoute({
   },
 })
 
+const revokeTokenRoute = createRoute({
+  method: 'delete',
+  path: '/tokens/{name}',
+  summary: 'Revoke a named broker access token',
+  description:
+    'Requires root access. Deletes the persisted token record, immediately invalidating its bearer credential.',
+  security: brokerAuth,
+  request: {
+    params: z.object({
+      name: z
+        .string()
+        .min(1)
+        .max(128)
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+        .openapi({
+          param: { name: 'name', in: 'path' },
+          example: 'team-worker',
+        }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Revocation result',
+      content: {
+        'application/json': {
+          schema: z.object({ name: z.string(), revoked: z.boolean() }),
+        },
+      },
+    },
+    ...errors,
+  },
+})
+
 async function purgeExpiredTokenNames(
   db: BrokerContext['Variables']['db'],
   now: Date,
@@ -145,7 +178,8 @@ export function createAdminRoutes<Bindings extends object>(
   const authenticate = requireApiKey<Bindings>()
   const connectDatabase = withDatabase(database)
 
-  adminRoutes.use('/tokens', authenticate, connectDatabase)
+  adminRoutes.use('/tokens', connectDatabase, authenticate)
+  adminRoutes.use('/tokens/*', connectDatabase, authenticate)
 
   const mintApi = adminRoutes.openapi(mintTokenRoute, async (c) => {
     const body = c.req.valid('json')
@@ -172,6 +206,7 @@ export function createAdminRoutes<Bindings extends object>(
       .insert(brokerAccessTokens)
       .values({
         name: minted.name,
+        tokenIdHash: minted.tokenIdHash,
         scopes: minted.scopes,
         expiresAt: new Date(minted.expiresAt * 1000),
       })
@@ -213,7 +248,20 @@ export function createAdminRoutes<Bindings extends object>(
     return c.json({ tokens: tokens.map(({ name }) => name) }, 200)
   })
 
-  routes.onError((error, c) => {
+  const revokeApi = routes.openapi(revokeTokenRoute, async (c) => {
+    assertRootAccess(c.get('accessGrant'))
+    const name = normalizeTokenName(c.req.valid('param').name)
+    const deleted = await c
+      .get('db')
+      .delete(brokerAccessTokens)
+      .where(eq(brokerAccessTokens.name, name))
+      .returning()
+
+    c.header('Cache-Control', 'no-store')
+    return c.json({ name, revoked: deleted.length > 0 }, 200)
+  })
+
+  revokeApi.onError((error, c) => {
     if (isBrokerError(error)) {
       return c.json(
         { error: { code: error.code, message: error.message } },
@@ -230,5 +278,5 @@ export function createAdminRoutes<Bindings extends object>(
     )
   })
 
-  return routes
+  return revokeApi
 }

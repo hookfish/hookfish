@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory'
 import { type DatabaseInput, resolveDatabase } from '../db/binding'
 import type { Database } from '../db/schema'
-import { type AccessGrant, verifyAccessToken } from './access-token'
+import { type AccessGrant, authenticateAccessToken } from './access-token'
 import { requireBrokerApiKey } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'
@@ -47,7 +47,7 @@ export function requireApiKey<Bindings extends object>() {
 
     const accessGrant: AccessGrant = safeEqual(presented, expected)
       ? { kind: 'root', scopes: ['**'] }
-      : await verifyAccessToken(expected, presented)
+      : await authenticateAccessToken(c.get('db'), expected, presented)
 
     c.set('accessGrant', accessGrant)
 
