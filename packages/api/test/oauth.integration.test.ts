@@ -476,7 +476,12 @@ describe('OAuth broker integration', () => {
     )
     expect(missingConnectionId.status).toBe(400)
     expect(await missingConnectionId.json()).toMatchObject({
-      error: { code: 'connection_id_required' },
+      error: {
+        code: 'connection_id_required',
+        message: expect.stringContaining(
+          'connection_id or connection_id_prefix',
+        ),
+      },
     })
 
     const scopedPrefixAuthorize = await h.fetch(
@@ -506,7 +511,7 @@ describe('OAuth broker integration', () => {
       method: 'POST',
       headers: { ...scopedHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: 'nested-worker',
+        name: 'team-worker.nested-worker',
         scopes: ['team/nested'],
         expires_in: 600,
       }),
@@ -515,7 +520,7 @@ describe('OAuth broker integration', () => {
     const delegated: { access_token: string; name: string; scopes: string[] } =
       await delegatedResponse.json()
     expect(delegated).toMatchObject({
-      name: 'nested-worker',
+      name: 'team-worker.nested-worker',
       scopes: ['team/nested/**'],
     })
     expect(
@@ -535,11 +540,25 @@ describe('OAuth broker integration', () => {
     })
     expect(broaden.status).toBe(403)
 
+    const squatGlobalName = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { ...scopedHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'production-api',
+        scopes: ['team/nested'],
+        expires_in: 600,
+      }),
+    })
+    expect(squatGlobalName.status).toBe(403)
+    expect(await squatGlobalName.json()).toMatchObject({
+      error: { code: 'insufficient_scope' },
+    })
+
     const rootMintResponse = await h.fetch('/api/admin/tokens', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: 'root-worker',
+        name: 'production-api',
         scopes: ['**'],
         expires_in: 600,
       }),
@@ -569,7 +588,7 @@ describe('OAuth broker integration', () => {
     const tokenListResponse = await h.fetch('/api/admin/tokens')
     expect(tokenListResponse.status).toBe(200)
     expect(await tokenListResponse.json()).toEqual({
-      tokens: ['nested-worker', 'root-worker', 'team-worker'],
+      tokens: ['production-api', 'team-worker', 'team-worker.nested-worker'],
     })
 
     const duplicateName = await h.fetch('/api/admin/tokens', {

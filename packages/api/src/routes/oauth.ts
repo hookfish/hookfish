@@ -1,7 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import type { ProviderRegistry } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
-import type { OAuthConnection } from '../db/schema'
+import {
+  assertConnectionAccess,
+  assertConnectionPrefixAccess,
+} from '../oauth/access-token'
 import {
   completeAuthorization,
   deleteConnection,
@@ -10,11 +13,6 @@ import {
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
-import {
-  assertConnectionAccess,
-  assertConnectionPrefixAccess,
-  scopesAllowConnection,
-} from '../oauth/access-token'
 import { resolveRedirectUri } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
@@ -153,7 +151,9 @@ const connectionSchema = z
   .openapi('OAuthConnection')
 
 /** Never serialises the encrypted token columns. */
-function serializeConnection(connection: OAuthConnection) {
+function serializeConnection(
+  connection: Awaited<ReturnType<typeof listConnections>>[number],
+) {
   return {
     connection_id: connection.connectionId,
     provider: connection.provider,
@@ -480,7 +480,7 @@ export function createOAuthRoutes<Bindings extends object>(
       throw new BrokerError(
         400,
         'connection_id_required',
-        'A scoped broker access token must provide a connection_id within its scope.',
+        'A scoped broker access token must provide a connection_id or connection_id_prefix within its scope.',
       )
     }
 
@@ -568,11 +568,11 @@ export function createOAuthRoutes<Bindings extends object>(
     const { provider, connection_id_prefix: connectionIdPrefix } =
       c.req.valid('query')
     const grant = c.get('accessGrant')
-    const connections = (
-      await listConnections(c.get('db'), { provider, connectionIdPrefix })
-    ).filter((connection) =>
-      scopesAllowConnection(grant.scopes, connection.connectionId),
-    )
+    const connections = await listConnections(c.get('db'), {
+      provider,
+      connectionIdPrefix,
+      connectionScopes: grant.scopes,
+    })
 
     return c.json({ connections: connections.map(serializeConnection) }, 200)
   })

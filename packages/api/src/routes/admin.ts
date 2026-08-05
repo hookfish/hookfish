@@ -52,7 +52,7 @@ const mintTokenRoute = createRoute({
   path: '/tokens',
   summary: 'Mint a named broker access token',
   description:
-    'Creates an expiring named credential for one or more connection folders. Folder paths are canonicalized to `folder/**`. Tokens may delegate only to folders they already hold and may not create a token that outlives them.',
+    'Creates an expiring named credential for one or more connection folders. Folder paths are canonicalized to `folder/**`. Tokens may delegate only to folders they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.',
   security: brokerAuth,
   request: {
     body: {
@@ -156,6 +156,7 @@ export function createAdminRoutes<Bindings extends object>(
     const expiresAtSeconds = Math.floor(nowMs / 1000) + expiresIn
     const scopes = assertCanDelegate(
       c.get('accessGrant'),
+      name,
       body.scopes,
       expiresAtSeconds,
     )

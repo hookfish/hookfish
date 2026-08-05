@@ -212,10 +212,19 @@ export function assertConnectionPrefixAccess(
 
 export function assertCanDelegate(
   grant: AccessGrant,
+  name: string,
   scopes: string[],
   expiresAt: number,
 ): string[] {
   const normalizedScopes = normalizeConnectionScopes(scopes)
+
+  if (grant.kind === 'scoped' && !name.startsWith(`${grant.name}.`)) {
+    throw new BrokerError(
+      403,
+      'insufficient_scope',
+      `A broker access token named "${grant.name}" may mint only names in its "${grant.name}." namespace.`,
+    )
+  }
 
   if (!scopesContainScopes(grant.scopes, normalizedScopes)) {
     throw new BrokerError(

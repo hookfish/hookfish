@@ -461,8 +461,12 @@ export async function getAccessToken(
 
 export async function listConnections(
   db: Database,
-  options: { provider?: string; connectionIdPrefix?: string } = {},
-): Promise<OAuthConnection[]> {
+  options: {
+    provider?: string
+    connectionIdPrefix?: string
+    connectionScopes?: string[]
+  } = {},
+) {
   const providerFilter = options.provider
     ? eq(oauthConnections.provider, options.provider)
     : undefined
@@ -474,11 +478,36 @@ export async function listConnections(
           sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${options.connectionIdPrefix}/`})`,
         )
     : undefined
+  const scopeFilter = options.connectionScopes?.includes('**')
+    ? undefined
+    : options.connectionScopes?.length
+      ? or(
+          ...options.connectionScopes.map((scope) => {
+            const root = scope.endsWith('/**') ? scope.slice(0, -3) : scope
+            return or(
+              eq(oauthConnections.connectionId, root),
+              sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${root}/`})`,
+            )
+          }),
+        )
+      : options.connectionScopes
+        ? sql<boolean>`false`
+        : undefined
 
   return db
-    .select()
+    .select({
+      connectionId: oauthConnections.connectionId,
+      provider: oauthConnections.provider,
+      scopes: oauthConnections.scopes,
+      expiresAt: oauthConnections.expiresAt,
+      externalAccountId: oauthConnections.externalAccountId,
+      externalAccountLabel: oauthConnections.externalAccountLabel,
+      metadata: oauthConnections.metadata,
+      createdAt: oauthConnections.createdAt,
+      updatedAt: oauthConnections.updatedAt,
+    })
     .from(oauthConnections)
-    .where(and(providerFilter, prefixFilter))
+    .where(and(providerFilter, prefixFilter, scopeFilter))
 }
 
 export type DeleteConnectionResult = {

@@ -252,13 +252,15 @@ scopes. Listing connections returns only connections matched by at least one
 of them. Getting a connection, retrieving its provider token, deleting it, or
 starting an authorization outside every scope returns `403
 insufficient_scope`. A non-root scoped credential must provide
-`connection_id` when starting authorization because a root-level generated id
-would fall outside its namespace.
+`connection_id` or `connection_id_prefix` when starting authorization because
+a root-level generated id would fall outside its namespace.
 
 Scoped credentials can mint credentials at the same or a narrower folder (for
 example, a token for `team` can mint one for `team/eu`) but cannot broaden
-their scope or create a credential that outlives them. Lifetimes default to one
-hour and are capped at 30 days.
+their scope or create a credential that outlives them. Delegated token names
+must be nested below the issuer's name: `team-worker` can mint
+`team-worker.eu`, but not `production-api`. Lifetimes default to one hour and
+are capped at 30 days.
 
 Root credentials can list active token names:
 
