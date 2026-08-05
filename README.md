@@ -77,10 +77,9 @@ pnpm --filter @hookfish/example-nextjs dev
 pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-The root `hookfish.config.ts` owns providers, browser policy, and documentation
-visibility for every backend. Each example only selects its runtime database
-and host adapter, so switching between Node/PGlite and Workers/Hyperdrive does
-not require editing application configuration.
+The root `hookfish.config.ts` owns the default PGlite database, providers,
+browser policy, and documentation visibility. Node examples use it unchanged;
+the Worker replaces only `db` with its Hyperdrive/Postgres binding.
 
 ## Cloudflare Worker backend
 
@@ -133,9 +132,9 @@ VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend bui
 ```
 
 For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
-to the selected backend. Before exposing the dashboard in production, pass
-`authorizeBrowserRequest` alongside the runtime database to `Hookfish.init` and
-enforce the application's session/authentication policy.
+to the selected backend. Before exposing the dashboard in production, pass an
+`authorizeBrowserRequest` runtime option to `Hookfish.init` and enforce the
+application's session/authentication policy.
 
 ## Frontend hooks
 

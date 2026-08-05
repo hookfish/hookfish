@@ -1,7 +1,7 @@
 # Hono Node example
 
 This example hosts the raw Hookfish API at `/api` and the browser facade at
-`/api/client` on Node. The host supplies PGlite as its runtime database.
+`/api/client` on Node. It uses the PGlite database from the root config.
 
 It reads `../../apps/frontend/.env`:
 

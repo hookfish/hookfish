@@ -8,7 +8,8 @@ const db = postgres<Env>((bindings) => bindings.HYPERDRIVE.connectionString, {
   max: 5,
   prepare: true,
 })
-const hookfish = await Hookfish.init<Env>(config, {
+const hookfish = await Hookfish.init({
+  ...config,
   db,
 })
 

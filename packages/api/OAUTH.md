@@ -44,8 +44,7 @@ curl -H "Authorization: Bearer $BROKER_API_KEY" \
 
 ## Runtime entrypoints
 
-Each host initializes Hookfish with a runtime-specific database and mounts its
-Fetch-compatible handler directly:
+Each host initializes Hookfish and mounts its Fetch-compatible handler directly:
 
 | command | process | default database |
 |---|---|---|
@@ -58,18 +57,18 @@ Fetch-compatible handler directly:
 
 Set `PGLITE_DATA_DIR` to move the embedded Node database. Providers, browser
 policy, and documentation visibility live in the root `hookfish.config.ts`.
-Each example only supplies its runtime database, so Node/PGlite and
-Workers/Hyperdrive variants can run without changing application config.
+Node examples use its default database unchanged; the Worker replaces `db`
+with its Hyperdrive/Postgres binding.
 
 ### Configuring Hookfish
 
-The root config owns providers and browser policy while each host supplies its
-database. A database may be a ready Drizzle database, a promise, or a
-request-aware binding:
+The root config owns the default database, providers, and browser policy. A
+database may be a ready Drizzle database, a promise, or a request-aware binding:
 
 ```ts
 // hookfish.config.ts
 import { defineHookfishConfig, z } from '@hookfish/api'
+import { pglite } from '@hookfish/database/pglite'
 import { NotionProvider } from '@hookfish/provider-notion'
 
 const configSchema = z.object({
@@ -85,6 +84,7 @@ const configSchema = z.object({
 
 export default defineHookfishConfig({
   config: configSchema,
+  db: pglite(process.env.PGLITE_DATA_DIR ?? './pgdata'),
   // Mount the browser-safe facade at /api/client:
   includeClient: true,
   // Include server-only routes in /api/openapi.json. When false, the same
@@ -110,11 +110,11 @@ export default defineHookfishConfig({
 
 Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`,
 `OAUTH_REDIRECT_BASE_URL`, and `NODE_ENV` settings lazily when an OAuth request
-arrives. They do not need to be repeated in `configSchema`. Importing the pure
-config object from a runtime host does not require OAuth secrets; an operation
+arrives. They do not need to be repeated in `configSchema`. Importing the
+config module from a runtime host does not require OAuth secrets; an operation
 that needs a missing broker secret returns `500 missing_configuration`.
 
-`await Hookfish.init(config, { db })` parses the application `configSchema` once
+`await Hookfish.init(config)` parses the application `configSchema` once
 with `{}` and resolves the provider source once before returning a ready
 handler.
 The schema owns provider-specific environment lookup, defaults, coercion, and
@@ -132,17 +132,14 @@ an env file itself, it does so before dynamically importing the config:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
-import { pglite } from '@hookfish/database/pglite'
 import config from '../../../hookfish.config'
 
-const hookfish = await Hookfish.init(config, {
-  db: pglite('./pgdata'),
-})
+const hookfish = await Hookfish.init(config)
 
 export default { fetch: (request) => hookfish.fetch(request, process.env) }
 ```
 
-Hosts with runtime service bindings still pass those separately:
+Hosts can replace the configured database without changing anything else:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
@@ -150,7 +147,8 @@ import { postgres } from '@hookfish/database/postgres'
 import config from '../../../hookfish.config'
 
 const db = postgres((env) => env.HYPERDRIVE.connectionString)
-const hookfish = await Hookfish.init(config, {
+const hookfish = await Hookfish.init({
+  ...config,
   db,
 })
 
@@ -443,7 +441,7 @@ export default defineHookfishConfig({
 })
 ```
 
-After `const hookfish = await Hookfish.init(config, { db })`, the instance's
+After `const hookfish = await Hookfish.init(config)`, the instance's
 `fetch` property is already bound, so hosts can pass it directly or call
 `hookfish.fetch(request, bindings)`.
 

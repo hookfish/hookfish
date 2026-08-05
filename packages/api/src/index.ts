@@ -18,7 +18,11 @@ import {
 } from './client'
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { HookfishEventHandler } from './events'
-import { type BrokerConfig, resolveBrokerConfig } from './oauth/config'
+import {
+  type BrokerConfig,
+  requireBrokerApiKey,
+  resolveBrokerConfig,
+} from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { createAdminRoutes } from './routes/admin'
 import { createOAuthRoutes } from './routes/oauth'
@@ -35,10 +39,15 @@ export type HookfishProviders<Config extends object = object> =
   | ProviderRegistry
   | ProviderFactory<Config>
 
-export type HookfishConfig<Config extends object = object> = {
+export type HookfishConfig<
+  Bindings extends object = object,
+  Config extends object = object,
+> = {
   /** Application configuration parsed once and passed to a provider factory. */
   config: ZodType<Config>
   providers: HookfishProviders<Config>
+  /** Default database binding. A runtime host may override it in `Hookfish.init`. */
+  db: DatabaseInput<Bindings>
   /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
   includeClient?: boolean
   /** Include server-only operations in OpenAPI. Client operations are always documented. @default true */
@@ -67,9 +76,10 @@ async function resolveProviderSource<Config extends object>(
   return normalizeProviders(providers)
 }
 
-export function defineHookfishConfig<Config extends object = object>(
-  config: HookfishConfig<Config>,
-): HookfishConfig<Config> {
+export function defineHookfishConfig<
+  Bindings extends object = object,
+  Config extends object = object,
+>(config: HookfishConfig<Bindings, Config>): HookfishConfig<Bindings, Config> {
   return config
 }
 
@@ -100,7 +110,7 @@ function createApiRoutes<Bindings extends object>(
   resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
   options: Pick<
-    HookfishConfig,
+    HookfishConfig<Bindings>,
     'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
   >,
   includeSwagger = true,
@@ -187,7 +197,6 @@ function createApiRoutes<Bindings extends object>(
 export type AppType = ReturnType<typeof createApiRoutes>
 
 export type HookfishRuntime<Bindings extends object = object> = {
-  db: DatabaseInput<Bindings>
   /** Label shown by `/api/client/health`. @default "fetch" */
   runtime?: HookfishBackendOptions<Bindings>['runtime']
   /** Override `trustedOrigins` with a runtime-specific browser allowlist. */
@@ -223,7 +232,7 @@ export class Hookfish<
   }
 
   private constructor(
-    options: HookfishConfig<Config>,
+    options: HookfishConfig<Bindings, Config>,
     runtime: HookfishRuntime<Bindings>,
     config: Config,
     providers: ProviderRegistry,
@@ -235,14 +244,14 @@ export class Hookfish<
       return brokerConfig
     }
     this.providers = providers
-    this.db = runtime.db
+    this.db = options.db
     this.includeClient = options.includeClient ?? false
     this.includeSwagger = options.includeSwagger ?? true
     this.returnTo = options.returnTo
     const api = createApiRoutes(
       providers,
       resolveConfig,
-      runtime.db,
+      this.db,
       options,
       this.includeSwagger,
     )
@@ -253,7 +262,9 @@ export class Hookfish<
         rawApp.fetch(request, bindings ?? {}, executionContext),
       runtime: runtime.runtime,
       browserOrigins: runtime.browserOrigins,
-      brokerApiKey: runtime.brokerApiKey,
+      brokerApiKey:
+        runtime.brokerApiKey ??
+        ((bindings) => requireBrokerApiKey(bindings ?? resolveConfig())),
       authorizeBrowserRequest: runtime.authorizeBrowserRequest,
     })
   }
@@ -262,8 +273,8 @@ export class Hookfish<
     Bindings extends object = object,
     Config extends object = object,
   >(
-    options: HookfishConfig<Config>,
-    runtime: HookfishRuntime<Bindings>,
+    options: HookfishConfig<Bindings, Config>,
+    runtime: HookfishRuntime<Bindings> = {},
   ): Promise<Hookfish<Bindings, Config>> {
     validateHookfishOptions(options)
     const config = options.config.parse({})
