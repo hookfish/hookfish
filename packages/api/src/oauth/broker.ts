@@ -6,7 +6,7 @@ import {
   ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
-import { and, eq, lt, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import {
   type Database,
@@ -17,14 +17,33 @@ import {
 } from '../db/schema'
 import { readEnvString, resolveProviderConfig } from './config'
 import { generateConnectionId } from './connection-id'
-import { decryptSecret, encryptSecret, hashToken, randomToken } from './crypto'
+import { decryptSecret, encryptSecret, hashToken } from './crypto'
 import { BrokerError } from './errors'
+import { createAuthorizationState } from './state'
 
 /** How long a pending authorization stays valid. */
 const STATE_TTL_MS = 10 * 60 * 1000
 
 /** Refresh a little early so a token can't expire mid-flight downstream. */
 const REFRESH_LEEWAY_MS = 60 * 1000
+
+function organizationFilter(organization: string | undefined) {
+  if (!organization) return isNull(oauthConnections.organization)
+
+  // Organization routing originally encoded tenancy only in connection_id.
+  // Continue recognizing those rows so enabling explicit storage context is a
+  // non-breaking migration; the next reconnect adopts the organization column.
+  return or(
+    eq(oauthConnections.organization, organization),
+    and(
+      isNull(oauthConnections.organization),
+      or(
+        eq(oauthConnections.connectionId, organization),
+        sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${organization}/`})`,
+      ),
+    ),
+  )
+}
 
 function storedErrorStatus(status: number | null): ContentfulStatusCode {
   switch (status) {
@@ -105,12 +124,13 @@ const MINT_ATTEMPTS = 8
 async function mintConnectionId(
   db: Database,
   prefix?: string,
+  organization?: string,
 ): Promise<string> {
   for (let attempt = 0; attempt < MINT_ATTEMPTS; attempt++) {
     const generatedId = generateConnectionId()
     const candidate = prefix ? `${prefix}/${generatedId}` : generatedId
 
-    if (!(await findConnection(db, candidate))) return candidate
+    if (!(await findConnection(db, candidate, organization))) return candidate
   }
 
   throw new BrokerError(
@@ -125,8 +145,9 @@ async function assertProviderMatches(
   db: Database,
   connectionId: string,
   provider: string,
+  organization?: string,
 ): Promise<void> {
-  const existing = await findConnection(db, connectionId)
+  const existing = await findConnection(db, connectionId, organization)
 
   if (existing && existing.provider !== provider) {
     throw new BrokerError(
@@ -139,6 +160,7 @@ async function assertProviderMatches(
 
 export async function startAuthorization(
   db: Database,
+  env: object,
   input: StartAuthorizationInput,
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{
@@ -161,14 +183,20 @@ export async function startAuthorization(
   // A minted id is already known to be free; a caller-supplied one may be
   // linked to another provider.
   const connectionId =
-    input.connectionId ?? (await mintConnectionId(db, input.connectionIdPrefix))
+    input.connectionId ??
+    (await mintConnectionId(db, input.connectionIdPrefix, input.organization))
 
   if (input.connectionId) {
-    await assertProviderMatches(db, input.connectionId, input.provider)
+    await assertProviderMatches(
+      db,
+      input.connectionId,
+      input.provider,
+      input.organization,
+    )
   }
 
   const scopes = input.scopes?.length ? input.scopes : config.scopes
-  const state = randomToken(32)
+  const state = await createAuthorizationState(env, input.organization)
   const stateHash = await hashToken(state)
   const expiresAt = new Date(Date.now() + STATE_TTL_MS)
   const authorization = await callProvider(() =>
@@ -322,7 +350,11 @@ export async function completeAuthorization(
 
     if (existing.status === 'completed') {
       return {
-        connection: await getConnection(db, existing.connectionId),
+        connection: await getConnection(
+          db,
+          existing.connectionId,
+          existing.organization ?? undefined,
+        ),
         state: existing,
         replayed: true,
       }
@@ -358,7 +390,12 @@ export async function completeAuthorization(
 
     // The check in `startAuthorization` goes stale as soon as a second flow is
     // opened on the same id, so re-check before spending the authorization code.
-    await assertProviderMatches(db, pending.connectionId, input.provider)
+    await assertProviderMatches(
+      db,
+      pending.connectionId,
+      input.provider,
+      pending.organization ?? undefined,
+    )
 
     const response = await callProvider(() =>
       config.provider.exchangeCode({
@@ -372,18 +409,26 @@ export async function completeAuthorization(
     const [connection] = await db
       .insert(oauthConnections)
       .values({
+        organization: pending.organization,
         connectionId: pending.connectionId,
         provider: input.provider,
         ...fields,
       })
       .onConflictDoUpdate({
         target: oauthConnections.connectionId,
-        set: { ...fields, updatedAt: new Date() },
+        set: {
+          ...fields,
+          organization: pending.organization,
+          updatedAt: new Date(),
+        },
         // Reconnecting the same link upserts; a different provider must not take
         // the id over. Enforced in the statement itself, so two callbacks racing
         // past the checks above can't rebind it either -- the loser updates no
         // rows and returns nothing.
-        setWhere: eq(oauthConnections.provider, input.provider),
+        setWhere: and(
+          eq(oauthConnections.provider, input.provider),
+          organizationFilter(pending.organization ?? undefined),
+        ),
       })
       .returning()
 
@@ -568,11 +613,17 @@ function isExpired(connection: OAuthConnection): boolean {
 export async function findConnection(
   db: Database,
   connectionId: string,
+  organization?: string,
 ): Promise<OAuthConnection | undefined> {
   const [connection] = await db
     .select()
     .from(oauthConnections)
-    .where(eq(oauthConnections.connectionId, connectionId))
+    .where(
+      and(
+        eq(oauthConnections.connectionId, connectionId),
+        organizationFilter(organization),
+      ),
+    )
     .limit(1)
 
   return connection
@@ -581,8 +632,9 @@ export async function findConnection(
 export async function getConnection(
   db: Database,
   connectionId: string,
+  organization?: string,
 ): Promise<OAuthConnection> {
-  const connection = await findConnection(db, connectionId)
+  const connection = await findConnection(db, connectionId, organization)
 
   if (!connection) {
     throw new BrokerError(
@@ -614,8 +666,9 @@ export async function getAccessToken(
   env: object,
   connectionId: string,
   providers: ProviderRegistry = defaultProviderRegistry,
+  organization?: string,
 ): Promise<AccessTokenResult> {
-  const existing = await getConnection(db, connectionId)
+  const existing = await getConnection(db, connectionId, organization)
 
   const refreshed = isExpired(existing)
   const connection = refreshed
@@ -642,6 +695,7 @@ export async function listConnections(
     provider?: string
     connectionIdPrefix?: string
     connectionScopes?: string[]
+    organization?: string
   } = {},
 ) {
   const providerFilter = options.provider
@@ -670,6 +724,7 @@ export async function listConnections(
       : options.connectionScopes
         ? sql<boolean>`false`
         : undefined
+  const tenantFilter = organizationFilter(options.organization)
 
   return db
     .select({
@@ -684,7 +739,7 @@ export async function listConnections(
       updatedAt: oauthConnections.updatedAt,
     })
     .from(oauthConnections)
-    .where(and(providerFilter, prefixFilter, scopeFilter))
+    .where(and(tenantFilter, providerFilter, prefixFilter, scopeFilter))
 }
 
 export type DeleteConnectionResult = {
@@ -697,8 +752,9 @@ export async function deleteConnection(
   env: object,
   connectionId: string,
   providers: ProviderRegistry = defaultProviderRegistry,
+  organization?: string,
 ): Promise<DeleteConnectionResult> {
-  const connection = await findConnection(db, connectionId)
+  const connection = await findConnection(db, connectionId, organization)
 
   if (!connection) {
     return { deleted: false, revocation: 'not_found' }

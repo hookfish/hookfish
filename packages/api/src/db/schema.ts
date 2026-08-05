@@ -21,6 +21,7 @@ export const oauthConnections = pgTable(
   'oauth_connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    organization: text('organization'),
     connectionId: text('connection_id').notNull(),
     provider: text('provider').notNull(),
 
@@ -53,6 +54,7 @@ export const oauthConnections = pgTable(
   },
   (table) => [
     uniqueIndex('oauth_connections_connection_id_idx').on(table.connectionId),
+    index('oauth_connections_organization_idx').on(table.organization),
     index('oauth_connections_provider_idx').on(table.provider),
   ],
 )

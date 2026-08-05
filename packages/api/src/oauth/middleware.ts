@@ -1,5 +1,9 @@
 import { createMiddleware } from 'hono/factory'
-import { type DatabaseInput, resolveDatabase } from '../db/binding'
+import {
+  type DatabaseContext,
+  type DatabaseInput,
+  resolveDatabase,
+} from '../db/binding'
 import type { Database } from '../db/schema'
 import { type AccessGrant, authenticateAccessToken } from './access-token'
 import { type BrokerConfig, requireBrokerApiKey } from './config'
@@ -8,8 +12,21 @@ import { BrokerError } from './errors'
 
 export type BrokerContext<Bindings extends object = object> = {
   Bindings: Bindings
-  Variables: { db: Database; accessGrant: AccessGrant }
+  Variables: {
+    db: Database
+    databaseContext: DatabaseContext
+    accessGrant: AccessGrant
+  }
 }
+
+type DatabaseContextRequest = {
+  param(name: string): string | undefined
+  query(name: string): string | undefined
+}
+
+type ResolveDatabaseContext = (
+  request: DatabaseContextRequest,
+) => DatabaseContext | Promise<DatabaseContext>
 
 /**
  * Resolves the database for the request.
@@ -19,9 +36,12 @@ export type BrokerContext<Bindings extends object = object> = {
  */
 export function withDatabase<Bindings extends object>(
   database: DatabaseInput<Bindings>,
+  resolveContext: ResolveDatabaseContext = () => ({}),
 ) {
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
-    c.set('db', await resolveDatabase(database, c.env))
+    const context = await resolveContext(c.req)
+    c.set('databaseContext', context)
+    c.set('db', await resolveDatabase(database, c.env, context))
     await next()
   })
 }

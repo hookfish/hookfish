@@ -45,7 +45,7 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
-  // organizationRouting: true, // Use /api/:organization/oauth management routes.
+  organizationRouting: true, // Use /api/organization/:organization/oauth management routes.
   // onEvent: async (event) => auditLog.write(event),
   providers: (config) => ({
     // Providers can receive credentials explicitly from validated config.
