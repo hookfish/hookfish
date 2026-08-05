@@ -39,6 +39,15 @@ export function randomToken(byteLength = 32): string {
   return toBase64Url(randomBytes(byteLength))
 }
 
+/** Hashes a short-lived bearer value before it is persisted. */
+export async function hashToken(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value),
+  )
+  return toBase64Url(new Uint8Array(digest))
+}
+
 async function importKey(encryptionKey: string): Promise<CryptoKey> {
   const raw = fromBase64(encryptionKey)
 

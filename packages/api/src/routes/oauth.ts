@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import type { ProviderRegistry } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
+import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertConnectionAccess,
   assertConnectionPrefixAccess,
@@ -8,12 +9,19 @@ import {
 import {
   completeAuthorization,
   deleteConnection,
+  failAuthorization,
+  findConnection,
   getAccessToken,
+  getAuthorizationState,
   getConnection,
   listConnections,
   startAuthorization,
 } from '../oauth/broker'
-import { type BrokerConfig, resolveRedirectUri } from '../oauth/config'
+import {
+  type BrokerConfig,
+  resolveRedirectUri,
+  validateReturnTo,
+} from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
@@ -30,6 +38,162 @@ const brokerAuth = [{ brokerApiKey: [] }]
 
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
+const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+const MAX_ORGANIZATION_CONNECTION_PATH_LENGTH = 512
+
+type OAuthRouteOptions = {
+  returnTo?: string
+  trustedOrigins?: readonly string[]
+  organizationRouting?: boolean
+  onEvent?: HookfishEventHandler
+  routeMode: 'global' | 'organization'
+}
+
+function requestOrganization(
+  request: { param(name: string): string | undefined },
+  options: OAuthRouteOptions,
+): string | undefined {
+  if (options.routeMode === 'global') {
+    if (options.organizationRouting) {
+      throw new BrokerError(
+        404,
+        'organization_required',
+        'Use an organization-prefixed OAuth route.',
+      )
+    }
+    return undefined
+  }
+
+  if (!options.organizationRouting) {
+    throw new BrokerError(
+      404,
+      'organization_routing_disabled',
+      'Organization-prefixed OAuth routes are disabled.',
+    )
+  }
+
+  const organization = request.param('organization')
+  if (!organization || !ORGANIZATION_PATTERN.test(organization)) {
+    throw new BrokerError(
+      400,
+      'invalid_organization',
+      'Organization must be 1-128 characters using letters, numbers, dots, underscores, or hyphens.',
+    )
+  }
+  return organization
+}
+
+function assertOrganizationConnection(
+  organization: string | undefined,
+  connectionId: string,
+): void {
+  if (!organization) return
+
+  assertCanonicalOrganizationPath(connectionId)
+
+  if (
+    connectionId === organization ||
+    connectionId.startsWith(`${organization}/`)
+  ) {
+    return
+  }
+
+  throw new BrokerError(
+    403,
+    'organization_mismatch',
+    `Connection "${connectionId}" is outside organization "${organization}".`,
+  )
+}
+
+/**
+ * Organization connection ids are URL-shaped namespaces. Keep their string
+ * representation canonical so no later URL, proxy, or UI decoding step can
+ * reinterpret a value as a different organization path.
+ */
+function assertCanonicalOrganizationPath(connectionPath: string): void {
+  const segments = connectionPath.split('/')
+  const structurallyInvalid =
+    connectionPath.length === 0 ||
+    connectionPath.length > MAX_ORGANIZATION_CONNECTION_PATH_LENGTH ||
+    connectionPath !== connectionPath.normalize('NFC') ||
+    connectionPath.includes('\\') ||
+    hasUnsafePathCharacters(connectionPath) ||
+    segments.some(
+      (segment) =>
+        segment.length === 0 ||
+        segment === '.' ||
+        segment === '..' ||
+        decodesToPathStructure(segment),
+    )
+
+  if (structurallyInvalid) {
+    throw new BrokerError(
+      400,
+      'invalid_connection_path',
+      'Organization connection paths must be canonical slash-delimited identifiers without empty, dot, encoded structural, control, or backslash segments.',
+    )
+  }
+}
+
+function decodesToPathStructure(segment: string): boolean {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch {
+    // A literal percent sign is safe when the value is subsequently encoded as
+    // a URL component. Only successfully decoded structural values are
+    // ambiguous.
+    return false
+  }
+
+  if (decoded === segment) return false
+
+  return (
+    decoded === '.' ||
+    decoded === '..' ||
+    decoded.includes('/') ||
+    decoded.includes('\\') ||
+    hasUnsafePathCharacters(decoded)
+  )
+}
+
+function hasUnsafePathCharacters(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)
+    if (codePoint === undefined) continue
+
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function redirectWithResult(
+  returnTo: string,
+  result:
+    | { status: 'connected'; provider: string; connectionId: string }
+    | { status: 'error'; provider: string; error: string },
+): string {
+  const destination = new URL(returnTo)
+  destination.searchParams.set('hookfish_status', result.status)
+  destination.searchParams.set('provider', result.provider)
+  if (result.status === 'connected') {
+    destination.searchParams.set('connected', result.provider)
+    destination.searchParams.set('connection_id', result.connectionId)
+  } else {
+    destination.searchParams.set('error', result.error)
+  }
+  return destination.toString()
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
@@ -234,6 +398,11 @@ const authorizeRoute = createRoute({
               default: [],
               example: [],
             }),
+            return_to: z.url().optional().openapi({
+              description:
+                'Absolute post-callback destination. Its origin must appear in Hookfish trustedOrigins.',
+              example: 'https://app.example.com/settings/integrations',
+            }),
           }),
         },
       },
@@ -247,7 +416,6 @@ const authorizeRoute = createRoute({
           schema: z.object({
             connection_id: z.string(),
             authorize_url: z.string(),
-            state: z.string(),
             expires_at: z.string(),
           }),
         },
@@ -424,7 +592,7 @@ export function createOAuthRoutes<Bindings extends object>(
   providers: ProviderRegistry,
   resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
-  returnTo?: string,
+  options: OAuthRouteOptions,
 ) {
   const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>(resolveConfig)
@@ -444,6 +612,10 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
   const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
+    const organization = requestOrganization(c.req, options)
+    if (organization) {
+      assertConnectionPrefixAccess(c.get('accessGrant'), organization)
+    }
     const config = resolveConfig()
     return c.json(
       {
@@ -471,14 +643,22 @@ export function createOAuthRoutes<Bindings extends object>(
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
     const config = resolveConfig()
+    const organization = requestOrganization(c.req, options)
+    const connectionIdPrefix =
+      body.connection_id_prefix ??
+      (organization && !body.connection_id ? organization : undefined)
+
+    if (body.connection_id) {
+      assertOrganizationConnection(organization, body.connection_id)
+    }
+    if (connectionIdPrefix) {
+      assertOrganizationConnection(organization, connectionIdPrefix)
+    }
 
     if (body.connection_id) {
       assertConnectionAccess(c.get('accessGrant'), body.connection_id)
-    } else if (body.connection_id_prefix) {
-      assertConnectionPrefixAccess(
-        c.get('accessGrant'),
-        body.connection_id_prefix,
-      )
+    } else if (connectionIdPrefix) {
+      assertConnectionPrefixAccess(c.get('accessGrant'), connectionIdPrefix)
     } else if (!c.get('accessGrant').scopes.includes('**')) {
       throw new BrokerError(
         400,
@@ -491,19 +671,31 @@ export function createOAuthRoutes<Bindings extends object>(
       c.get('db'),
       {
         connectionId: body.connection_id,
-        connectionIdPrefix: body.connection_id_prefix,
+        connectionIdPrefix,
         provider,
+        organization,
         redirectUri: resolveRedirectUri(config, c.req.url, provider),
+        returnTo: validateReturnTo(
+          body.return_to,
+          options.trustedOrigins ?? [],
+        ),
         scopes: body.scopes,
       },
       providers,
     )
 
+    await emitHookfishEvent(options.onEvent, {
+      type: 'authorization.started',
+      occurredAt: new Date(),
+      organization,
+      provider,
+      connectionId: result.connectionId,
+    })
+
     return c.json(
       {
         connection_id: result.connectionId,
         authorize_url: result.authorizeUrl,
-        state: result.state,
         expires_at: result.expiresAt.toISOString(),
       },
       200,
@@ -511,21 +703,63 @@ export function createOAuthRoutes<Bindings extends object>(
   })
 
   const callbackApi = authorizeApi.openapi(callbackRoute, async (c) => {
+    if (options.routeMode === 'organization') {
+      throw new BrokerError(
+        404,
+        'global_callback_required',
+        'OAuth providers must use the global callback URL.',
+      )
+    }
     const { provider } = c.req.valid('param')
     const query = c.req.valid('query')
 
     if (query.error) {
-      return c.json(
-        {
-          error: {
-            code: query.error,
-            message:
-              query.error_description ??
-              `${provider} denied the authorization request.`,
+      if (!query.state) {
+        return c.json(
+          {
+            error: {
+              code: 'invalid_callback',
+              message: 'The callback is missing the `state` parameter.',
+            },
           },
-        },
-        400,
-      )
+          400,
+        )
+      }
+
+      const requestedMessage =
+        query.error_description ??
+        `${provider} denied the authorization request.`
+      const failed = await failAuthorization(c.get('db'), {
+        provider,
+        state: query.state,
+        errorCode: query.error,
+        errorMessage: requestedMessage,
+      })
+      const errorCode = failed.state.errorCode ?? query.error
+      const message = failed.state.errorMessage ?? requestedMessage
+      await emitHookfishEvent(options.onEvent, {
+        type: 'authorization.failed',
+        occurredAt: new Date(),
+        organization: failed.state.organization ?? undefined,
+        provider,
+        connectionId: failed.state.connectionId,
+        errorCode,
+        replayed: failed.replayed,
+      })
+
+      const returnTo = failed.state.returnTo ?? options.returnTo
+      if (returnTo) {
+        return c.redirect(
+          redirectWithResult(returnTo, {
+            status: 'error',
+            provider,
+            error: errorCode,
+          }),
+          302,
+        )
+      }
+
+      return c.json({ error: { code: errorCode, message } }, 400)
     }
 
     if (!query.code || !query.state) {
@@ -541,17 +775,63 @@ export function createOAuthRoutes<Bindings extends object>(
     }
 
     const config = resolveConfig()
-    const connection = await completeAuthorization(
-      c.get('db'),
-      config,
-      { provider, code: query.code, state: query.state },
-      providers,
-    )
+    let completed: Awaited<ReturnType<typeof completeAuthorization>>
+    try {
+      completed = await completeAuthorization(
+        c.get('db'),
+        config,
+        { provider, code: query.code, state: query.state },
+        providers,
+      )
+    } catch (error) {
+      const authorization = await getAuthorizationState(
+        c.get('db'),
+        provider,
+        query.state,
+      )
+      const errorCode = isBrokerError(error) ? error.code : 'internal_error'
+      await emitHookfishEvent(options.onEvent, {
+        type: 'authorization.failed',
+        occurredAt: new Date(),
+        organization: authorization?.organization ?? undefined,
+        provider,
+        connectionId: authorization?.connectionId,
+        errorCode,
+      })
 
+      const returnTo = authorization?.returnTo ?? options.returnTo
+      if (returnTo && authorization) {
+        return c.redirect(
+          redirectWithResult(returnTo, {
+            status: 'error',
+            provider,
+            error: errorCode,
+          }),
+          302,
+        )
+      }
+      throw error
+    }
+
+    await emitHookfishEvent(options.onEvent, {
+      type: 'authorization.connected',
+      occurredAt: new Date(),
+      organization: completed.state.organization ?? undefined,
+      provider,
+      connectionId: completed.connection.connectionId,
+      replayed: completed.replayed,
+    })
+
+    const returnTo = completed.state.returnTo ?? options.returnTo
     if (returnTo) {
-      const destination = new URL(returnTo)
-      destination.searchParams.set('connected', provider)
-      return c.redirect(destination.toString(), 302)
+      return c.redirect(
+        redirectWithResult(returnTo, {
+          status: 'connected',
+          provider,
+          connectionId: completed.connection.connectionId,
+        }),
+        302,
+      )
     }
 
     c.header('Cache-Control', 'no-store')
@@ -562,14 +842,22 @@ export function createOAuthRoutes<Bindings extends object>(
     c.header('Referrer-Policy', 'no-referrer')
     c.header('X-Content-Type-Options', 'nosniff')
     return c.html(
-      developmentCompletionPage(provider, connection.connectionId),
+      developmentCompletionPage(provider, completed.connection.connectionId),
       200,
     )
   })
 
   const listApi = callbackApi.openapi(listConnectionsRoute, async (c) => {
-    const { provider, connection_id_prefix: connectionIdPrefix } =
+    const { provider, connection_id_prefix: requestedPrefix } =
       c.req.valid('query')
+    const organization = requestOrganization(c.req, options)
+    if (organization) {
+      assertConnectionPrefixAccess(c.get('accessGrant'), organization)
+    }
+    if (requestedPrefix) {
+      assertOrganizationConnection(organization, requestedPrefix)
+    }
+    const connectionIdPrefix = requestedPrefix ?? organization
     const grant = c.get('accessGrant')
     const connections = await listConnections(c.get('db'), {
       provider,
@@ -584,6 +872,8 @@ export function createOAuthRoutes<Bindings extends object>(
     getConnectionRuntimeRoute,
     async (c) => {
       const { connection_id: connectionId } = c.req.valid('param')
+      const organization = requestOrganization(c.req, options)
+      assertOrganizationConnection(organization, connectionId)
       assertConnectionAccess(c.get('accessGrant'), connectionId)
       const connection = await getConnection(c.get('db'), connectionId)
 
@@ -593,6 +883,8 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const tokenApi = connectionApi.openapi(tokenRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    const organization = requestOrganization(c.req, options)
+    assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
     const config = resolveConfig()
     const token = await getAccessToken(
@@ -601,6 +893,15 @@ export function createOAuthRoutes<Bindings extends object>(
       connectionId,
       providers,
     )
+
+    await emitHookfishEvent(options.onEvent, {
+      type: 'connection.token_retrieved',
+      occurredAt: new Date(),
+      organization,
+      provider: token.provider,
+      connectionId,
+      refreshed: token.refreshed,
+    })
 
     c.header('Cache-Control', 'no-store')
     c.header('Pragma', 'no-cache')
@@ -621,13 +922,29 @@ export function createOAuthRoutes<Bindings extends object>(
 
   const routes = tokenApi.openapi(disconnectRuntimeRoute, async (c) => {
     const { connection_id: connectionId } = c.req.valid('param')
+    const organization = requestOrganization(c.req, options)
+    assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
     const config = resolveConfig()
-
-    return c.json(
-      await deleteConnection(c.get('db'), config, connectionId, providers),
-      200,
+    const connection = await findConnection(c.get('db'), connectionId)
+    const result = await deleteConnection(
+      c.get('db'),
+      config,
+      connectionId,
+      providers,
     )
+
+    if (result.deleted && connection) {
+      await emitHookfishEvent(options.onEvent, {
+        type: 'connection.disconnected',
+        occurredAt: new Date(),
+        organization,
+        provider: connection.provider,
+        connectionId,
+      })
+    }
+
+    return c.json(result, 200)
   })
 
   routes.onError((error, c) => {

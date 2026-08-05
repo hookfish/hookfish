@@ -15,7 +15,7 @@ import {
 } from '@hookfish/providers'
 import { pglite } from '../../database/src/pglite'
 import type { Database } from '../src/db/schema'
-import { Hookfish } from '../src/index'
+import { Hookfish, type HookfishEvent } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { createPkcePair } from '../src/oauth/crypto'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
@@ -196,7 +196,12 @@ function providerDefinition(
 }
 
 export async function createHarness(
-  options: { returnTo?: string } = {},
+  options: {
+    returnTo?: string
+    trustedOrigins?: readonly string[]
+    organizationRouting?: boolean
+    onEvent?: (event: HookfishEvent) => void | Promise<void>
+  } = {},
 ): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'oauth-broker-'))
   const stub = await startOAuthStub()
@@ -266,6 +271,9 @@ export async function createHarness(
     providers,
     db,
     returnTo: options.returnTo,
+    trustedOrigins: options.trustedOrigins,
+    organizationRouting: options.organizationRouting,
+    onEvent: options.onEvent,
   })
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
@@ -302,8 +310,9 @@ export async function createHarness(
     const authorizeJson: {
       connection_id: string
       authorize_url: string
-      state: string
     } = await authorizeRes.json()
+    const state = new URL(authorizeJson.authorize_url).searchParams.get('state')
+    if (!state) throw new Error('authorize URL did not include OAuth state')
 
     // Hit the stub consent URL; it 302s to our callback with code+state.
     const consentRes = await fetch(authorizeJson.authorize_url, {
@@ -321,7 +330,7 @@ export async function createHarness(
 
     return {
       connectionId: authorizeJson.connection_id,
-      state: authorizeJson.state,
+      state,
       authorizeUrl: authorizeJson.authorize_url,
       callback,
     }

@@ -85,6 +85,13 @@ export default defineHookfishConfig({
   // swaggerUi: false,
   // Override the default development completion page before deploying:
   // returnTo: 'https://app.example.com/settings/integrations',
+  // Permit per-flow return_to paths on these application origins:
+  // trustedOrigins: ['https://app.example.com'],
+  // Prefix OAuth management routes with /api/:organization/oauth while
+  // retaining one global provider callback URL:
+  // organizationRouting: true,
+  // Receive best-effort lifecycle events for audit or telemetry export:
+  // onEvent: async (event) => auditLog.write(event),
   providers: (config) => ({
     notion: new NotionProvider({
       clientId: config.NOTION_CLIENT_ID,
@@ -108,6 +115,10 @@ validation; its inferred output type is passed to a provider factory. Provider
 factories may return a map immediately or asynchronously. A static provider map
 and an existing `ProviderRegistry` remain valid when providers do not depend on
 the parsed configuration.
+
+Production deployments must set `OAUTH_REDIRECT_BASE_URL`; development and test
+instances may derive it from the incoming request origin. This keeps registered
+callback URLs independent of forwarded or untrusted Host headers.
 
 The checked-in config also includes commented `postgres()` examples for a
 connection URL and for resolving a Cloudflare Hyperdrive binding.
@@ -180,6 +191,22 @@ hierarchical connection folders. Outside production,
 | `GET` | `/api/oauth/tokens/{connection_id}` | A token valid *right now* |
 | `DELETE` | `/api/oauth/connections/{connection_id}` | Revoke upstream when supported, then forget a connection |
 
+Set `organizationRouting: true` to move OAuth management endpoints below
+`/api/{organization}/oauth`. For example, Acme lists connections at
+`/api/acme/oauth/connections`, and an authorization without an explicit id is
+minted below `acme/`. Explicit ids and prefixes must also belong to `acme`.
+Admin and stats routes remain deployment-wide. Provider callbacks deliberately
+remain global at `/api/oauth/{provider}/callback`, so a shared provider
+application needs only one registered redirect URI; the hashed server-side
+state record carries the organization back into the callback.
+
+Organization connection paths are opaque slash-delimited identifiers, not
+filesystem paths. They are limited to 512 characters and must use NFC Unicode
+with non-empty segments. Hookfish rejects dot segments, backslashes, control
+and bidirectional formatting characters, and encoded values that decode into
+path structure. This keeps the first segment an unambiguous organization
+boundary across clients, proxies, and URLs.
+
 Swagger UI lives at `/api` by default. Set `swaggerUi: false` in
 `hookfish.config.ts` to disable the interactive page; `/api/openapi.json`
 remains available for tooling.
@@ -200,7 +227,6 @@ curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
 {
   "connection_id": "swift-orchid-4821",
   "authorize_url": "https://api.notion.com/v1/oauth/authorize?...",
-  "state": "Dj9kx_AlpE0...",
   "expires_at": "2026-07-29T04:26:02.024Z"
 }
 ```
@@ -227,11 +253,25 @@ curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
   -d '{"connection_id":"team/swift-orchid-4821"}'
 ```
 
-Redirect the user to `authorize_url`. When they approve, the broker stores the
-tokens and sends them to the configured `returnTo` URL with
-`?connected=notion` appended. If `returnTo` is omitted from the Hookfish
-configuration, the callback displays a default development completion page
-that reminds you to configure it before deploying.
+Redirect the user to `authorize_url`; OAuth state is already embedded in that
+URL and is intentionally not returned separately. When the user approves, the
+broker stores the tokens and sends them to the configured `returnTo` URL with
+`hookfish_status=connected`, `provider`, and `connection_id` query parameters
+(`connected=<provider>` is retained for compatibility). If `returnTo` is
+omitted, the callback displays a default development completion page.
+
+An authorization may instead pass an absolute `return_to` URL. Its origin must
+appear in `trustedOrigins`; Hookfish persists the validated destination with
+the authorization state and never trusts a return URL from the provider
+callback. Provider denials redirect there with `hookfish_status=error` and a
+stable `error` code.
+
+```json
+{
+  "connection_id": "team/swift-orchid-4821",
+  "return_to": "https://app.example.com/settings/integrations"
+}
+```
 
 List what you have, or fetch one:
 
@@ -483,8 +523,10 @@ pnpm --filter @hookfish/provider-github test
   unreadable.** The plaintext is never stored or logged.
 - `metadata` retains the provider's token payload minus `access_token`,
   `refresh_token`, and `id_token`.
-- `state` rows are single-use and expire after 10 minutes; the callback deletes
-  the row as it consumes it, so a replayed code is rejected.
+- OAuth `state` values are stored only as SHA-256 hashes and expire after 10
+  minutes. Callback rows move through `pending`, `processing`, and a terminal
+  status; replaying a completed callback returns the same connection without
+  exchanging the provider code again.
 - The API key is compared without early exit to keep it off the timing side
   channel.
 - Scoped broker credentials are named and HMAC-signed with `BROKER_API_KEY`.

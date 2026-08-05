@@ -11,6 +11,7 @@ import { cors } from 'hono/cors'
 import type { ZodType } from 'zod'
 
 import { type DatabaseInput, migrateDatabase } from './db/binding'
+import type { HookfishEventHandler } from './events'
 import { type BrokerConfig, resolveBrokerConfig } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { createAdminRoutes } from './routes/admin'
@@ -40,6 +41,12 @@ export type HookfishConfig<
   swaggerUi?: boolean
   /** Fixed destination after a successful OAuth callback. Omit for the development completion page. */
   returnTo?: string
+  /** Origins allowed by the per-authorization `return_to` option. */
+  trustedOrigins?: readonly string[]
+  /** Prefix OAuth management routes with `/:organization`. The provider callback remains global. @default false */
+  organizationRouting?: boolean
+  /** Best-effort lifecycle and audit event handler. */
+  onEvent?: HookfishEventHandler
 }
 
 function normalizeProviders(providers: ProviderMap | ProviderRegistry) {
@@ -63,11 +70,36 @@ export function defineHookfishConfig<
   return config
 }
 
+function validateHttpUrl(name: string, value: string): void {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`${name} must be an absolute URL.`)
+  }
+
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error(`${name} must use http or https.`)
+  }
+}
+
+function validateHookfishOptions(
+  options: Pick<HookfishConfig, 'returnTo' | 'trustedOrigins'>,
+): void {
+  if (options.returnTo) validateHttpUrl('returnTo', options.returnTo)
+  for (const origin of options.trustedOrigins ?? []) {
+    validateHttpUrl('Each trustedOrigins entry', origin)
+  }
+}
+
 function createApiRoutes<Bindings extends object>(
   providers: ProviderRegistry,
   resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
-  returnTo?: string,
+  options: Pick<
+    HookfishConfig<Bindings>,
+    'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
+  >,
   swaggerUi = true,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
@@ -92,16 +124,32 @@ function createApiRoutes<Bindings extends object>(
     base.get('/', swaggerUI({ url: '/api/openapi.json' }))
   }
 
-  return base
+  const api = base
     .use('/stats', cors())
     .route('/stats', statsRoutes)
     .use('/admin/*', cors())
-    .route('/admin', createAdminRoutes(resolveConfig, database))
+    .route(
+      '/admin',
+      createAdminRoutes(resolveConfig, database, options.onEvent),
+    )
     .use('/oauth/*', cors())
     .route(
       '/oauth',
-      createOAuthRoutes(providers, resolveConfig, database, returnTo),
+      createOAuthRoutes(providers, resolveConfig, database, {
+        ...options,
+        routeMode: 'global',
+      }),
     )
+    .use('/:organization/oauth/*', cors())
+    .route(
+      '/:organization/oauth',
+      createOAuthRoutes(providers, resolveConfig, database, {
+        ...options,
+        routeMode: 'organization',
+      }),
+    )
+
+  return api
 }
 
 export type AppType = ReturnType<typeof createApiRoutes>
@@ -146,7 +194,7 @@ export class Hookfish<
       providers,
       resolveConfig,
       options.db,
-      options.returnTo,
+      options,
       options.swaggerUi,
     )
     this.app = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
@@ -158,6 +206,7 @@ export class Hookfish<
   >(
     options: HookfishConfig<Bindings, Config>,
   ): Promise<Hookfish<Bindings, Config>> {
+    validateHookfishOptions(options)
     const config = options.config.parse({})
     const providers = await resolveProviderSource(options.providers, config)
     return new Hookfish(options, config, providers)
@@ -186,6 +235,7 @@ export function isHookfish(value: unknown): value is Hookfish<object, object> {
 }
 
 export { z } from 'zod'
+export type { HookfishEvent, HookfishEventHandler } from './events'
 export {
   type DatabaseBinding,
   type DatabaseInput,

@@ -1,5 +1,6 @@
 import {
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -57,18 +58,26 @@ export const oauthConnections = pgTable(
 )
 
 /**
- * Short-lived CSRF/PKCE state for an in-flight authorization. Rows are
- * single-use: the callback deletes the row as it consumes it.
+ * Short-lived CSRF/PKCE state for an authorization. The public state value is
+ * hashed before storage; status transitions make callback completion
+ * single-exchange and idempotent until the row expires.
  */
 export const oauthStates = pgTable(
   'oauth_states',
   {
     id: text('id').primaryKey(),
     connectionId: text('connection_id').notNull(),
+    organization: text('organization'),
     provider: text('provider').notNull(),
     codeVerifier: text('code_verifier'),
     redirectUri: text('redirect_uri').notNull(),
+    returnTo: text('return_to'),
     scopes: text('scopes').array().notNull().default([]),
+    status: text('status').notNull().default('pending'),
+    errorStatus: integer('error_status'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -132,9 +132,63 @@ export function resolveRedirectUri(
   providerId: string,
 ): string {
   const configuredBase = readEnvString(env, 'OAUTH_REDIRECT_BASE_URL')
+  const nodeEnv = readEnvString(env, 'NODE_ENV') ?? readAmbientNodeEnv()
+
+  if (!configuredBase && nodeEnv === 'production') {
+    throw new BrokerError(
+      500,
+      'missing_configuration',
+      'OAUTH_REDIRECT_BASE_URL is required in production so OAuth callbacks never depend on the request Host header.',
+    )
+  }
+
   const base = configuredBase ?? new URL(requestUrl).origin
 
   return `${base.replace(/\/$/, '')}/api/oauth/${providerId}/callback`
+}
+
+export function validateReturnTo(
+  returnTo: string | undefined,
+  trustedOrigins: readonly string[],
+): string | undefined {
+  if (!returnTo) return undefined
+
+  let destination: URL
+  try {
+    destination = new URL(returnTo)
+  } catch {
+    throw new BrokerError(
+      400,
+      'invalid_return_to',
+      '`return_to` must be an absolute URL.',
+    )
+  }
+
+  if (!['http:', 'https:'].includes(destination.protocol)) {
+    throw new BrokerError(
+      400,
+      'invalid_return_to',
+      '`return_to` must use http or https.',
+    )
+  }
+
+  const allowed = trustedOrigins.some((origin) => {
+    try {
+      return new URL(origin).origin === destination.origin
+    } catch {
+      throw new Error(`Invalid trusted origin "${origin}".`)
+    }
+  })
+
+  if (!allowed) {
+    throw new BrokerError(
+      400,
+      'untrusted_return_to',
+      `The return URL origin "${destination.origin}" is not trusted.`,
+    )
+  }
+
+  return destination.toString()
 }
 
 function readAmbientNodeEnv(): string | undefined {

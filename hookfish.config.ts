@@ -40,6 +40,9 @@ export default defineHookfishConfig({
   db,
   // swaggerUi: false, // Disable interactive docs; OpenAPI remains available.
   returnTo: 'http://localhost:5173',
+  trustedOrigins: ['http://localhost:5173'], // Allow per-flow return paths on these origins.
+  // organizationRouting: true, // Use /api/:organization/oauth management routes.
+  // onEvent: async (event) => auditLog.write(event),
   providers: (config) => ({
     // Providers can receive credentials explicitly from validated config.
     github: new GitHubProvider({

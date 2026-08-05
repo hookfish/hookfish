@@ -36,6 +36,13 @@
       "when": 1785870939197,
       "tag": "0004_next_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785911430078,
+      "tag": "0005_rapid_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

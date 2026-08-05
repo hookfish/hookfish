@@ -93,7 +93,6 @@ describe('createHookfishHooks', () => {
         return jsonResponse({
           connection_id: 'swift-orchid-4821',
           authorize_url: 'https://provider.example/authorize',
-          state: 'state',
           expires_at: '2026-08-03T00:00:00.000Z',
         })
       },
