@@ -200,6 +200,13 @@ remain global at `/api/oauth/{provider}/callback`, so a shared provider
 application needs only one registered redirect URI; the hashed server-side
 state record carries the organization back into the callback.
 
+Organization connection paths are opaque slash-delimited identifiers, not
+filesystem paths. They are limited to 512 characters and must use NFC Unicode
+with non-empty segments. Hookfish rejects dot segments, backslashes, control
+and bidirectional formatting characters, and encoded values that decode into
+path structure. This keeps the first segment an unambiguous organization
+boundary across clients, proxies, and URLs.
+
 Swagger UI lives at `/api` by default. Set `swaggerUi: false` in
 `hookfish.config.ts` to disable the interactive page; `/api/openapi.json`
 remains available for tooling.

@@ -1044,6 +1044,80 @@ describe('OAuth broker integration', () => {
       expect(mismatch.status).toBe(403)
       expect((await mismatch.json()).error.code).toBe('organization_mismatch')
 
+      const crossOrganizationRequests = [
+        configured.fetch(
+          `/api/globex/oauth/tokens/${authorization.connection_id}`,
+        ),
+        configured.fetch(
+          `/api/globex/oauth/connections/${authorization.connection_id}`,
+          { method: 'DELETE' },
+        ),
+        configured.fetch(
+          `/api/globex/oauth/connections?connection_id_prefix=acme`,
+        ),
+        configured.fetch(
+          `/api/globex/oauth/${configured.providerId}/authorize`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              connection_id: authorization.connection_id,
+            }),
+          },
+        ),
+        configured.fetch(
+          `/api/globex/oauth/${configured.providerId}/authorize`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ connection_id_prefix: 'acme/payments' }),
+          },
+        ),
+      ]
+
+      for (const response of await Promise.all(crossOrganizationRequests)) {
+        expect(response.status).toBe(403)
+        expect((await response.json()).error.code).toBe('organization_mismatch')
+      }
+
+      const globexList = await configured.fetch('/api/globex/oauth/connections')
+      expect(globexList.status).toBe(200)
+      const globexListBody: {
+        connections: Array<{ connection_id: string }>
+      } = await globexList.json()
+      expect(globexListBody.connections).not.toContainEqual({
+        connection_id: authorization.connection_id,
+      })
+
+      const mintedAdmin = await configured.fetch('/api/admin/tokens', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'acme-admin', scopes: ['acme'] }),
+      })
+      expect(mintedAdmin.status).toBe(200)
+      const mintedAdminBody: {
+        access_token: string
+      } = await mintedAdmin.json()
+      const acmeAdminToken = mintedAdminBody.access_token
+      const acmeAdminHeaders = {
+        Authorization: `Bearer ${acmeAdminToken}`,
+      }
+      expect(
+        (
+          await configured.fetch('/api/acme/oauth/providers', {
+            headers: acmeAdminHeaders,
+          })
+        ).status,
+      ).toBe(200)
+      const scopedCrossOrganization = await configured.fetch(
+        '/api/globex/oauth/providers',
+        { headers: acmeAdminHeaders },
+      )
+      expect(scopedCrossOrganization.status).toBe(403)
+      expect((await scopedCrossOrganization.json()).error.code).toBe(
+        'insufficient_scope',
+      )
+
       expect(
         (
           await configured.fetch(
@@ -1055,6 +1129,49 @@ describe('OAuth broker integration', () => {
       await configured.fetch(
         `/api/acme/oauth/connections/${authorization.connection_id}`,
         { method: 'DELETE' },
+      )
+    } finally {
+      await configured.close()
+    }
+  })
+
+  it('rejects ambiguous organization connection paths', async () => {
+    const configured = await createHarness({ organizationRouting: true })
+    const invalidPaths = [
+      'acme//payments',
+      'acme/./payments',
+      'acme/../globex',
+      'acme\\payments',
+      'acme/%2e%2e/globex',
+      'acme/%2fglobex',
+      'acme/control\u0001character',
+      'acme/cafe\u0301',
+      `acme/${'x'.repeat(508)}`,
+    ]
+
+    try {
+      for (const connectionId of invalidPaths) {
+        const response = await configured.fetch(
+          `/api/acme/oauth/${configured.providerId}/authorize`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ connection_id: connectionId }),
+          },
+        )
+
+        expect(response.status).toBe(400)
+        expect((await response.json()).error.code).toBe(
+          'invalid_connection_path',
+        )
+      }
+
+      const invalidPrefix = await configured.fetch(
+        '/api/acme/oauth/connections?connection_id_prefix=acme%2F..%2Fglobex',
+      )
+      expect(invalidPrefix.status).toBe(400)
+      expect((await invalidPrefix.json()).error.code).toBe(
+        'invalid_connection_path',
       )
     } finally {
       await configured.close()

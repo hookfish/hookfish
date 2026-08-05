@@ -39,6 +39,7 @@ const brokerAuth = [{ brokerApiKey: [] }]
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
 const ORGANIZATION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+const MAX_ORGANIZATION_CONNECTION_PATH_LENGTH = 512
 
 type OAuthRouteOptions = {
   returnTo?: string
@@ -86,8 +87,11 @@ function assertOrganizationConnection(
   organization: string | undefined,
   connectionId: string,
 ): void {
+  if (!organization) return
+
+  assertCanonicalOrganizationPath(connectionId)
+
   if (
-    !organization ||
     connectionId === organization ||
     connectionId.startsWith(`${organization}/`)
   ) {
@@ -99,6 +103,78 @@ function assertOrganizationConnection(
     'organization_mismatch',
     `Connection "${connectionId}" is outside organization "${organization}".`,
   )
+}
+
+/**
+ * Organization connection ids are URL-shaped namespaces. Keep their string
+ * representation canonical so no later URL, proxy, or UI decoding step can
+ * reinterpret a value as a different organization path.
+ */
+function assertCanonicalOrganizationPath(connectionPath: string): void {
+  const segments = connectionPath.split('/')
+  const structurallyInvalid =
+    connectionPath.length === 0 ||
+    connectionPath.length > MAX_ORGANIZATION_CONNECTION_PATH_LENGTH ||
+    connectionPath !== connectionPath.normalize('NFC') ||
+    connectionPath.includes('\\') ||
+    hasUnsafePathCharacters(connectionPath) ||
+    segments.some(
+      (segment) =>
+        segment.length === 0 ||
+        segment === '.' ||
+        segment === '..' ||
+        decodesToPathStructure(segment),
+    )
+
+  if (structurallyInvalid) {
+    throw new BrokerError(
+      400,
+      'invalid_connection_path',
+      'Organization connection paths must be canonical slash-delimited identifiers without empty, dot, encoded structural, control, or backslash segments.',
+    )
+  }
+}
+
+function decodesToPathStructure(segment: string): boolean {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch {
+    // A literal percent sign is safe when the value is subsequently encoded as
+    // a URL component. Only successfully decoded structural values are
+    // ambiguous.
+    return false
+  }
+
+  if (decoded === segment) return false
+
+  return (
+    decoded === '.' ||
+    decoded === '..' ||
+    decoded.includes('/') ||
+    decoded.includes('\\') ||
+    hasUnsafePathCharacters(decoded)
+  )
+}
+
+function hasUnsafePathCharacters(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)
+    if (codePoint === undefined) continue
+
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x200e ||
+      codePoint === 0x200f ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069)
+    ) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function redirectWithResult(
