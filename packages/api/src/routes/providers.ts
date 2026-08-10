@@ -53,6 +53,19 @@ const credentialsSchema = z.discriminatedUnion('mode', [
   customCredentials,
   registeredCredentials,
 ])
+const resolvedCredentialsSchema = z.discriminatedUnion('mode', [
+  inheritedCredentials,
+  z.object({
+    mode: z.literal('custom'),
+    credentials: z.object({
+      clientId: z.string().trim().min(1).max(512),
+      clientSecret: z.string().min(1).max(65_536).optional(),
+    }),
+  }),
+])
+const storedCredentialModeSchema = z
+  .enum(['inherit', 'custom'])
+  .catch('inherit')
 const configurationSchema = z.record(z.string(), z.unknown())
 
 const providerResponseSchema = z.object({
@@ -312,15 +325,7 @@ async function resolveCredentials(
     | z.infer<typeof registeredCredentials>,
   configuration: ProviderConfiguration,
   redirectUri: string,
-): Promise<
-  | {
-      mode: 'inherit'
-    }
-  | {
-      mode: 'custom'
-      credentials: { clientId: string; clientSecret?: string }
-    }
-> {
+): Promise<z.infer<typeof resolvedCredentialsSchema>> {
   if (credentials.mode === 'inherit') {
     return { mode: 'inherit' }
   }
@@ -370,6 +375,26 @@ async function resolveCredentials(
       throw new BrokerError(502, 'client_registration_failed', error.message)
     }
     throw error
+  }
+}
+
+function providerCredentialFields(
+  credentials: z.infer<typeof resolvedCredentialsSchema>,
+  secretPath: string,
+) {
+  const resolved = resolvedCredentialsSchema.parse(credentials)
+  if (resolved.mode === 'inherit') {
+    return {
+      credentialMode: 'inherit' as const,
+      clientId: null,
+      clientSecretPath: null,
+    }
+  }
+
+  return {
+    credentialMode: 'custom' as const,
+    clientId: resolved.credentials.clientId,
+    clientSecretPath: resolved.credentials.clientSecret ? secretPath : null,
   }
 }
 
@@ -508,6 +533,10 @@ export function createProviderRoutes<Bindings extends object>(
       organization,
     )
     const secretPath = providerClientSecretPath(providerId)
+    const credentialFields = providerCredentialFields(
+      resolvedCredentials,
+      secretPath,
+    )
     if (
       resolvedCredentials.mode === 'custom' &&
       resolvedCredentials.credentials.clientSecret
@@ -529,16 +558,7 @@ export function createProviderRoutes<Bindings extends object>(
         providerId,
         templateId,
         label: normalizeProviderLabel(body.label),
-        credentialMode: resolvedCredentials.mode,
-        clientId:
-          resolvedCredentials.mode === 'custom'
-            ? resolvedCredentials.credentials.clientId
-            : null,
-        clientSecretPath:
-          resolvedCredentials.mode === 'custom' &&
-          resolvedCredentials.credentials.clientSecret
-            ? secretPath
-            : null,
+        ...credentialFields,
         configuration,
         enabled: body.enabled,
       })
@@ -547,16 +567,7 @@ export function createProviderRoutes<Bindings extends object>(
         set: {
           templateId,
           label: normalizeProviderLabel(body.label) ?? null,
-          credentialMode: resolvedCredentials.mode,
-          clientId:
-            resolvedCredentials.mode === 'custom'
-              ? resolvedCredentials.credentials.clientId
-              : null,
-          clientSecretPath:
-            resolvedCredentials.mode === 'custom' &&
-            resolvedCredentials.credentials.clientSecret
-              ? secretPath
-              : null,
+          ...credentialFields,
           configuration,
           enabled: body.enabled,
           updatedAt: new Date(),
@@ -626,10 +637,18 @@ export function createProviderRoutes<Bindings extends object>(
           resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
         )
       : undefined
-    const credentialMode =
-      resolvedCredentials?.mode ??
-      (existing.credentialMode === 'custom' ? 'custom' : 'inherit')
     const secretPath = providerClientSecretPath(providerId)
+    let credentialFields = {
+      credentialMode: storedCredentialModeSchema.parse(existing.credentialMode),
+      clientId: existing.clientId,
+      clientSecretPath: existing.clientSecretPath,
+    }
+    if (resolvedCredentials) {
+      credentialFields = providerCredentialFields(
+        resolvedCredentials,
+        secretPath,
+      )
+    }
     if (
       resolvedCredentials?.mode === 'custom' &&
       resolvedCredentials.credentials.clientSecret
@@ -643,30 +662,17 @@ export function createProviderRoutes<Bindings extends object>(
         true,
       )
     }
+    let label = existing.label
+    if (body.label !== undefined) {
+      label = normalizeProviderLabel(body.label ?? undefined) ?? null
+    }
     const [record] = await c
       .get('db')
       .update(oauthProviders)
       .set({
         templateId,
-        label:
-          body.label === undefined
-            ? existing.label
-            : (normalizeProviderLabel(body.label ?? undefined) ?? null),
-        credentialMode,
-        clientId:
-          resolvedCredentials?.mode === 'custom'
-            ? resolvedCredentials.credentials.clientId
-            : resolvedCredentials?.mode === 'inherit'
-              ? null
-              : existing.clientId,
-        clientSecretPath:
-          resolvedCredentials?.mode === 'custom'
-            ? resolvedCredentials.credentials.clientSecret
-              ? secretPath
-              : null
-            : resolvedCredentials?.mode === 'inherit'
-              ? null
-              : existing.clientSecretPath,
+        label,
+        ...credentialFields,
         configuration,
         enabled: body.enabled ?? existing.enabled,
         updatedAt: new Date(),
@@ -676,9 +682,7 @@ export function createProviderRoutes<Bindings extends object>(
     if (
       existing.clientSecretPath &&
       resolvedCredentials &&
-      (resolvedCredentials.mode === 'inherit' ||
-        (resolvedCredentials.mode === 'custom' &&
-          !resolvedCredentials.credentials.clientSecret))
+      !credentialFields.clientSecretPath
     ) {
       await deleteVaultSecret(
         c.get('db'),
