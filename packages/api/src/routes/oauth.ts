@@ -361,6 +361,7 @@ const listProvidersRoute = createRoute({
               z.object({
                 id: z.string(),
                 label: z.string(),
+                kind: z.enum(['oauth', 'mcp']),
                 configured: z.boolean(),
                 callback_url: z.string(),
                 scopes: z.array(z.string()),
@@ -700,10 +701,14 @@ export function createOAuthRoutes<Bindings extends object>(
               organization,
               filter,
             )
-          ).map(({ id: slug, label, configured, provider }) => {
+          ).map(({ id: slug, label, configured, provider, templateId }) => {
+            const template = templateId
+              ? providers.getProvider(templateId)
+              : undefined
             return {
               id: slug,
               label,
+              kind: provider?.kind ?? template?.kind ?? 'oauth',
               configured,
               // Derived from this request, so it stays correct across branches,
               // `pnpm dev` vs. `server dev`, and deployed environments.

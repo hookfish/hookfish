@@ -544,7 +544,10 @@ function ProviderCombobox({
                   <span className="grid min-w-0">
                     <span className="truncate">{provider.label}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {provider.id}
+                      {provider.kind === 'mcp'
+                        ? 'MCP'
+                        : `${provider.label} OAuth`}{' '}
+                      · {provider.id}
                       {!provider.configured ? ' · Not configured' : ''}
                     </span>
                   </span>

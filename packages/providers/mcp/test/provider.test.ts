@@ -39,6 +39,10 @@ function discoveryResponse(input: string | URL | Request) {
 }
 
 describe('McpProvider', () => {
+  it('identifies itself as an MCP provider', () => {
+    expect(new McpProvider().kind).toBe('mcp')
+  })
+
   it('discovers MCP OAuth metadata, registers, and uses PKCE and resource indicators', async () => {
     const fetcher = vi.fn(
       async (input: string | URL | Request, init?: RequestInit) => {

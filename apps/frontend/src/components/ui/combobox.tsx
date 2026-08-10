@@ -103,7 +103,7 @@ function ComboboxContent({
     container?: ComboboxPrimitive.Portal.Props['container']
   }) {
   return (
-    <ComboboxPrimitive.Portal container={container}>
+    <ComboboxPrimitive.Portal className="contents" container={container}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

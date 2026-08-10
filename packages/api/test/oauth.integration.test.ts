@@ -52,6 +52,7 @@ describe('OAuth broker integration', () => {
     const body: {
       providers: Array<{
         id: string
+        kind: 'oauth' | 'mcp'
         configured: boolean
         callback_url: string
         scopes: string[]
@@ -62,6 +63,7 @@ describe('OAuth broker integration', () => {
 
     const stub = body.providers.find((p) => p.id === h.providerId)
     expect(stub).toMatchObject({
+      kind: 'oauth',
       configured: true,
       callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
       scopes: ['read', 'write'],

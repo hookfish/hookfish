@@ -269,6 +269,7 @@ async function createPkcePair() {
 }
 
 export class McpProvider implements OAuthProviderTemplate {
+  readonly kind = 'mcp' as const
   readonly label = 'MCP server'
   readonly usesPkce = true
   readonly allowsPublicClient = true

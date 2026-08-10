@@ -98,6 +98,7 @@ export type ProviderTokenResponse = {
  * request encodings.
  */
 export interface OAuthProvider {
+  readonly kind?: 'oauth' | 'mcp'
   readonly label?: string
   readonly defaultScopes?: readonly string[]
   readonly availableScopes?: readonly string[]
