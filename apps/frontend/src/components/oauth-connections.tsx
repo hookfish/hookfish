@@ -442,7 +442,7 @@ function ProviderCombobox({
   placeholder?: string
   ariaLabel?: string
   className?: string
-  onValueChange: (providerId: string) => void
+  onValueChange: (providerId: string, providerLabel?: string) => void
 }) {
   const [inputValue, setInputValue] = useState('')
   const [search, setSearch] = useState('')
@@ -515,7 +515,10 @@ function ProviderCombobox({
             ? (providerLabels.current.get(providerId) ?? providerId)
             : '',
         )
-        onValueChange(providerId ?? '')
+        onValueChange(
+          providerId ?? '',
+          providerId ? providerLabels.current.get(providerId) : undefined,
+        )
       }}
     >
       <ComboboxInput
@@ -593,12 +596,14 @@ function AddConnectionDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const [kind, setKind] = useState<ConnectionKind>('oauth')
-  const [name, setName] = useState('')
-  const [slug, setSlug] = useState('')
+  const [name, setName] = useState('OAuth connection')
+  const [nameEdited, setNameEdited] = useState(false)
+  const [slug, setSlug] = useState('oauth-connection')
   const [slugEdited, setSlugEdited] = useState(false)
   const [debouncedConnectionId, setDebouncedConnectionId] = useState('')
   const [value, setValue] = useState('')
   const [providerId, setProviderId] = useState('')
+  const [providerLabel, setProviderLabel] = useState('')
   const normalizedSlug = slug.trim()
   const connectionId = joinConnectionPath(currentPath, normalizedSlug)
   const slugFormatError = normalizedSlug
@@ -703,7 +708,22 @@ function AddConnectionDialog({
               <Select
                 value={kind}
                 onValueChange={(value) => {
-                  if (value === 'oauth' || value === 'api-key') setKind(value)
+                  if (value !== 'oauth' && value !== 'api-key') return
+                  setKind(value)
+                  if (nameEdited) return
+
+                  const suggestedName =
+                    value === 'api-key'
+                      ? 'API key'
+                      : providerLabel || 'OAuth connection'
+                  setName(suggestedName)
+                  if (!slugEdited) {
+                    setSlug(
+                      value === 'oauth' && providerId
+                        ? providerId
+                        : connectionSlug(suggestedName),
+                    )
+                  }
                 }}
               >
                 <SelectTrigger id="connection-kind" className="w-full">
@@ -716,6 +736,26 @@ function AddConnectionDialog({
               </Select>
             </Field>
 
+            {kind === 'oauth' ? (
+              <Field>
+                <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
+                <ProviderCombobox
+                  id="connection-provider"
+                  value={providerId}
+                  configuredOnly
+                  onValueChange={(nextProviderId, nextProviderLabel) => {
+                    setProviderId(nextProviderId)
+                    setProviderLabel(nextProviderLabel ?? '')
+                    if (!nextProviderId || nameEdited) return
+
+                    const suggestedName = nextProviderLabel ?? nextProviderId
+                    setName(suggestedName)
+                    if (!slugEdited) setSlug(nextProviderId)
+                  }}
+                />
+              </Field>
+            ) : null}
+
             <Field>
               <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
               <Input
@@ -724,12 +764,17 @@ function AddConnectionDialog({
                 name="connection-name"
                 required
                 spellCheck={false}
-                placeholder="Notion production…"
+                placeholder={
+                  kind === 'api-key'
+                    ? 'Production API key…'
+                    : 'Notion production…'
+                }
                 autoComplete="off"
                 onChange={(event) => {
                   const nextName = event.target.value
                   const currentGeneratedSlug = connectionSlug(name)
                   setName(nextName)
+                  setNameEdited(true)
                   if (!slugEdited || normalizedSlug === currentGeneratedSlug) {
                     setSlug(connectionSlug(nextName))
                     setSlugEdited(false)
@@ -780,7 +825,11 @@ function AddConnectionDialog({
                 pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="notion-production"
+                placeholder={
+                  kind === 'api-key'
+                    ? 'production-api-key'
+                    : 'notion-production'
+                }
                 aria-invalid={Boolean(idError)}
                 onChange={(event) => {
                   setSlug(event.target.value)
@@ -793,17 +842,7 @@ function AddConnectionDialog({
               <FieldError>{idError}</FieldError>
             </Field>
 
-            {kind === 'oauth' ? (
-              <Field>
-                <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
-                <ProviderCombobox
-                  id="connection-provider"
-                  value={providerId}
-                  configuredOnly
-                  onValueChange={setProviderId}
-                />
-              </Field>
-            ) : (
+            {kind === 'api-key' ? (
               <Field data-invalid={Boolean(apiKeyError)}>
                 <FieldLabel htmlFor="api-key-value">API key</FieldLabel>
                 <Input
@@ -823,7 +862,7 @@ function AddConnectionDialog({
                 </FieldDescription>
                 <FieldError>{apiKeyError}</FieldError>
               </Field>
-            )}
+            ) : null}
           </FieldGroup>
 
           {authorizeMutation.isError || secretMutation.isError ? (
