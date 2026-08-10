@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { Connection } from './connection-tree'
 import {
   connectionDirectory,
+  connectionSlug,
   joinConnectionPath,
   validateConnectionName,
   validateConnectionPath,
+  validateConnectionSlug,
 } from './connection-tree'
 
 function connection(connectionId: string, provider = 'github'): Connection {
@@ -54,6 +56,14 @@ describe('connection tree', () => {
     expect(validateConnectionName('nested/name')).toContain('letters')
     expect(validateConnectionPath('team/payments')).toBeUndefined()
     expect(validateConnectionPath('/team')).toContain('slashes')
+  })
+
+  it('generates and validates editable connection slugs', () => {
+    expect(connectionSlug('Notión Production / Admin')).toBe(
+      'notion-production-admin',
+    )
+    expect(validateConnectionSlug('notion-production')).toBeUndefined()
+    expect(validateConnectionSlug('Notion Production')).toContain('lowercase')
   })
 
   it('keeps empty local folders visible beside connection-backed folders', () => {

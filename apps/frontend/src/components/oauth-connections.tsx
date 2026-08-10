@@ -2,6 +2,8 @@ import type { AuthorizeConnectionInput } from '@hookfish/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
+  CircleCheckIcon,
+  CircleXIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
@@ -106,8 +108,10 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   type Connection,
   connectionDirectory,
+  connectionSlug,
   joinConnectionPath,
   validateConnectionName,
+  validateConnectionSlug,
 } from '@/lib/connection-tree'
 import {
   LOCAL_FOLDERS_KEY,
@@ -572,6 +576,7 @@ function ProviderCombobox({
 function AddConnectionDialog({
   open,
   currentPath,
+  existingSecretPaths,
   managementToken,
   authorizeMutation,
   secretMutation,
@@ -579,6 +584,7 @@ function AddConnectionDialog({
 }: {
   open: boolean
   currentPath: string
+  existingSecretPaths: string[]
   managementToken: string
   authorizeMutation: AuthorizeMutation
   secretMutation: ReturnType<
@@ -588,18 +594,61 @@ function AddConnectionDialog({
 }) {
   const [kind, setKind] = useState<ConnectionKind>('oauth')
   const [name, setName] = useState('')
+  const [slug, setSlug] = useState('')
+  const [slugEdited, setSlugEdited] = useState(false)
+  const [debouncedConnectionId, setDebouncedConnectionId] = useState('')
   const [value, setValue] = useState('')
   const [providerId, setProviderId] = useState('')
-  const normalizedName = name.trim()
-  const connectionId = joinConnectionPath(currentPath, normalizedName)
-  const connectionIdPreview = normalizedName
-    ? connectionId
-    : currentPath
-      ? `${currentPath}/word-word-number`
-      : 'word-word-number'
-  const nameError = normalizedName
-    ? validateConnectionName(normalizedName)
+  const normalizedSlug = slug.trim()
+  const connectionId = joinConnectionPath(currentPath, normalizedSlug)
+  const slugFormatError = normalizedSlug
+    ? validateConnectionSlug(normalizedSlug)
     : undefined
+  useEffect(() => {
+    if (!open || !normalizedSlug || slugFormatError) {
+      setDebouncedConnectionId('')
+      return
+    }
+    const timeout = window.setTimeout(
+      () => setDebouncedConnectionId(connectionId),
+      250,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [connectionId, normalizedSlug, open, slugFormatError])
+  const availabilityQuery = hookfish.useConnection(debouncedConnectionId, {
+    enabled: Boolean(debouncedConnectionId),
+    retry: false,
+  })
+  const secretTaken = existingSecretPaths.includes(connectionId)
+  const checkingAvailability = Boolean(
+    normalizedSlug &&
+      !slugFormatError &&
+      (!debouncedConnectionId ||
+        debouncedConnectionId !== connectionId ||
+        availabilityQuery.isFetching),
+  )
+  const connectionTaken =
+    secretTaken ||
+    (debouncedConnectionId === connectionId && availabilityQuery.isSuccess)
+  const availabilityError =
+    debouncedConnectionId === connectionId &&
+    availabilityQuery.isError &&
+    availabilityQuery.error.status !== 404
+      ? 'Could not check whether this connection ID is available.'
+      : undefined
+  const idError = slugFormatError
+    ? slugFormatError
+    : connectionTaken
+      ? 'This connection ID is already taken.'
+      : availabilityError
+  const idAvailable = Boolean(
+    normalizedSlug &&
+      !idError &&
+      !checkingAvailability &&
+      debouncedConnectionId === connectionId &&
+      availabilityQuery.isError &&
+      availabilityQuery.error.status === 404,
+  )
   const apiKeyError =
     kind === 'api-key' && !managementToken
       ? 'Enter a broker access token above to store encrypted API keys.'
@@ -607,10 +656,10 @@ function AddConnectionDialog({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (nameError) return
+    if (!name.trim() || !idAvailable) return
 
     if (kind === 'api-key') {
-      if (!managementToken || !normalizedName || !value) return
+      if (!managementToken || !value) return
       secretMutation.mutate(
         { path: connectionId, value },
         { onSuccess: () => onOpenChange(false) },
@@ -622,18 +671,17 @@ function AddConnectionDialog({
     const input: AuthorizeConnectionInput = {
       provider: providerId,
       return_to: window.location.href,
-      ...(normalizedName
-        ? { connection_id: connectionId }
-        : currentPath
-          ? { connection_id_prefix: currentPath }
-          : {}),
+      connection_id: connectionId,
     }
     authorizeMutation.mutate(input)
   }
 
   const pending = authorizeMutation.isPending || secretMutation.isPending
   const submitDisabled =
-    pending || (kind === 'oauth' ? !providerId : !managementToken)
+    pending ||
+    !name.trim() ||
+    !idAvailable ||
+    (kind === 'oauth' ? !providerId : !managementToken)
 
   return (
     <Dialog
@@ -668,30 +716,81 @@ function AddConnectionDialog({
               </Select>
             </Field>
 
-            <Field data-invalid={Boolean(nameError)}>
-              <FieldLabel htmlFor="connection-name">
-                Connection name {kind === 'oauth' ? '(optional)' : ''}
-              </FieldLabel>
+            <Field>
+              <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
               <Input
                 id="connection-name"
                 value={name}
                 name="connection-name"
-                required={kind === 'api-key'}
-                pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+                required
                 spellCheck={false}
-                placeholder={
-                  kind === 'oauth'
-                    ? 'Generated automatically…'
-                    : 'production-api-key…'
-                }
+                placeholder="Notion production…"
                 autoComplete="off"
-                aria-invalid={Boolean(nameError)}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  const nextName = event.target.value
+                  const currentGeneratedSlug = connectionSlug(name)
+                  setName(nextName)
+                  if (!slugEdited || normalizedSlug === currentGeneratedSlug) {
+                    setSlug(connectionSlug(nextName))
+                    setSlugEdited(false)
+                  }
+                }}
               />
               <FieldDescription>
-                Full ID: <code>{connectionIdPreview}</code>
+                Used to generate the connection ID below.
               </FieldDescription>
-              <FieldError>{nameError}</FieldError>
+            </Field>
+
+            <Field data-invalid={Boolean(idError)}>
+              <div className="flex items-center justify-between gap-4">
+                <FieldLabel htmlFor="connection-id">Connection ID</FieldLabel>
+                {normalizedSlug && !slugFormatError ? (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className={
+                      connectionTaken || availabilityError
+                        ? 'flex items-center gap-2 text-xs tracking-wide text-destructive uppercase'
+                        : 'flex items-center gap-2 text-xs tracking-wide text-primary uppercase'
+                    }
+                  >
+                    {checkingAvailability ? (
+                      <Spinner className="size-3.5" />
+                    ) : connectionTaken || availabilityError ? (
+                      <CircleXIcon className="size-3.5" />
+                    ) : (
+                      <CircleCheckIcon className="size-3.5" />
+                    )}
+                    {checkingAvailability
+                      ? 'Checking'
+                      : connectionTaken
+                        ? 'Taken'
+                        : availabilityError
+                          ? 'Unavailable'
+                          : 'Available'}
+                  </span>
+                ) : null}
+              </div>
+              <Input
+                id="connection-id"
+                value={slug}
+                name="connection-id"
+                required
+                maxLength={64}
+                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="notion-production"
+                aria-invalid={Boolean(idError)}
+                onChange={(event) => {
+                  setSlug(event.target.value)
+                  setSlugEdited(true)
+                }}
+              />
+              <FieldDescription>
+                Full ID: <code>{connectionId || 'connection-id'}</code>
+              </FieldDescription>
+              <FieldError>{idError}</FieldError>
             </Field>
 
             {kind === 'oauth' ? (
@@ -1103,6 +1202,9 @@ export function OAuthConnections({
         key={`connection:${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
         currentPath={addConnectionPath}
+        existingSecretPaths={(secretsQuery.data ?? []).map(
+          (secret) => secret.path,
+        )}
         managementToken={managementToken}
         authorizeMutation={authorizeMutation}
         secretMutation={secretMutation}

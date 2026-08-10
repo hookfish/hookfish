@@ -14,9 +14,29 @@ export type ConnectionDirectory = {
 }
 
 const CONNECTION_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const CONNECTION_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export function joinConnectionPath(path: string, name: string): string {
   return path ? `${path}/${name}` : name
+}
+
+export function connectionSlug(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+    .replace(/-+$/g, '')
+}
+
+export function validateConnectionSlug(slug: string): string | undefined {
+  if (!slug) return 'Enter a connection ID.'
+  if (!CONNECTION_SLUG_PATTERN.test(slug) || slug.length > 64) {
+    return 'Use 1–64 lowercase letters, numbers, and single hyphens.'
+  }
+  return undefined
 }
 
 export function validateConnectionName(name: string): string | undefined {
