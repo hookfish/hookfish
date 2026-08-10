@@ -178,6 +178,7 @@ export type ProviderDescriptor = {
 }
 
 export type ProviderDescriptorFilter = {
+  configured?: boolean
   limit?: number
   search?: string
   source?: 'fixed' | 'dynamic'
@@ -228,9 +229,10 @@ export async function listProviderDescriptors(
       .from(oauthProviders)
       .where(and(...conditions))
       .orderBy(asc(oauthProviders.providerId))
-    dynamicRecords = filter.limit
-      ? await query.limit(filter.limit)
-      : await query
+    dynamicRecords =
+      filter.limit && filter.configured === undefined
+        ? await query.limit(filter.limit)
+        : await query
   }
   const dynamic = await Promise.all(
     dynamicRecords.map(async (record): Promise<ProviderDescriptor> => {
@@ -272,5 +274,13 @@ export async function listProviderDescriptors(
     (left, right) =>
       left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
   )
-  return filter.limit ? descriptors.slice(0, filter.limit) : descriptors
+  const filteredDescriptors =
+    filter.configured === undefined
+      ? descriptors
+      : descriptors.filter(
+          (descriptor) => descriptor.configured === filter.configured,
+        )
+  return filter.limit
+    ? filteredDescriptors.slice(0, filter.limit)
+    : filteredDescriptors
 }

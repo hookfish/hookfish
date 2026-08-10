@@ -22,8 +22,8 @@ import {
   resolveRedirectUri,
   validateReturnTo,
 } from '../oauth/config'
-import { BrokerError, isBrokerError } from '../oauth/errors'
 import { listProviderDescriptors } from '../oauth/dynamic-provider'
+import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
   requireApiKey,
@@ -342,13 +342,14 @@ const listProvidersRoute = createRoute({
   path: '/providers',
   summary: 'List known providers and whether credentials are configured',
   description:
-    "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
+    "Returns configured providers by default. Set `include_unconfigured=true` to include providers that cannot start a new authorization. Each `callback_url` is the exact string this deployment will send as `redirect_uri`; paste it into the provider's developer console verbatim.",
   security: brokerAuth,
   request: {
     query: z.object({
       search: z.string().trim().max(128).optional(),
       limit: z.coerce.number().int().min(1).max(100).optional(),
       source: z.enum(['fixed', 'dynamic']).optional(),
+      include_unconfigured: z.stringbool().optional(),
     }),
   },
   responses: {
@@ -684,7 +685,8 @@ export function createOAuthRoutes<Bindings extends object>(
   const providersApi = clientMetadataApi.openapi(
     listProvidersRoute,
     async (c) => {
-      const filter = c.req.valid('query')
+      const { include_unconfigured: includeUnconfigured, ...filter } =
+        c.req.valid('query')
       const { organization } = c.get('databaseContext')
       if (organization) {
         assertConnectionPrefixAccess(c.get('accessGrant'), organization)
@@ -699,7 +701,10 @@ export function createOAuthRoutes<Bindings extends object>(
               config,
               providers,
               organization,
-              filter,
+              {
+                ...filter,
+                ...(includeUnconfigured ? {} : { configured: true }),
+              },
             )
           ).map(({ id: slug, label, configured, provider, templateId }) => {
             const template = templateId
