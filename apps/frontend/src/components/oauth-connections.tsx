@@ -548,7 +548,9 @@ function ProviderCombobox({
                         ? 'MCP'
                         : `${provider.label} OAuth`}{' '}
                       · {provider.id}
-                      {!provider.configured ? ' · Not configured' : ''}
+                      {!configuredOnly && !provider.configured
+                        ? ' · Not configured'
+                        : ''}
                     </span>
                   </span>
                 </ComboboxItem>
