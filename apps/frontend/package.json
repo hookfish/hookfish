@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host ${HOST:-127.0.0.1} --port ${FRONTEND_PORT:-${PORT:-5173}}",
+    "dev": "vite --host ${FRONTEND_HOST:-${HOST:-127.0.0.1}} --port ${FRONTEND_PORT:-${PORT:-5173}}",
     "build": "vite build && tsc -b",
     "typecheck": "tsc -b",
     "test": "vitest run",
