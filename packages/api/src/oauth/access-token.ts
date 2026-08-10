@@ -86,9 +86,9 @@ function invalidToken(): BrokerError {
 
 /**
  * A scope is either `**` or a folder path. Folder paths are canonicalized to
- * end in `/**`. Connection ids are opaque; only `/` separates ancestors.
+ * end in `/**`. Resource paths are opaque; only `/` separates ancestors.
  */
-export function normalizeConnectionScope(scope: string): string {
+export function normalizeResourceScope(scope: string): string {
   const normalized = scope.trim()
 
   if (
@@ -100,7 +100,7 @@ export function normalizeConnectionScope(scope: string): string {
   ) {
     throw new BrokerError(
       400,
-      'invalid_connection_scope',
+      'invalid_resource_scope',
       'Scope must be `**` or a folder path such as `team`.',
     )
   }
@@ -114,22 +114,22 @@ export function normalizeConnectionScope(scope: string): string {
   if (!literal || literal.includes('*')) {
     throw new BrokerError(
       400,
-      'invalid_connection_scope',
-      'Wildcards are only allowed as the final `/**` in a connection scope.',
+      'invalid_resource_scope',
+      'Wildcards are only allowed as the final `/**` in a resource scope.',
     )
   }
 
   return `${literal}/**`
 }
 
-export function normalizeConnectionScopes(scopes: string[]): string[] {
-  const normalized = [...new Set(scopes.map(normalizeConnectionScope))]
+export function normalizeResourceScopes(scopes: string[]): string[] {
+  const normalized = [...new Set(scopes.map(normalizeResourceScope))]
 
   if (normalized.length === 0 || normalized.length > 32) {
     throw new BrokerError(
       400,
-      'invalid_connection_scopes',
-      'Provide between 1 and 32 connection scopes.',
+      'invalid_resource_scopes',
+      'Provide between 1 and 32 resource scopes.',
     )
   }
 
@@ -155,23 +155,23 @@ function subtreeRoot(scope: string): string | undefined {
   return scope.endsWith('/**') ? scope.slice(0, -3) : undefined
 }
 
-export function scopeAllowsConnection(
+export function scopeAllowsResource(
   scope: string,
-  connectionId: string,
+  resourcePath: string,
 ): boolean {
   if (scope === '**') return true
 
   const root = subtreeRoot(scope)
-  if (root === undefined) return connectionId === scope
+  if (root === undefined) return resourcePath === scope
 
-  return connectionId === root || connectionId.startsWith(`${root}/`)
+  return resourcePath === root || resourcePath.startsWith(`${root}/`)
 }
 
-export function scopesAllowConnection(
+export function scopesAllowResource(
   scopes: string[],
-  connectionId: string,
+  resourcePath: string,
 ): boolean {
-  return scopes.some((scope) => scopeAllowsConnection(scope, connectionId))
+  return scopes.some((scope) => scopeAllowsResource(scope, resourcePath))
 }
 
 export function scopeContainsScope(parent: string, child: string): boolean {
@@ -182,7 +182,7 @@ export function scopeContainsScope(parent: string, child: string): boolean {
   if (parentRoot === undefined) return false
 
   const childRoot = subtreeRoot(child)
-  return scopeAllowsConnection(parent, childRoot ?? child)
+  return scopeAllowsResource(parent, childRoot ?? child)
 }
 
 export function scopesContainScopes(
@@ -198,12 +198,27 @@ export function assertConnectionAccess(
   grant: AccessGrant,
   connectionId: string,
 ): void {
-  if (scopesAllowConnection(grant.scopes, connectionId)) return
+  assertResourceAccess(grant, connectionId, 'connection')
+}
+
+export function assertProviderAccess(
+  grant: AccessGrant,
+  providerPath: string,
+): void {
+  assertResourceAccess(grant, providerPath, 'provider')
+}
+
+function assertResourceAccess(
+  grant: AccessGrant,
+  path: string,
+  resource: string,
+): void {
+  if (scopesAllowResource(grant.scopes, path)) return
 
   throw new BrokerError(
     403,
     'insufficient_scope',
-    `This broker access token cannot access connection "${connectionId}".`,
+    `This broker access token cannot access ${resource} "${path}".`,
   )
 }
 
@@ -212,7 +227,7 @@ export function assertConnectionPrefixAccess(
   connectionIdPrefix: string,
 ): void {
   const generatedDescendant = `${connectionIdPrefix}/__hookfish_generated__`
-  if (scopesAllowConnection(grant.scopes, generatedDescendant)) return
+  if (scopesAllowResource(grant.scopes, generatedDescendant)) return
 
   throw new BrokerError(
     403,
@@ -227,7 +242,7 @@ export function assertCanDelegate(
   scopes: string[],
   expiresAt: number,
 ): string[] {
-  const normalizedScopes = normalizeConnectionScopes(scopes)
+  const normalizedScopes = normalizeResourceScopes(scopes)
 
   if (grant.kind === 'scoped' && !name.startsWith(`${grant.name}.`)) {
     throw new BrokerError(
@@ -278,7 +293,7 @@ export async function mintAccessToken(
   expiresAt: number
 }> {
   const name = normalizeTokenName(input.name)
-  const scopes = normalizeConnectionScopes(input.scopes)
+  const scopes = normalizeResourceScopes(input.scopes)
   if (
     !Number.isInteger(input.expiresIn) ||
     input.expiresIn < 60 ||
@@ -380,7 +395,7 @@ export async function verifyAccessToken(
     return {
       kind: 'scoped',
       name: normalizeTokenName(name),
-      scopes: normalizeConnectionScopes(scopes),
+      scopes: normalizeResourceScopes(scopes),
       expiresAt,
       tokenIdHash: await hashTokenId(tokenId),
     }
@@ -426,7 +441,7 @@ export async function authenticateAccessToken(
     return {
       kind: 'scoped',
       name: stored.name,
-      scopes: normalizeConnectionScopes(stored.scopes),
+      scopes: normalizeResourceScopes(stored.scopes),
       expiresAt: Math.min(
         verified.expiresAt,
         Math.floor(stored.expiresAt.getTime() / 1000),

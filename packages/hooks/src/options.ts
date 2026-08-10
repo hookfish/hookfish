@@ -115,10 +115,9 @@ export function createHookfishOptions(
         mutationKey: keys.authorize(),
         mutationFn: async (input: AuthorizeConnectionInput) => {
           const { provider, ...json } = input
-          const response = await client.oauth[':provider'].authorize.$post({
-            param: { provider },
-            json,
-          })
+          const response = await client.oauth.authorize[
+            ':provider_path{.+}'
+          ].$post({ param: { provider_path: provider }, json })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },

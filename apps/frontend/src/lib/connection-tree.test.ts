@@ -39,7 +39,7 @@ describe('connection tree', () => {
       {
         name: 'payments',
         path: 'team/payments',
-        connectionCount: 2,
+        itemCount: 2,
       },
     ])
     expect(directory.connections.map((item) => item.connection_id)).toEqual([
@@ -74,8 +74,26 @@ describe('connection tree', () => {
     )
 
     expect(directory.folders).toEqual([
-      { name: 'empty', path: 'team/empty', connectionCount: 0 },
-      { name: 'payments', path: 'team/payments', connectionCount: 1 },
+      { name: 'empty', path: 'team/empty', itemCount: 0 },
+      { name: 'payments', path: 'team/payments', itemCount: 1 },
+    ])
+  })
+
+  it('counts provider and secret descendants alongside connections', () => {
+    const directory = connectionDirectory(
+      [connection('team/payments/github-account')],
+      'team',
+      [],
+      [
+        'team/payments/github-provider',
+        'team/payments/stripe-key',
+        'team/support/notion-provider',
+      ],
+    )
+
+    expect(directory.folders).toEqual([
+      { name: 'payments', path: 'team/payments', itemCount: 3 },
+      { name: 'support', path: 'team/support', itemCount: 1 },
     ])
   })
 })

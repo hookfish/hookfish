@@ -12,13 +12,17 @@ import { createMiddleware } from 'hono/factory'
 import type { DatabaseInput } from '../db/binding'
 import { oauthConnections, oauthProviders } from '../db/schema'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
-import { assertRootAccess } from '../oauth/access-token'
+import {
+  assertProviderAccess,
+  scopesAllowResource,
+} from '../oauth/access-token'
 import { resolveBrokerConfig, resolveRedirectUri } from '../oauth/config'
 import {
   findDynamicProvider,
   listProviderDescriptors,
   normalizeProviderId,
   normalizeProviderLabel,
+  normalizeProviderTemplateId,
   PROVIDER_ID_PATTERN,
 } from '../oauth/dynamic-provider'
 import { BrokerError, isBrokerError } from '../oauth/errors'
@@ -28,6 +32,7 @@ import {
   withDatabase,
 } from '../oauth/middleware'
 import { ORGANIZATION_PATTERN } from '../oauth/organization'
+import { assertOrganizationResourcePath } from '../oauth/resource-path'
 import {
   deleteVaultSecret,
   organizationKey,
@@ -37,8 +42,8 @@ import {
 
 const brokerAuth = [{ brokerApiKey: [] }]
 
-const providerIdParam = z.object({
-  provider_id: z.string().min(1).max(128).regex(PROVIDER_ID_PATTERN),
+const providerPathParam = z.object({
+  provider_path: z.string().min(1).max(512),
 })
 
 const inheritedCredentials = z.object({ mode: z.literal('inherit') })
@@ -82,6 +87,7 @@ const providerResponseSchema = z.object({
     })
     .nullable(),
   configuration: configurationSchema.nullable(),
+  callback_url: z.string().url(),
   created_at: z.string().nullable(),
   updated_at: z.string().nullable(),
 })
@@ -99,7 +105,7 @@ const errors = {
     content: { 'application/json': { schema: errorSchema } },
   },
   403: {
-    description: 'Root broker access is required',
+    description: 'Credential cannot access this provider path',
     content: { 'application/json': { schema: errorSchema } },
   },
   404: {
@@ -140,10 +146,10 @@ const listRoute = createRoute({
 
 const getRoute = createRoute({
   method: 'get',
-  path: '/providers/{provider_id}',
+  path: '/providers/{provider_path}',
   summary: 'Get a provider configuration',
   security: brokerAuth,
-  request: { params: providerIdParam },
+  request: { params: providerPathParam },
   responses: {
     200: {
       description: 'Provider configuration',
@@ -159,13 +165,13 @@ const getRoute = createRoute({
 
 const putRoute = createRoute({
   method: 'put',
-  path: '/providers/{provider_id}',
+  path: '/providers/{provider_path}',
   summary: 'Create or replace a dynamic provider',
   description:
     'Custom client secrets are encrypted and write-only. Inherited credentials use the complete credential pair from the fixed provider template.',
   security: brokerAuth,
   request: {
-    params: providerIdParam,
+    params: providerPathParam,
     body: {
       content: {
         'application/json': {
@@ -195,11 +201,11 @@ const putRoute = createRoute({
 
 const patchRoute = createRoute({
   method: 'patch',
-  path: '/providers/{provider_id}',
+  path: '/providers/{provider_path}',
   summary: 'Update a dynamic provider',
   security: brokerAuth,
   request: {
-    params: providerIdParam,
+    params: providerPathParam,
     body: {
       content: {
         'application/json': {
@@ -238,12 +244,12 @@ const patchRoute = createRoute({
 
 const deleteRoute = createRoute({
   method: 'delete',
-  path: '/providers/{provider_id}',
+  path: '/providers/{provider_path}',
   summary: 'Delete an unused dynamic provider',
   description:
     'Returns 409 while an OAuth connection references the provider. Disable it to block new authorizations while retaining refresh and revocation.',
   security: brokerAuth,
-  request: { params: providerIdParam },
+  request: { params: providerPathParam },
   responses: {
     200: {
       description: 'Deletion result',
@@ -255,6 +261,29 @@ const deleteRoute = createRoute({
     },
     ...errors,
   },
+})
+
+// Provider paths may contain `/`; OpenAPI documents the conventional path
+// while Hono's runtime route consumes the complete remainder.
+const getRuntimeRoute = createRoute({
+  ...getRoute,
+  path: '/providers/:provider_path{.+}',
+  hide: true,
+})
+const putRuntimeRoute = createRoute({
+  ...putRoute,
+  path: '/providers/:provider_path{.+}',
+  hide: true,
+})
+const patchRuntimeRoute = createRoute({
+  ...patchRoute,
+  path: '/providers/:provider_path{.+}',
+  hide: true,
+})
+const deleteRuntimeRoute = createRoute({
+  ...deleteRoute,
+  path: '/providers/:provider_path{.+}',
+  hide: true,
 })
 
 type ProviderRouteOptions = {
@@ -297,6 +326,13 @@ function requireTemplate(providers: ProviderRegistry, templateId: string) {
     )
   }
   return template
+}
+
+function assertOrganizationProvider(
+  organization: string | undefined,
+  providerId: string,
+): void {
+  assertOrganizationResourcePath(organization, providerId, 'provider')
 }
 
 function normalizeConfiguration(
@@ -400,6 +436,7 @@ function providerCredentialFields(
 
 function serializeProvider(
   descriptor: Awaited<ReturnType<typeof listProviderDescriptors>>[number],
+  callbackUrl: string,
   record?: Awaited<ReturnType<typeof findDynamicProvider>>,
 ) {
   return {
@@ -418,6 +455,7 @@ function serializeProvider(
         : null,
     configuration:
       descriptor.source === 'dynamic' ? (descriptor.configuration ?? {}) : null,
+    callback_url: callbackUrl,
     created_at: record?.createdAt.toISOString() ?? null,
     updated_at: record?.updatedAt.toISOString() ?? null,
   }
@@ -448,15 +486,25 @@ export function createProviderRoutes<Bindings extends object>(
   routes.use('/providers', requireEnabled, connectDatabase, authenticate)
   routes.use('/providers/*', requireEnabled, connectDatabase, authenticate)
 
+  routes.openAPIRegistry.registerPath(getRoute)
+  routes.openAPIRegistry.registerPath(putRoute)
+  routes.openAPIRegistry.registerPath(patchRoute)
+  routes.openAPIRegistry.registerPath(deleteRoute)
+
   const listApi = routes.openapi(listRoute, async (c) => {
-    assertRootAccess(c.get('accessGrant'))
     const { organization } = c.get('databaseContext')
     const providers = await resolveProviders(c.env)
-    const descriptors = await listProviderDescriptors(
-      c.get('db'),
-      resolveBrokerConfig(c.env),
-      providers,
-      organization,
+    const grant = c.get('accessGrant')
+    const descriptors = (
+      await listProviderDescriptors(
+        c.get('db'),
+        resolveBrokerConfig(c.env),
+        providers,
+        organization,
+      )
+    ).filter(
+      ({ id, source }) =>
+        source === 'fixed' || scopesAllowResource(grant.scopes, id),
     )
     const records = await Promise.all(
       descriptors.map(({ id, source }) =>
@@ -468,18 +516,29 @@ export function createProviderRoutes<Bindings extends object>(
     return c.json(
       {
         providers: descriptors.map((descriptor, index) =>
-          serializeProvider(descriptor, records[index]),
+          serializeProvider(
+            descriptor,
+            resolveRedirectUri(
+              resolveBrokerConfig(c.env),
+              c.req.url,
+              descriptor.id,
+            ),
+            records[index],
+          ),
         ),
       },
       200,
     )
   })
 
-  const getApi = listApi.openapi(getRoute, async (c) => {
-    assertRootAccess(c.get('accessGrant'))
-    const providerId = normalizeProviderId(c.req.valid('param').provider_id)
+  const getApi = listApi.openapi(getRuntimeRoute, async (c) => {
+    const providerId = normalizeProviderId(c.req.valid('param').provider_path)
     const { organization } = c.get('databaseContext')
     const providers = await resolveProviders(c.env)
+    if (!providers.getProvider(providerId)) {
+      assertOrganizationProvider(organization, providerId)
+      assertProviderAccess(c.get('accessGrant'), providerId)
+    }
     const descriptor = (
       await listProviderDescriptors(
         c.get('db'),
@@ -499,12 +558,20 @@ export function createProviderRoutes<Bindings extends object>(
       descriptor.source === 'dynamic'
         ? await findDynamicProvider(c.get('db'), providerId, organization)
         : undefined
-    return c.json({ provider: serializeProvider(descriptor, record) }, 200)
+    return c.json(
+      {
+        provider: serializeProvider(
+          descriptor,
+          resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
+          record,
+        ),
+      },
+      200,
+    )
   })
 
-  const putApi = getApi.openapi(putRoute, async (c) => {
-    assertRootAccess(c.get('accessGrant'))
-    const providerId = normalizeProviderId(c.req.valid('param').provider_id)
+  const putApi = getApi.openapi(putRuntimeRoute, async (c) => {
+    const providerId = normalizeProviderId(c.req.valid('param').provider_path)
     const providers = await resolveProviders(c.env)
     if (providers.getProvider(providerId)) {
       throw new BrokerError(
@@ -513,8 +580,11 @@ export function createProviderRoutes<Bindings extends object>(
         `Provider id "${providerId}" is reserved by a fixed provider.`,
       )
     }
+    const { organization } = c.get('databaseContext')
+    assertOrganizationProvider(organization, providerId)
+    assertProviderAccess(c.get('accessGrant'), providerId)
     const body = c.req.valid('json')
-    const templateId = normalizeProviderId(body.template)
+    const templateId = normalizeProviderTemplateId(body.template)
     const template = requireTemplate(providers, templateId)
     const configuration = normalizeConfiguration(
       template,
@@ -526,7 +596,6 @@ export function createProviderRoutes<Bindings extends object>(
       configuration,
       resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
     )
-    const { organization } = c.get('databaseContext')
     const existing = await findDynamicProvider(
       c.get('db'),
       providerId,
@@ -600,13 +669,23 @@ export function createProviderRoutes<Bindings extends object>(
       organization,
       provider: providerId,
     })
-    return c.json({ provider: serializeProvider(descriptor, record) }, 200)
+    return c.json(
+      {
+        provider: serializeProvider(
+          descriptor,
+          resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
+          record,
+        ),
+      },
+      200,
+    )
   })
 
-  const patchApi = putApi.openapi(patchRoute, async (c) => {
-    assertRootAccess(c.get('accessGrant'))
-    const providerId = normalizeProviderId(c.req.valid('param').provider_id)
+  const patchApi = putApi.openapi(patchRuntimeRoute, async (c) => {
+    const providerId = normalizeProviderId(c.req.valid('param').provider_path)
+    assertProviderAccess(c.get('accessGrant'), providerId)
     const { organization } = c.get('databaseContext')
+    assertOrganizationProvider(organization, providerId)
     const providers = await resolveProviders(c.env)
     const existing = await findDynamicProvider(
       c.get('db'),
@@ -622,7 +701,7 @@ export function createProviderRoutes<Bindings extends object>(
     }
     const body = c.req.valid('json')
     const templateId = body.template
-      ? normalizeProviderId(body.template)
+      ? normalizeProviderTemplateId(body.template)
       : existing.templateId
     const template = requireTemplate(providers, templateId)
     const configuration = normalizeConfiguration(
@@ -705,13 +784,23 @@ export function createProviderRoutes<Bindings extends object>(
       organization,
       provider: providerId,
     })
-    return c.json({ provider: serializeProvider(descriptor, record) }, 200)
+    return c.json(
+      {
+        provider: serializeProvider(
+          descriptor,
+          resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
+          record,
+        ),
+      },
+      200,
+    )
   })
 
-  const deleteApi = patchApi.openapi(deleteRoute, async (c) => {
-    assertRootAccess(c.get('accessGrant'))
-    const providerId = normalizeProviderId(c.req.valid('param').provider_id)
+  const deleteApi = patchApi.openapi(deleteRuntimeRoute, async (c) => {
+    const providerId = normalizeProviderId(c.req.valid('param').provider_path)
+    assertProviderAccess(c.get('accessGrant'), providerId)
     const { organization } = c.get('databaseContext')
+    assertOrganizationProvider(organization, providerId)
     const existing = await findDynamicProvider(
       c.get('db'),
       providerId,

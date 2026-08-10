@@ -19,11 +19,12 @@ export function oauthRedirectUri(
 
   try {
     const url = new URL(templateCallbackUrl)
-    const segments = url.pathname.split('/')
-    if (segments.at(-1) !== 'callback' || segments.length < 2) return ''
+    const marker = '/oauth/callback/'
+    const markerIndex = url.pathname.indexOf(marker)
+    if (markerIndex < 0) return ''
 
-    segments[segments.length - 2] = providerId
-    url.pathname = segments.join('/')
+    const encodedPath = providerId.split('/').map(encodeURIComponent).join('/')
+    url.pathname = `${url.pathname.slice(0, markerIndex + marker.length)}${encodedPath}`
     return url.toString()
   } catch {
     return ''

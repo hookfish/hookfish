@@ -5,6 +5,8 @@ import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertConnectionAccess,
   assertConnectionPrefixAccess,
+  assertProviderAccess,
+  scopesAllowResource,
 } from '../oauth/access-token'
 import {
   completeAuthorization,
@@ -30,6 +32,7 @@ import {
   withDatabase,
 } from '../oauth/middleware'
 import { ORGANIZATION_PATTERN } from '../oauth/organization'
+import { assertOrganizationResourcePath } from '../oauth/resource-path'
 import { organizationFromAuthorizationState } from '../oauth/state'
 
 /**
@@ -41,7 +44,6 @@ const brokerAuth = [{ brokerApiKey: [] }]
 
 /** Example connection id shown in OpenAPI / Swagger. */
 const EXAMPLE_CONNECTION_ID = 'swift-orchid-4821'
-const MAX_ORGANIZATION_CONNECTION_PATH_LENGTH = 512
 
 type OAuthRouteOptions = {
   returnTo?: string
@@ -90,93 +92,7 @@ function assertOrganizationConnection(
   connectionId: string,
 ): void {
   if (!organization) return
-
-  assertCanonicalOrganizationPath(connectionId)
-
-  if (
-    connectionId === organization ||
-    connectionId.startsWith(`${organization}/`)
-  ) {
-    return
-  }
-
-  throw new BrokerError(
-    403,
-    'organization_mismatch',
-    `Connection "${connectionId}" is outside organization "${organization}".`,
-  )
-}
-
-/**
- * Organization connection ids are URL-shaped namespaces. Keep their string
- * representation canonical so no later URL, proxy, or UI decoding step can
- * reinterpret a value as a different organization path.
- */
-function assertCanonicalOrganizationPath(connectionPath: string): void {
-  const segments = connectionPath.split('/')
-  const structurallyInvalid =
-    connectionPath.length === 0 ||
-    connectionPath.length > MAX_ORGANIZATION_CONNECTION_PATH_LENGTH ||
-    connectionPath !== connectionPath.normalize('NFC') ||
-    connectionPath.includes('\\') ||
-    hasUnsafePathCharacters(connectionPath) ||
-    segments.some(
-      (segment) =>
-        segment.length === 0 ||
-        segment === '.' ||
-        segment === '..' ||
-        decodesToPathStructure(segment),
-    )
-
-  if (structurallyInvalid) {
-    throw new BrokerError(
-      400,
-      'invalid_connection_path',
-      'Organization connection paths must be canonical slash-delimited identifiers without empty, dot, encoded structural, control, or backslash segments.',
-    )
-  }
-}
-
-function decodesToPathStructure(segment: string): boolean {
-  let decoded: string
-  try {
-    decoded = decodeURIComponent(segment)
-  } catch {
-    // A literal percent sign is safe when the value is subsequently encoded as
-    // a URL component. Only successfully decoded structural values are
-    // ambiguous.
-    return false
-  }
-
-  if (decoded === segment) return false
-
-  return (
-    decoded === '.' ||
-    decoded === '..' ||
-    decoded.includes('/') ||
-    decoded.includes('\\') ||
-    hasUnsafePathCharacters(decoded)
-  )
-}
-
-function hasUnsafePathCharacters(value: string): boolean {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0)
-    if (codePoint === undefined) continue
-
-    if (
-      codePoint <= 0x1f ||
-      (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      codePoint === 0x200e ||
-      codePoint === 0x200f ||
-      (codePoint >= 0x202a && codePoint <= 0x202e) ||
-      (codePoint >= 0x2066 && codePoint <= 0x2069)
-    ) {
-      return true
-    }
-  }
-
-  return false
+  assertOrganizationResourcePath(organization, connectionId, 'connection')
 }
 
 function redirectWithResult(
@@ -286,10 +202,15 @@ const commonErrors = {
   502: errorResponse('The provider rejected the token request'),
 }
 
-const providerParamSchema = z.object({
-  provider: z
+const providerPathParamSchema = z.object({
+  provider_path: z
     .string()
-    .openapi({ param: { name: 'provider', in: 'path' }, example: 'notion' }),
+    .min(1)
+    .max(512)
+    .openapi({
+      param: { name: 'provider_path', in: 'path' },
+      example: 'team/payments/notion',
+    }),
 })
 
 const connectionIdParamSchema = z.object({
@@ -382,13 +303,13 @@ const listProvidersRoute = createRoute({
 
 const authorizeRoute = createRoute({
   method: 'post',
-  path: '/{provider}/authorize',
+  path: '/authorize/{provider_path}',
   summary: 'Create a consent URL for a connection',
   description:
     'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.',
   security: brokerAuth,
   request: {
-    params: providerParamSchema,
+    params: providerPathParamSchema,
     body: {
       content: {
         'application/json': {
@@ -438,12 +359,12 @@ const authorizeRoute = createRoute({
 
 const callbackRoute = createRoute({
   method: 'get',
-  path: '/{provider}/callback',
+  path: '/callback/{provider_path}',
   summary: 'OAuth redirect target (called by the provider, not by your code)',
   description:
     "Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.",
   request: {
-    params: providerParamSchema,
+    params: providerPathParamSchema,
     query: z.object({
       code: z.string().optional(),
       state: z.string().optional(),
@@ -466,9 +387,9 @@ const callbackRoute = createRoute({
 
 const clientMetadataRoute = createRoute({
   method: 'get',
-  path: '/{provider}/client-metadata.json',
+  path: '/client-metadata/{provider_path}',
   summary: 'OAuth client metadata document for MCP authorization servers',
-  request: { params: providerParamSchema },
+  request: { params: providerPathParamSchema },
   responses: {
     200: {
       description: 'OAuth client metadata document',
@@ -620,6 +541,24 @@ const disconnectRuntimeRoute = createRoute({
   hide: true,
 })
 
+const authorizeRuntimeRoute = createRoute({
+  ...authorizeRoute,
+  path: '/authorize/:provider_path{.+}',
+  hide: true,
+})
+
+const callbackRuntimeRoute = createRoute({
+  ...callbackRoute,
+  path: '/callback/:provider_path{.+}',
+  hide: true,
+})
+
+const clientMetadataRuntimeRoute = createRoute({
+  ...clientMetadataRoute,
+  path: '/client-metadata/:provider_path{.+}',
+  hide: true,
+})
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -645,12 +584,8 @@ export function createOAuthRoutes<Bindings extends object>(
   )
 
   oauthRoutes.use('/providers', connectManagementDatabase, authenticate)
-  oauthRoutes.use(
-    '/:provider/authorize',
-    connectManagementDatabase,
-    authenticate,
-  )
-  oauthRoutes.use('/:provider/callback', connectCallbackDatabase)
+  oauthRoutes.use('/authorize/*', connectManagementDatabase, authenticate)
+  oauthRoutes.use('/callback/*', connectCallbackDatabase)
   oauthRoutes.use('/connections', connectManagementDatabase, authenticate)
   oauthRoutes.use('/connections/*', connectManagementDatabase, authenticate)
   oauthRoutes.use('/tokens/*', connectManagementDatabase, authenticate)
@@ -660,27 +595,45 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(getConnectionRoute)
   oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
+  oauthRoutes.openAPIRegistry.registerPath(authorizeRoute)
+  oauthRoutes.openAPIRegistry.registerPath(callbackRoute)
+  oauthRoutes.openAPIRegistry.registerPath(clientMetadataRoute)
 
-  const clientMetadataApi = oauthRoutes.openapi(clientMetadataRoute, (c) => {
-    const clientId = new URL(c.req.url)
-    clientId.search = ''
-    const redirectUri = new URL(clientId)
-    redirectUri.pathname = redirectUri.pathname.replace(
-      /\/client-metadata\.json$/,
-      '/callback',
-    )
-    return c.json(
-      {
-        client_id: clientId.toString(),
-        client_name: 'Hookfish MCP OAuth broker',
-        redirect_uris: [redirectUri.toString()],
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        token_endpoint_auth_method: 'none',
-      },
-      200,
-    )
-  })
+  const clientMetadataApi = oauthRoutes.openapi(
+    clientMetadataRuntimeRoute,
+    (c) => {
+      if (options.routeMode === 'organization') {
+        throw new BrokerError(
+          404,
+          'global_client_metadata_required',
+          'OAuth clients must use the global client metadata URL.',
+        )
+      }
+      assertOrganizationResourcePath(
+        undefined,
+        c.req.valid('param').provider_path,
+        'provider',
+      )
+      const clientId = new URL(c.req.url)
+      clientId.search = ''
+      const redirectUri = new URL(clientId)
+      redirectUri.pathname = redirectUri.pathname.replace(
+        '/oauth/client-metadata/',
+        '/oauth/callback/',
+      )
+      return c.json(
+        {
+          client_id: clientId.toString(),
+          client_name: 'Hookfish MCP OAuth broker',
+          redirect_uris: [redirectUri.toString()],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+        },
+        200,
+      )
+    },
+  )
 
   const providersApi = clientMetadataApi.openapi(
     listProvidersRoute,
@@ -693,110 +646,124 @@ export function createOAuthRoutes<Bindings extends object>(
       }
       const config = resolveBrokerConfig(c.env)
       const providers = await resolveProviders(c.env)
+      const grant = c.get('accessGrant')
+      const { limit, ...providerFilter } = filter
+      const descriptors = (
+        await listProviderDescriptors(
+          c.get('db'),
+          config,
+          providers,
+          organization,
+          {
+            ...providerFilter,
+            ...(includeUnconfigured ? {} : { configured: true }),
+          },
+        )
+      ).filter(({ id }) => scopesAllowResource(grant.scopes, id))
       return c.json(
         {
-          providers: (
-            await listProviderDescriptors(
-              c.get('db'),
-              config,
-              providers,
-              organization,
-              {
-                ...filter,
-                ...(includeUnconfigured ? {} : { configured: true }),
-              },
-            )
-          ).map(({ id: slug, label, configured, provider, templateId }) => {
-            const template = templateId
-              ? providers.getProvider(templateId)
-              : undefined
-            return {
-              id: slug,
-              label,
-              kind: provider?.kind ?? template?.kind ?? 'oauth',
-              configured,
-              // Derived from this request, so it stays correct across branches,
-              // `pnpm dev` vs. `server dev`, and deployed environments.
-              callback_url: resolveRedirectUri(config, c.req.url, slug),
-              scopes: [...(provider?.defaultScopes ?? [])],
-              available_scopes: [...(provider?.availableScopes ?? [])],
-              supports_refresh: provider?.refreshToken !== undefined,
-              supports_revocation: provider?.revokeToken !== undefined,
-              uses_pkce: provider?.usesPkce ?? false,
-            }
-          }),
+          providers: (limit ? descriptors.slice(0, limit) : descriptors).map(
+            ({ id: slug, label, configured, provider, templateId }) => {
+              const template = templateId
+                ? providers.getProvider(templateId)
+                : undefined
+              return {
+                id: slug,
+                label,
+                kind: provider?.kind ?? template?.kind ?? 'oauth',
+                configured,
+                // Derived from this request, so it stays correct across branches,
+                // `pnpm dev` vs. `server dev`, and deployed environments.
+                callback_url: resolveRedirectUri(config, c.req.url, slug),
+                scopes: [...(provider?.defaultScopes ?? [])],
+                available_scopes: [...(provider?.availableScopes ?? [])],
+                supports_refresh: provider?.refreshToken !== undefined,
+                supports_revocation: provider?.revokeToken !== undefined,
+                uses_pkce: provider?.usesPkce ?? false,
+              }
+            },
+          ),
         },
         200,
       )
     },
   )
 
-  const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
-    const { provider } = c.req.valid('param')
-    const body = c.req.valid('json')
-    const config = resolveBrokerConfig(c.env)
-    const providers = await resolveProviders(c.env)
-    const { organization } = c.get('databaseContext')
-    const connectionIdPrefix =
-      body.connection_id_prefix ??
-      (organization && !body.connection_id ? organization : undefined)
+  const authorizeApi = providersApi.openapi(
+    authorizeRuntimeRoute,
+    async (c) => {
+      const provider = c.req.valid('param').provider_path
+      const body = c.req.valid('json')
+      const config = resolveBrokerConfig(c.env)
+      const providers = await resolveProviders(c.env)
+      const { organization } = c.get('databaseContext')
+      if (!providers.getProvider(provider)) {
+        assertOrganizationResourcePath(organization, provider, 'provider')
+      } else {
+        assertOrganizationResourcePath(undefined, provider, 'provider')
+      }
+      assertProviderAccess(c.get('accessGrant'), provider)
+      const connectionIdPrefix =
+        body.connection_id_prefix ??
+        (organization && !body.connection_id ? organization : undefined)
 
-    if (body.connection_id) {
-      assertOrganizationConnection(organization, body.connection_id)
-    }
-    if (connectionIdPrefix) {
-      assertOrganizationConnection(organization, connectionIdPrefix)
-    }
+      if (body.connection_id) {
+        assertOrganizationConnection(organization, body.connection_id)
+      }
+      if (connectionIdPrefix) {
+        assertOrganizationConnection(organization, connectionIdPrefix)
+      }
 
-    if (body.connection_id) {
-      assertConnectionAccess(c.get('accessGrant'), body.connection_id)
-    } else if (connectionIdPrefix) {
-      assertConnectionPrefixAccess(c.get('accessGrant'), connectionIdPrefix)
-    } else if (!c.get('accessGrant').scopes.includes('**')) {
-      throw new BrokerError(
-        400,
-        'connection_id_required',
-        'A scoped broker access token must provide a connection_id or connection_id_prefix within its scope.',
+      if (body.connection_id) {
+        assertConnectionAccess(c.get('accessGrant'), body.connection_id)
+      } else if (connectionIdPrefix) {
+        assertConnectionPrefixAccess(c.get('accessGrant'), connectionIdPrefix)
+      } else if (!c.get('accessGrant').scopes.includes('**')) {
+        throw new BrokerError(
+          400,
+          'connection_id_required',
+          'A scoped broker access token must provide a connection_id or connection_id_prefix within its scope.',
+        )
+      }
+
+      const result = await startAuthorization(
+        c.get('db'),
+        config,
+        {
+          connectionId: body.connection_id,
+          connectionIdPrefix,
+          provider,
+          organization,
+          redirectUri: resolveRedirectUri(config, c.req.url, provider),
+          returnTo: validateReturnTo(
+            body.return_to,
+            options.trustedOrigins ?? [],
+          ),
+          scopes: body.scopes,
+        },
+        providers,
       )
-    }
 
-    const result = await startAuthorization(
-      c.get('db'),
-      config,
-      {
-        connectionId: body.connection_id,
-        connectionIdPrefix,
-        provider,
+      await emitHookfishEvent(options.onEvent, {
+        type: 'authorization.started',
+        occurredAt: new Date(),
         organization,
-        redirectUri: resolveRedirectUri(config, c.req.url, provider),
-        returnTo: validateReturnTo(
-          body.return_to,
-          options.trustedOrigins ?? [],
-        ),
-        scopes: body.scopes,
-      },
-      providers,
-    )
+        provider,
+        connectionId: result.connectionId,
+      })
 
-    await emitHookfishEvent(options.onEvent, {
-      type: 'authorization.started',
-      occurredAt: new Date(),
-      organization,
-      provider,
-      connectionId: result.connectionId,
-    })
+      return c.json(
+        {
+          connection_id: result.connectionId,
+          authorize_url: result.authorizeUrl,
+          expires_at: result.expiresAt.toISOString(),
+        },
+        200,
+      )
+    },
+  )
 
-    return c.json(
-      {
-        connection_id: result.connectionId,
-        authorize_url: result.authorizeUrl,
-        expires_at: result.expiresAt.toISOString(),
-      },
-      200,
-    )
-  })
-
-  const callbackApi = authorizeApi.openapi(callbackRoute, async (c) => {
+  const callbackApi = authorizeApi.openapi(callbackRuntimeRoute, async (c) => {
     if (options.routeMode === 'organization') {
       throw new BrokerError(
         404,
@@ -804,7 +771,8 @@ export function createOAuthRoutes<Bindings extends object>(
         'OAuth providers must use the global callback URL.',
       )
     }
-    const { provider } = c.req.valid('param')
+    const provider = c.req.valid('param').provider_path
+    assertOrganizationResourcePath(undefined, provider, 'provider')
     const query = c.req.valid('query')
 
     if (query.error) {
