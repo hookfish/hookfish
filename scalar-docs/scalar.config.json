@@ -1,0 +1,23 @@
+{
+  "$schema": "https://cdn.scalar.com/schema/scalar-config-next.json",
+  "scalar": "2.0.0",
+  "info": {
+    "title": "Hookfish"
+  },
+  "siteConfig": {},
+  "navigation": {
+    "routes": {
+      "/": {
+        "type": "group",
+        "title": "Documentation",
+        "children": {
+          "/introduction": {
+            "type": "page",
+            "title": "Getting Started",
+            "filepath": "docs/introduction.md"
+          }
+        }
+      }
+    }
+  }
+}
