@@ -10,19 +10,6 @@ import {
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
-export type HookfishBindings = {
-  NODE_ENV?: string
-  OAUTH_ENCRYPTION_KEY?: string
-  BROKER_API_KEY?: string
-  OAUTH_REDIRECT_BASE_URL?: string
-  GITHUB_CLIENT_ID?: string
-  GITHUB_CLIENT_SECRET?: string
-  LINEAR_CLIENT_ID?: string
-  LINEAR_CLIENT_SECRET?: string
-  NOTION_CLIENT_ID?: string
-  NOTION_CLIENT_SECRET?: string
-}
-
 const db = pglite(
   process.env.PGLITE_DATA_DIR ??
     path.join(path.dirname(fileURLToPath(import.meta.url)), 'pgdata'),
@@ -40,7 +27,7 @@ const db = pglite(
 // )
 // const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
 
-export default defineHookfishConfig<HookfishBindings>({
+export default defineHookfishConfig({
   db,
   includeClient: true,
   includeSwagger: true,
@@ -49,7 +36,7 @@ export default defineHookfishConfig<HookfishBindings>({
   organizationRouting: false, // Use /api/organization/:organization/oauth management routes.
   providerManagement: true,
   // onEvent: async (event) => auditLog.write(event),
-  providers: (env) => ({
+  providers: (env: typeof process.env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({
       clientId: env.GITHUB_CLIENT_ID,
