@@ -484,6 +484,49 @@ the CRUD API; pre-provisioned dynamic rows continue to resolve when it is off.
 atomically replaces that pair with the database client id and encrypted vault
 secret.
 
+### Remote MCP servers
+
+Register the bundled MCP template to let provider management create OAuth
+connections for arbitrary remote MCP endpoints:
+
+```ts
+import { createMcpProvider } from '@hookfish/provider-mcp'
+
+export default defineHookfishConfig({
+  db,
+  providerManagement: true,
+  providers: {
+    mcp: createMcpProvider(),
+  },
+})
+```
+
+Then create a configured instance with the MCP resource URL. Hookfish follows
+the MCP protected-resource and authorization-server metadata discovery flow,
+requires PKCE S256, and includes the RFC 8707 `resource` parameter in
+authorization and token requests:
+
+```sh
+curl -X PUT http://127.0.0.1:5173/api/admin/providers/acme-mcp \
+  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "template":"mcp",
+    "label":"Acme MCP",
+    "configuration":{
+      "resource_url":"https://mcp.acme.example/mcp",
+      "scopes":["tools:read"]
+    },
+    "credentials":{"mode":"register"}
+  }'
+```
+
+Automatic registration prefers an OAuth Client ID Metadata Document and falls
+back to Dynamic Client Registration when the authorization server supports it.
+For a pre-registered client, use `{"mode":"custom","client_id":"..."}`;
+`client_secret` is optional for public MCP clients and encrypted when supplied.
+The frontend exposes the same options through **Add provider**.
+
 ## Adding a provider
 
 Provider slugs belong to the application, not to provider classes. Add the

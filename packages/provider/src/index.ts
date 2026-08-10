@@ -17,13 +17,41 @@ export type ProviderCredentials = {
   clientSecret?: string
 }
 
+export type ProviderConfiguration = Record<string, unknown>
+
+export type RegisterProviderClientInput = {
+  configuration: ProviderConfiguration
+  redirectUri: string
+}
+
+export type RegisteredProviderClient = {
+  clientId: string
+  clientSecret?: string
+}
+
 /**
  * A configured provider can also act as the trusted template for database-
  * backed provider instances. Passing no credentials recreates the provider
  * with its fixed defaults; passing credentials replaces the pair atomically.
  */
 export interface OAuthProviderTemplate extends OAuthProvider {
-  createProvider(credentials?: Required<ProviderCredentials>): OAuthProvider
+  /** Whether a custom client id can be used without a client secret. */
+  readonly allowsPublicClient?: boolean
+
+  createProvider(
+    credentials?: Required<ProviderCredentials>,
+    configuration?: ProviderConfiguration,
+  ): OAuthProvider
+
+  /** Validate and canonicalize non-secret, database-backed configuration. */
+  normalizeConfiguration?(
+    configuration: ProviderConfiguration,
+  ): ProviderConfiguration
+
+  /** Register a client when the upstream service supports dynamic registration. */
+  registerClient?(
+    input: RegisterProviderClientInput,
+  ): Promise<RegisteredProviderClient>
 }
 
 export type CreateAuthorizationInput = {
@@ -42,6 +70,8 @@ export type ExchangeCodeInput = {
   code: string
   redirectUri: string
   codeVerifier?: string
+  /** Authorization-server issuer returned with the callback (RFC 9207). */
+  issuer?: string
 }
 
 export type RefreshTokenInput = {

@@ -1,4 +1,9 @@
+import { createHookfishClient, type HookfishClient } from '@hookfish/hooks'
 import { backendUrl } from './api-url'
+
+const managementClient = createHookfishClient({
+  baseUrl: `${backendUrl}/api`,
+})
 
 export type SecretMetadata = {
   path: string
@@ -17,17 +22,37 @@ export type ManagedProvider = {
     mode: 'inherit' | 'custom'
     client_id: string | null
   } | null
+  configuration: Record<string, unknown> | null
   created_at: string | null
   updated_at: string | null
 }
 
-export type StoreProviderInput = {
+type StoreProviderBase = {
   id: string
   template: string
   label?: string
+}
+
+type StoreOAuthProviderInput = {
+  type: 'oauth'
   clientId: string
   clientSecret: string
 }
+
+type StoreMcpProviderInput = {
+  type: 'mcp'
+  resourceUrl: string
+  scopes: string[]
+  clientId?: string
+  clientSecret?: string
+}
+
+export type StoreProviderInput = StoreProviderBase &
+  (StoreOAuthProviderInput | StoreMcpProviderInput)
+
+type StoreProviderBody = Parameters<
+  HookfishClient['admin']['providers'][':provider_id']['$put']
+>[0]['json']
 
 function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
@@ -49,6 +74,10 @@ async function managementRequest<T>(
   })
   if (response.ok) return response.json()
 
+  return throwManagementError(response)
+}
+
+async function throwManagementError(response: Response): Promise<never> {
   const body = await response.json().catch(() => undefined)
   const message = body?.error?.message
   throw new Error(
@@ -56,6 +85,50 @@ async function managementRequest<T>(
       ? message
       : `Hookfish request failed (${response.status}).`,
   )
+}
+
+function managementRequestOptions(token: string) {
+  return {
+    init: {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  }
+}
+
+function storeProviderBody(input: StoreProviderInput): StoreProviderBody {
+  const base = {
+    template: input.template,
+    ...(input.label ? { label: input.label } : {}),
+    enabled: true,
+  }
+
+  if (input.type === 'mcp') {
+    return {
+      ...base,
+      configuration: {
+        resource_url: input.resourceUrl,
+        scopes: input.scopes,
+      },
+      credentials: input.clientId
+        ? {
+            mode: 'custom',
+            client_id: input.clientId,
+            ...(input.clientSecret
+              ? { client_secret: input.clientSecret }
+              : {}),
+          }
+        : { mode: 'register' },
+    }
+  }
+
+  return {
+    ...base,
+    credentials: {
+      mode: 'custom',
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
+    },
+  }
 }
 
 export async function listSecrets(
@@ -94,10 +167,12 @@ export async function deleteSecret(token: string, path: string): Promise<void> {
 export async function listManagedProviders(
   token: string,
 ): Promise<ManagedProvider[]> {
-  const data = await managementRequest<{ providers: ManagedProvider[] }>(
-    token,
-    '/admin/providers',
+  const response = await managementClient.admin.providers.$get(
+    undefined,
+    managementRequestOptions(token),
   )
+  if (!response.ok) return throwManagementError(response)
+  const data = await response.json()
   return data.providers
 }
 
@@ -105,23 +180,15 @@ export async function storeManagedProvider(
   token: string,
   input: StoreProviderInput,
 ): Promise<ManagedProvider> {
-  const data = await managementRequest<{ provider: ManagedProvider }>(
-    token,
-    `/admin/providers/${encodeURIComponent(input.id)}`,
+  const response = await managementClient.admin.providers[':provider_id'].$put(
     {
-      method: 'PUT',
-      body: JSON.stringify({
-        template: input.template,
-        ...(input.label ? { label: input.label } : {}),
-        credentials: {
-          mode: 'custom',
-          client_id: input.clientId,
-          client_secret: input.clientSecret,
-        },
-        enabled: true,
-      }),
+      param: { provider_id: input.id },
+      json: storeProviderBody(input),
     },
+    managementRequestOptions(token),
   )
+  if (!response.ok) return throwManagementError(response)
+  const data = await response.json()
   return data.provider
 }
 
@@ -129,9 +196,11 @@ export async function deleteManagedProvider(
   token: string,
   providerId: string,
 ): Promise<void> {
-  await managementRequest(
-    token,
-    `/admin/providers/${encodeURIComponent(providerId)}`,
-    { method: 'DELETE' },
+  const response = await managementClient.admin.providers[
+    ':provider_id'
+  ].$delete(
+    { param: { provider_id: providerId } },
+    managementRequestOptions(token),
   )
+  if (!response.ok) return throwManagementError(response)
 }

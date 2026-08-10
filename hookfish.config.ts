@@ -5,6 +5,7 @@ import { pglite } from '@hookfish/database/pglite'
 import {
   createGitHubProvider,
   createLinearProvider,
+  createMcpProvider,
   createNotionProvider,
 } from '@hookfish/providers'
 
@@ -46,6 +47,7 @@ export default defineHookfishConfig({
       clientId: env.LINEAR_CLIENT_ID,
       clientSecret: env.LINEAR_CLIENT_SECRET,
     }),
+    mcp: createMcpProvider(),
     notion: createNotionProvider({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,

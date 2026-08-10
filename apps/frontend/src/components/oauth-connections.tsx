@@ -506,7 +506,7 @@ function AddConnectionDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="oauth">OAuth account</SelectItem>
+                  <SelectItem value="oauth">OAuth / MCP account</SelectItem>
                   <SelectItem value="api-key">API key</SelectItem>
                 </SelectContent>
               </Select>
@@ -740,8 +740,8 @@ export function OAuthConnections({
             Connections
           </CardTitle>
           <CardDescription className="max-w-[60ch] leading-relaxed">
-            Organize OAuth accounts and encrypted API keys in browser-local
-            folders.
+            Organize OAuth accounts, remote MCP servers, and encrypted API keys
+            in browser-local folders.
           </CardDescription>
           <CardAction className="flex flex-wrap items-center justify-end gap-2">
             <ToggleGroup
@@ -851,7 +851,7 @@ export function OAuthConnections({
                     ? 'This folder is stored only in this browser. It won’t appear in the Hookfish API until you add a connection.'
                     : view === 'tree'
                       ? 'Add a folder or create a connection here.'
-                      : 'Create an OAuth or API-key connection.'}
+                      : 'Create an OAuth, MCP, or API-key connection.'}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -959,7 +959,7 @@ export function OAuthConnections({
       </Card>
 
       <AddFolderDialog
-        key={`${folderDialogOpen ? 'open' : 'closed'}:${currentPath}`}
+        key={`folder:${folderDialogOpen ? 'open' : 'closed'}:${currentPath}`}
         open={folderDialogOpen}
         currentPath={currentPath}
         folders={localFolders}
@@ -967,7 +967,7 @@ export function OAuthConnections({
         onOpenChange={setFolderDialogOpen}
       />
       <AddConnectionDialog
-        key={`${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
+        key={`connection:${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
         currentPath={addConnectionPath}
         providers={providersQuery.data?.providers ?? []}

@@ -82,13 +82,9 @@ async function instantiateDynamicProvider(
   }
 
   if (record.credentialMode === 'inherit') {
-    return template.createProvider()
+    return template.createProvider(undefined, record.configuration)
   }
-  if (
-    record.credentialMode !== 'custom' ||
-    !record.clientId ||
-    !record.clientSecretPath
-  ) {
+  if (record.credentialMode !== 'custom' || !record.clientId) {
     throw new BrokerError(
       500,
       'invalid_provider_credentials',
@@ -96,29 +92,42 @@ async function instantiateDynamicProvider(
     )
   }
 
-  let secret: Awaited<ReturnType<typeof getVaultSecret>>
-  try {
-    secret = await getVaultSecret(
-      db,
-      env,
-      record.clientSecretPath,
-      record.organization || undefined,
-      true,
-    )
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === 'secret_not_found') {
-      throw new BrokerError(
-        500,
-        'missing_provider_credentials',
-        `Dynamic provider "${record.providerId}" is missing its stored client secret.`,
+  let clientSecret: string | undefined
+  if (record.clientSecretPath) {
+    try {
+      const secret = await getVaultSecret(
+        db,
+        env,
+        record.clientSecretPath,
+        record.organization || undefined,
+        true,
       )
+      clientSecret = secret.value
+    } catch (error) {
+      if (error instanceof BrokerError && error.code === 'secret_not_found') {
+        throw new BrokerError(
+          500,
+          'missing_provider_credentials',
+          `Dynamic provider "${record.providerId}" is missing its stored client secret.`,
+        )
+      }
+      throw error
     }
-    throw error
   }
-  return template.createProvider({
-    clientId: record.clientId,
-    clientSecret: secret.value,
-  })
+  if (!clientSecret && !template.allowsPublicClient) {
+    throw new BrokerError(
+      500,
+      'missing_provider_credentials',
+      `Dynamic provider "${record.providerId}" requires a stored client secret.`,
+    )
+  }
+  return template.createProvider(
+    {
+      clientId: record.clientId,
+      clientSecret: clientSecret ?? '',
+    },
+    record.configuration,
+  )
 }
 
 export async function resolveRequestProviderConfig(
@@ -164,6 +173,7 @@ export type ProviderDescriptor = {
   source: 'fixed' | 'dynamic'
   templateId?: string
   credentialMode?: 'inherit' | 'custom'
+  configuration?: Record<string, unknown>
   provider?: OAuthProvider
 }
 
@@ -202,6 +212,7 @@ export async function listProviderDescriptors(
             templateId: record.templateId,
             credentialMode:
               record.credentialMode === 'custom' ? 'custom' : 'inherit',
+            configuration: record.configuration,
             provider,
           }
         } catch {
@@ -214,6 +225,7 @@ export async function listProviderDescriptors(
             templateId: record.templateId,
             credentialMode:
               record.credentialMode === 'custom' ? 'custom' : 'inherit',
+            configuration: record.configuration,
           }
         }
       },
