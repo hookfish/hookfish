@@ -83,6 +83,49 @@ describe('OAuth broker integration', () => {
     })
   })
 
+  it('only lists unconfigured providers when explicitly requested', async () => {
+    const configuredId = 'listing-configured'
+    const unconfiguredId = 'listing-unconfigured'
+    const configuredProvider: OAuthProvider = {
+      label: 'Z Listing',
+      defaultScopes: [],
+      availableScopes: [],
+      usesPkce: false,
+      createAuthorization: () => ({ url: 'https://example.com/authorize' }),
+      exchangeCode: async () => ({ payload: {} }),
+    }
+    h.providers.register({
+      [configuredId]: configuredProvider,
+      [unconfiguredId]: {
+        ...configuredProvider,
+        label: 'A Listing',
+        isConfigured: () => false,
+      },
+    })
+
+    try {
+      const defaultResponse = await h.fetch(
+        '/api/oauth/providers?search=listing&limit=1',
+      )
+      expect(defaultResponse.status).toBe(200)
+      expect(await defaultResponse.json()).toMatchObject({
+        providers: [expect.objectContaining({ id: configuredId })],
+      })
+
+      const inclusiveResponse = await h.fetch(
+        '/api/oauth/providers?search=listing&limit=1&include_unconfigured=true',
+      )
+      expect(inclusiveResponse.status).toBe(200)
+      expect(await inclusiveResponse.json()).toMatchObject({
+        providers: [
+          expect.objectContaining({ id: unconfiguredId, configured: false }),
+        ],
+      })
+    } finally {
+      h.providers.unregister(configuredId, unconfiguredId)
+    }
+  })
+
   it('serves public OAuth client metadata for MCP authorization servers', async () => {
     const response = await h.fetch('/api/oauth/client-metadata/example-mcp')
     expect(response.status).toBe(200)

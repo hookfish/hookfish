@@ -182,7 +182,7 @@ hierarchical resource folders. Outside production,
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
+| `GET` | `/api/oauth/providers` | Configured providers, their capabilities, and each `callback_url` to register (`?include_unconfigured=true` includes unavailable providers) |
 | `POST` | `/api/admin/tokens` | Mint a named, expiring broker credential for one or more resource scopes |
 | `GET` | `/api/admin/tokens` | List active broker credentials by name only (root access required) |
 | `DELETE` | `/api/admin/tokens/{name}` | Immediately revoke a named broker credential (root access required) |

@@ -156,12 +156,13 @@ describe('createHookfishHooks', () => {
         search: 'notion',
         limit: 25,
         source: 'dynamic',
+        include_unconfigured: true,
       }),
     )
 
     expect(data).toEqual({ providers: [] })
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/oauth/providers?search=notion&limit=25&source=dynamic',
+      'https://broker.example/api/oauth/providers?search=notion&limit=25&source=dynamic&include_unconfigured=true',
     )
     expect(
       hookfish.keys.providerSearch({ search: 'notion', limit: 25 }),

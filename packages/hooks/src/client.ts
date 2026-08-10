@@ -1,7 +1,7 @@
 import type { AppType } from '@hookfish/api'
 import {
-  hc,
   type ClientRequestOptions,
+  hc,
   type InferRequestType,
   type InferResponseType,
 } from 'hono/client'
@@ -38,6 +38,7 @@ type DisconnectEndpoint =
 export type StatsResponse = InferResponseType<StatsEndpoint, 200>
 export type ProvidersResponse = InferResponseType<ProvidersEndpoint, 200>
 export type ProvidersFilter = {
+  include_unconfigured?: boolean
   search?: string
   limit?: number
   source?: 'fixed' | 'dynamic'

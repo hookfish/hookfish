@@ -1,10 +1,10 @@
 import {
-  mutationOptions,
-  queryOptions,
   type MutationFunction,
   type MutationKey,
+  mutationOptions,
   type QueryFunction,
   type QueryKey,
+  queryOptions,
 } from '@tanstack/react-query'
 import type {
   AuthorizeConnectionInput,
@@ -64,7 +64,17 @@ export function createHookfishOptions(
         queryKey: keys.providerSearch(filter),
         queryFn: async ({ signal }) => {
           const response = await client.oauth.providers.$get(
-            { query: filter },
+            {
+              query: {
+                ...filter,
+                include_unconfigured:
+                  filter.include_unconfigured === undefined
+                    ? undefined
+                    : filter.include_unconfigured
+                      ? 'true'
+                      : 'false',
+              },
+            },
             { init: { signal } },
           )
           if (!response.ok) return throwHookfishApiError(response)

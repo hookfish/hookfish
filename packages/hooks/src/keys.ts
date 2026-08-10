@@ -12,6 +12,7 @@ export function createHookfishKeys(scope: string) {
         ...root,
         'providers',
         {
+          includeUnconfigured: filter.include_unconfigured ?? null,
           limit: filter.limit ?? null,
           search: filter.search ?? null,
           source: filter.source ?? null,
