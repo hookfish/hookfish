@@ -89,9 +89,7 @@ async function throwManagementError(response: Response): Promise<never> {
 
 function managementRequestOptions(token: string) {
   return {
-    init: {
-      headers: { Authorization: `Bearer ${token}` },
-    },
+    headers: { Authorization: `Bearer ${token}` },
   }
 }
 
