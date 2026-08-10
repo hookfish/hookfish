@@ -9,10 +9,11 @@ import { oauthProviders } from '../db/schema'
 import { getVaultSecret, organizationKey } from '../vault'
 import { type ProviderConfig, resolveProviderConfig } from './config'
 import { BrokerError } from './errors'
+import { normalizeResourcePath } from './resource-path'
 
 export const PROVIDER_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-export function normalizeProviderId(providerId: string): string {
+export function normalizeProviderTemplateId(providerId: string): string {
   const normalized = providerId.trim()
   if (!PROVIDER_ID_PATTERN.test(normalized) || normalized.length > 128) {
     throw new BrokerError(
@@ -22,6 +23,11 @@ export function normalizeProviderId(providerId: string): string {
     )
   }
   return normalized
+}
+
+/** Provider configurations live in the same slash-delimited namespace as connections. */
+export function normalizeProviderId(providerId: string): string {
+  return normalizeResourcePath(providerId, 'provider')
 }
 
 export function normalizeProviderLabel(label?: string): string | undefined {
@@ -138,6 +144,7 @@ export async function resolveRequestProviderConfig(
   organization?: string,
   options: { forNewAuthorization?: boolean } = {},
 ): Promise<ProviderConfig> {
+  normalizeProviderId(providerId)
   const fixed = providers.getProvider(providerId)
   if (fixed) return resolveProviderConfig(providerId, providers)
 

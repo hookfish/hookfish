@@ -18,10 +18,12 @@ describe('oauthRedirectUri', () => {
   it('preserves the advertised callback base while replacing the provider ID', () => {
     expect(
       oauthRedirectUri(
-        'https://broker.example.com/api/oauth/github/callback',
-        'github-production',
+        'https://broker.example.com/api/oauth/callback/github',
+        'team/github-production',
       ),
-    ).toBe('https://broker.example.com/api/oauth/github-production/callback')
+    ).toBe(
+      'https://broker.example.com/api/oauth/callback/team/github-production',
+    )
   })
 
   it('returns an empty string when a callback template is unavailable', () => {

@@ -66,7 +66,7 @@ describe('Hookfish backend', () => {
 
     const response = await backend.fetch(
       new Request(
-        'https://backend.example/api/client/oauth/github/authorize?source=ui',
+        'https://backend.example/api/client/oauth/authorize/github?source=ui',
         { method: 'POST', body: '{"scopes":[]}' },
       ),
     )
@@ -80,7 +80,7 @@ describe('Hookfish backend', () => {
       isAllowedBrowserApiRequest('GET', '/api/oauth/tokens/team/alice'),
     ).toBe(false)
     expect(
-      isAllowedBrowserApiRequest('GET', '/api/oauth/github/callback'),
+      isAllowedBrowserApiRequest('GET', '/api/oauth/callback/github'),
     ).toBe(false)
     expect(isAllowedBrowserApiRequest('PUT', '/api/stats')).toBe(false)
 
@@ -132,7 +132,7 @@ describe('Hookfish backend', () => {
     )
 
     const preflight = await backend.fetch(
-      new Request('https://backend.example/api/client/oauth/github/authorize', {
+      new Request('https://backend.example/api/client/oauth/authorize/github', {
         method: 'OPTIONS',
         headers: { Origin: 'http://localhost:5173' },
       }),
@@ -173,7 +173,7 @@ describe('Hookfish backend', () => {
       hookfishFetch,
     })
     const response = await backend.fetch(
-      new Request('https://backend.example/api/client/oauth/github/authorize', {
+      new Request('https://backend.example/api/client/oauth/authorize/github', {
         method: 'POST',
         body: 'x'.repeat(65_537),
       }),

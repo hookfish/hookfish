@@ -23,6 +23,7 @@ export type ManagedProvider = {
     client_id: string | null
   } | null
   configuration: Record<string, unknown> | null
+  callback_url: string
   created_at: string | null
   updated_at: string | null
 }
@@ -51,7 +52,7 @@ export type StoreProviderInput = StoreProviderBase &
   (StoreOAuthProviderInput | StoreMcpProviderInput)
 
 type StoreProviderBody = Parameters<
-  HookfishClient['admin']['providers'][':provider_id']['$put']
+  HookfishClient['admin']['providers'][':provider_path{.+}']['$put']
 >[0]['json']
 
 function encodePath(path: string): string {
@@ -178,9 +179,11 @@ export async function storeManagedProvider(
   token: string,
   input: StoreProviderInput,
 ): Promise<ManagedProvider> {
-  const response = await managementClient.admin.providers[':provider_id'].$put(
+  const response = await managementClient.admin.providers[
+    ':provider_path{.+}'
+  ].$put(
     {
-      param: { provider_id: input.id },
+      param: { provider_path: input.id },
       json: storeProviderBody(input),
     },
     managementRequestOptions(token),
@@ -195,9 +198,9 @@ export async function deleteManagedProvider(
   providerId: string,
 ): Promise<void> {
   const response = await managementClient.admin.providers[
-    ':provider_id'
+    ':provider_path{.+}'
   ].$delete(
-    { param: { provider_id: providerId } },
+    { param: { provider_path: providerId } },
     managementRequestOptions(token),
   )
   if (!response.ok) return throwManagementError(response)

@@ -5,7 +5,7 @@ export type Connection = ConnectionsResponse['connections'][number]
 export type ConnectionFolder = {
   name: string
   path: string
-  connectionCount: number
+  itemCount: number
 }
 
 export type ConnectionDirectory = {
@@ -66,6 +66,7 @@ export function connectionDirectory(
   connections: Connection[],
   currentPath: string,
   localFolders: string[] = [],
+  resourcePaths: string[] = [],
 ): ConnectionDirectory {
   const prefix = currentPath ? `${currentPath}/` : ''
   const folders = new Map<string, ConnectionFolder>()
@@ -81,7 +82,7 @@ export function connectionDirectory(
     folders.set(name, {
       name,
       path: joinConnectionPath(currentPath, name),
-      connectionCount: 0,
+      itemCount: 0,
     })
   }
 
@@ -101,12 +102,33 @@ export function connectionDirectory(
     const existing = folders.get(name)
 
     if (existing) {
-      existing.connectionCount += 1
+      existing.itemCount += 1
     } else {
       folders.set(name, {
         name,
         path: joinConnectionPath(currentPath, name),
-        connectionCount: 1,
+        itemCount: 1,
+      })
+    }
+  }
+
+  for (const resourcePath of resourcePaths) {
+    if (currentPath && resourcePath === currentPath) continue
+    if (!resourcePath.startsWith(prefix)) continue
+
+    const remainder = resourcePath.slice(prefix.length)
+    const separatorIndex = remainder.indexOf('/')
+    if (separatorIndex === -1) continue
+
+    const name = remainder.slice(0, separatorIndex)
+    const existing = folders.get(name)
+    if (existing) {
+      existing.itemCount += 1
+    } else {
+      folders.set(name, {
+        name,
+        path: joinConnectionPath(currentPath, name),
+        itemCount: 1,
       })
     }
   }

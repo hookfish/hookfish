@@ -40,7 +40,10 @@ export function isAllowedClientRequest(
   }
 
   if (normalizedMethod === 'POST') {
-    return /^\/api\/oauth\/[^/]+\/authorize$/.test(decodedPathname)
+    return (
+      decodedPathname.startsWith('/api/oauth/authorize/') &&
+      decodedPathname.length > '/api/oauth/authorize/'.length
+    )
   }
 
   return (
