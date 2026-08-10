@@ -2,16 +2,20 @@ import type {
   AuthorizeConnectionInput,
   ProvidersResponse,
 } from '@hookfish/hooks'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
   FolderIcon,
+  FolderPlusIcon,
   HouseIcon,
+  KeyRoundIcon,
   Link2Icon,
   ListIcon,
   PlusIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
-import { Fragment, type FormEvent, useMemo, useState } from 'react'
+import { Fragment, type FormEvent, useEffect, useMemo, useState } from 'react'
+import { OAuthConfigDialog } from '@/components/credential-management'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -91,15 +95,41 @@ import {
   connectionDirectory,
   joinConnectionPath,
   validateConnectionName,
-  validateConnectionPath,
 } from '@/lib/connection-tree'
+import {
+  LOCAL_FOLDERS_KEY,
+  addLocalFolder,
+  readLocalFolders,
+} from '@/lib/local-folders'
+import {
+  deleteSecret,
+  listSecrets,
+  type SecretMetadata,
+  storeSecret,
+} from '@/lib/management-api'
 import { hookfish } from '@/lib/hookfish'
 
 type Provider = ProvidersResponse['providers'][number]
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
+type ConnectionKind = 'oauth' | 'api-key'
 
 const ALL_PROVIDERS = '__all__'
 type ConnectionView = 'tree' | 'all'
+
+function directSecrets(secrets: SecretMetadata[], currentPath: string) {
+  const prefix = currentPath ? `${currentPath}/` : ''
+  return secrets.filter((secret) => {
+    if (!secret.path.startsWith(prefix)) return false
+    return !secret.path.slice(prefix.length).includes('/')
+  })
+}
+
+function secretFolderPaths(secrets: SecretMetadata[]): string[] {
+  return secrets.flatMap((secret) => {
+    const segments = secret.path.split('/').slice(0, -1)
+    return segments.map((_, index) => segments.slice(0, index + 1).join('/'))
+  })
+}
 
 function ConnectionItem({
   connection,
@@ -135,7 +165,7 @@ function ConnectionItem({
           <AlertDialogTrigger asChild>
             <Button size="sm" variant="destructive" disabled={disconnecting}>
               {disconnecting ? <Spinner /> : null}
-              {disconnecting ? 'Disconnecting' : 'Disconnect'}
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -162,20 +192,76 @@ function ConnectionItem({
   )
 }
 
+function ApiKeyItem({
+  secret,
+  deleting,
+  onDelete,
+}: {
+  secret: SecretMetadata
+  deleting: boolean
+  onDelete: () => void
+}) {
+  const name = secret.path.split('/').at(-1) ?? secret.path
+
+  return (
+    <Item variant="outline">
+      <ItemMedia variant="icon">
+        <KeyRoundIcon />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>
+          {name}
+          <Badge variant="outline">API key</Badge>
+        </ItemTitle>
+        <ItemDescription>
+          Encrypted in the Hookfish vault · {secret.path}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="destructive" disabled={deleting}>
+              {deleting ? <Spinner /> : null}
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <ShieldCheckIcon />
+              </AlertDialogMedia>
+              <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes the encrypted API key from the vault.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={onDelete}>
+                Delete key
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </ItemActions>
+    </Item>
+  )
+}
+
 function LoadingItems() {
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-4">
       {[0, 1, 2].map((index) => (
         <div
-          className="flex items-center gap-3 rounded-lg border p-3"
+          className="flex min-h-16 items-center gap-4 border p-4"
           key={index}
         >
-          <Skeleton className="size-8 rounded-lg" />
+          <Skeleton className="size-8" />
           <div className="grid flex-1 gap-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-48" />
           </div>
-          <Skeleton className="h-7 w-20" />
+          <Skeleton className="h-8 w-20" />
         </div>
       ))}
     </div>
@@ -196,18 +282,18 @@ function PathBreadcrumb({
       <BreadcrumbList>
         <BreadcrumbItem>
           {segments.length === 0 ? (
-            <BreadcrumbPage className="flex items-center gap-1.5">
-              <HouseIcon className="size-3.5" />
+            <BreadcrumbPage className="flex items-center gap-2">
+              <HouseIcon className="size-4" />
               Connections
             </BreadcrumbPage>
           ) : (
             <BreadcrumbLink asChild>
               <button
                 type="button"
-                className="flex items-center gap-1.5"
+                className="flex min-h-11 items-center gap-2 md:min-h-0"
                 onClick={() => onNavigate('')}
               >
-                <HouseIcon className="size-3.5" />
+                <HouseIcon className="size-4" />
                 Connections
               </button>
             </BreadcrumbLink>
@@ -225,7 +311,11 @@ function PathBreadcrumb({
                   <BreadcrumbPage>{segment}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink asChild>
-                    <button type="button" onClick={() => onNavigate(path)}>
+                    <button
+                      type="button"
+                      className="min-h-11 md:min-h-0"
+                      onClick={() => onNavigate(path)}
+                    >
                       {segment}
                     </button>
                   </BreadcrumbLink>
@@ -239,101 +329,205 @@ function PathBreadcrumb({
   )
 }
 
+function AddFolderDialog({
+  open,
+  currentPath,
+  folders,
+  onAdd,
+  onOpenChange,
+}: {
+  open: boolean
+  currentPath: string
+  folders: string[]
+  onAdd: (folders: string[]) => void
+  onOpenChange: (open: boolean) => void
+}) {
+  const [name, setName] = useState('')
+  const normalizedName = name.trim()
+  const error = normalizedName
+    ? validateConnectionName(normalizedName)
+    : undefined
+  const path = joinConnectionPath(currentPath, normalizedName)
+  const exists = normalizedName ? folders.includes(path) : false
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!normalizedName || error || exists) return
+    onAdd(addLocalFolder(folders, currentPath, normalizedName))
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form className="grid gap-8" onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Add folder</DialogTitle>
+            <DialogDescription>
+              Create an empty folder in {currentPath || 'Connections'}. Folder
+              structure is saved in this browser.
+            </DialogDescription>
+          </DialogHeader>
+          <Field data-invalid={Boolean(error || exists)}>
+            <FieldLabel htmlFor="folder-name">Folder name</FieldLabel>
+            <Input
+              id="folder-name"
+              value={name}
+              autoComplete="off"
+              name="folder-name"
+              required
+              pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+              spellCheck={false}
+              placeholder="production…"
+              aria-invalid={Boolean(error || exists)}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <FieldDescription>
+              Location: <code>{path || currentPath || 'Connections'}</code>
+            </FieldDescription>
+            <FieldError>
+              {error ?? (exists ? 'This folder already exists.' : undefined)}
+            </FieldError>
+          </Field>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">
+              <FolderPlusIcon />
+              Add folder
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function AddConnectionDialog({
   open,
   currentPath,
   providers,
-  mutation,
+  managementToken,
+  authorizeMutation,
+  secretMutation,
   onOpenChange,
 }: {
   open: boolean
   currentPath: string
   providers: Provider[]
-  mutation: AuthorizeMutation
+  managementToken: string
+  authorizeMutation: AuthorizeMutation
+  secretMutation: ReturnType<
+    typeof useMutation<SecretMetadata, Error, { path: string; value: string }>
+  >
   onOpenChange: (open: boolean) => void
 }) {
   const configuredProviders = providers.filter(
     (provider) => provider.configured,
   )
-  const [path, setPath] = useState(currentPath)
+  const [kind, setKind] = useState<ConnectionKind>('oauth')
   const [name, setName] = useState('')
+  const [value, setValue] = useState('')
   const [providerId, setProviderId] = useState(configuredProviders[0]?.id ?? '')
-  const normalizedPath = path.trim()
   const normalizedName = name.trim()
-  const connectionId = joinConnectionPath(normalizedPath, normalizedName)
+  const connectionId = joinConnectionPath(currentPath, normalizedName)
   const connectionIdPreview = normalizedName
     ? connectionId
-    : normalizedPath
-      ? `${normalizedPath}/word-word-number`
+    : currentPath
+      ? `${currentPath}/word-word-number`
       : 'word-word-number'
-  const pathError = validateConnectionPath(normalizedPath)
   const nameError = normalizedName
     ? validateConnectionName(normalizedName)
     : undefined
-  const error = pathError ?? nameError
+  const apiKeyError =
+    kind === 'api-key' && !managementToken
+      ? 'Enter a broker access token above to store encrypted API keys.'
+      : undefined
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (error || !providerId) return
+    if (nameError) return
 
+    if (kind === 'api-key') {
+      if (!managementToken || !normalizedName || !value) return
+      secretMutation.mutate(
+        { path: connectionId, value },
+        { onSuccess: () => onOpenChange(false) },
+      )
+      return
+    }
+
+    if (!providerId) return
     const input: AuthorizeConnectionInput = {
       provider: providerId,
+      return_to: window.location.href,
       ...(normalizedName
         ? { connection_id: connectionId }
-        : normalizedPath
-          ? { connection_id_prefix: normalizedPath }
+        : currentPath
+          ? { connection_id_prefix: currentPath }
           : {}),
     }
-    mutation.mutate(input)
+    authorizeMutation.mutate(input)
   }
 
-  function handleOpenChange(nextOpen: boolean) {
-    if (mutation.isPending) return
-    if (nextOpen) {
-      setPath(currentPath)
-      setName('')
-      setProviderId(configuredProviders[0]?.id ?? '')
-      mutation.reset()
-    }
-    onOpenChange(nextOpen)
-  }
+  const pending = authorizeMutation.isPending || secretMutation.isPending
+  const submitDisabled =
+    pending || (kind === 'oauth' ? !providerId : !managementToken)
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => !pending && onOpenChange(nextOpen)}
+    >
       <DialogContent>
-        <form className="grid gap-4" onSubmit={handleSubmit}>
+        <form className="grid gap-8" onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>Add connection</DialogTitle>
             <DialogDescription>
-              Place the connection in the current path or a new nested path. Add
-              a name, or let Hookfish generate one.
+              Add the connection directly to {currentPath || 'Connections'}.
             </DialogDescription>
           </DialogHeader>
 
           <FieldGroup>
-            <Field data-invalid={Boolean(pathError)}>
-              <FieldLabel htmlFor="connection-path">Path</FieldLabel>
-              <Input
-                id="connection-path"
-                value={path}
-                placeholder="team/payments"
-                aria-invalid={Boolean(pathError)}
-                onChange={(event) => setPath(event.target.value)}
-              />
-              <FieldDescription>
-                Slash-delimited folders. Leave blank for the root.
-              </FieldDescription>
-              <FieldError>{pathError}</FieldError>
+            <Field>
+              <FieldLabel htmlFor="connection-kind">Connection type</FieldLabel>
+              <Select
+                value={kind}
+                onValueChange={(value) => {
+                  if (value === 'oauth' || value === 'api-key') setKind(value)
+                }}
+              >
+                <SelectTrigger id="connection-kind" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="oauth">OAuth account</SelectItem>
+                  <SelectItem value="api-key">API key</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
 
             <Field data-invalid={Boolean(nameError)}>
               <FieldLabel htmlFor="connection-name">
-                Connection name (optional)
+                Connection name {kind === 'oauth' ? '(optional)' : ''}
               </FieldLabel>
               <Input
                 id="connection-name"
                 value={name}
-                placeholder="Generated automatically"
+                name="connection-name"
+                required={kind === 'api-key'}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+                spellCheck={false}
+                placeholder={
+                  kind === 'oauth'
+                    ? 'Generated automatically…'
+                    : 'production-api-key…'
+                }
                 autoComplete="off"
                 aria-invalid={Boolean(nameError)}
                 onChange={(event) => setName(event.target.value)}
@@ -344,32 +538,57 @@ function AddConnectionDialog({
               <FieldError>{nameError}</FieldError>
             </Field>
 
-            <Field>
-              <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
-              <Select value={providerId} onValueChange={setProviderId}>
-                <SelectTrigger id="connection-provider" className="w-full">
-                  <SelectValue placeholder="Select a provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {configuredProviders.map((provider) => (
-                    <SelectItem value={provider.id} key={provider.id}>
-                      {provider.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {configuredProviders.length === 0 ? (
-                <FieldError>
-                  Configure provider credentials before adding a connection.
-                </FieldError>
-              ) : null}
-            </Field>
+            {kind === 'oauth' ? (
+              <Field>
+                <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
+                <Select value={providerId} onValueChange={setProviderId}>
+                  <SelectTrigger id="connection-provider" className="w-full">
+                    <SelectValue placeholder="Select a provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {configuredProviders.map((provider) => (
+                      <SelectItem value={provider.id} key={provider.id}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {configuredProviders.length === 0 ? (
+                  <FieldError>
+                    Configure OAuth credentials before adding a connection.
+                  </FieldError>
+                ) : null}
+              </Field>
+            ) : (
+              <Field data-invalid={Boolean(apiKeyError)}>
+                <FieldLabel htmlFor="api-key-value">API key</FieldLabel>
+                <Input
+                  id="api-key-value"
+                  type="password"
+                  value={value}
+                  name="api-key-value"
+                  required
+                  autoComplete="off"
+                  placeholder="Paste the secret value…"
+                  aria-invalid={Boolean(apiKeyError)}
+                  onChange={(event) => setValue(event.target.value)}
+                />
+                <FieldDescription>
+                  The value is encrypted at rest and cannot be viewed here after
+                  saving.
+                </FieldDescription>
+                <FieldError>{apiKeyError}</FieldError>
+              </Field>
+            )}
           </FieldGroup>
 
-          {mutation.isError ? (
+          {authorizeMutation.isError || secretMutation.isError ? (
             <Alert variant="destructive">
-              <AlertTitle>Could not start authorization</AlertTitle>
-              <AlertDescription>{mutation.error.message}</AlertDescription>
+              <AlertTitle>Could not add connection</AlertTitle>
+              <AlertDescription>
+                {authorizeMutation.error?.message ??
+                  secretMutation.error?.message}
+              </AlertDescription>
             </Alert>
           ) : null}
 
@@ -377,17 +596,14 @@ function AddConnectionDialog({
             <Button
               type="button"
               variant="outline"
-              disabled={mutation.isPending}
-              onClick={() => handleOpenChange(false)}
+              disabled={pending}
+              onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={Boolean(error) || !providerId || mutation.isPending}
-            >
-              {mutation.isPending ? <Spinner /> : <PlusIcon />}
-              {mutation.isPending ? 'Opening provider' : 'Add connection'}
+            <Button type="submit" disabled={submitDisabled}>
+              {pending ? <Spinner /> : <PlusIcon />}
+              {pending ? 'Saving…' : 'Add connection'}
             </Button>
           </DialogFooter>
         </form>
@@ -396,11 +612,23 @@ function AddConnectionDialog({
   )
 }
 
-export function OAuthConnections() {
-  const [currentPath, setCurrentPath] = useState('')
+export function OAuthConnections({
+  managementToken,
+  currentPath,
+  onNavigate,
+}: {
+  managementToken: string
+  currentPath: string
+  onNavigate: (path: string) => void
+}) {
+  const queryClient = useQueryClient()
   const [providerFilter, setProviderFilter] = useState(ALL_PROVIDERS)
   const [view, setView] = useState<ConnectionView>('tree')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [localFolders, setLocalFolders] = useState<string[]>(() =>
+    typeof window === 'undefined' ? [] : readLocalFolders(window.localStorage),
+  )
   const providersQuery = hookfish.useProviders()
   const connectionsQuery = hookfish.useConnections({
     ...(view === 'tree' && currentPath
@@ -408,20 +636,74 @@ export function OAuthConnections() {
       : {}),
     ...(providerFilter === ALL_PROVIDERS ? {} : { provider: providerFilter }),
   })
+  const secretsQuery = useQuery({
+    queryKey: [
+      'management',
+      'secrets',
+      managementToken,
+      view === 'tree' ? currentPath : '',
+    ],
+    queryFn: () =>
+      listSecrets(
+        managementToken,
+        view === 'tree' ? currentPath || undefined : undefined,
+      ),
+    enabled: Boolean(managementToken),
+  })
   const authorizeMutation = hookfish.useAuthorizeConnection({
     onSuccess(data) {
       window.location.assign(data.authorize_url)
     },
   })
   const disconnectMutation = hookfish.useDisconnectConnection()
+  const secretMutation = useMutation({
+    mutationFn: ({ path, value }: { path: string; value: string }) =>
+      storeSecret(managementToken, path, value),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['management', 'secrets'] }),
+  })
+  const deleteSecretMutation = useMutation({
+    mutationFn: (path: string) => deleteSecret(managementToken, path),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['management', 'secrets'] }),
+  })
+
+  useEffect(() => {
+    function refreshConnections() {
+      void queryClient.invalidateQueries({
+        queryKey: hookfish.keys.connectionsRoot(),
+      })
+      if (managementToken) {
+        void queryClient.invalidateQueries({
+          queryKey: ['management', 'secrets'],
+        })
+      }
+    }
+
+    refreshConnections()
+    window.addEventListener('pageshow', refreshConnections)
+    return () => window.removeEventListener('pageshow', refreshConnections)
+  }, [managementToken, queryClient])
+
+  const secretFolders = secretFolderPaths(secretsQuery.data ?? [])
   const directory = useMemo(
     () =>
       connectionDirectory(
         connectionsQuery.data?.connections ?? [],
         currentPath,
+        [...localFolders, ...secretFolders],
       ),
-    [connectionsQuery.data?.connections, currentPath],
+    [
+      connectionsQuery.data?.connections,
+      currentPath,
+      localFolders,
+      secretFolders,
+    ],
   )
+  const visibleSecrets =
+    view === 'tree'
+      ? directSecrets(secretsQuery.data ?? [], currentPath)
+      : (secretsQuery.data ?? [])
   const allConnections = useMemo(
     () =>
       [...(connectionsQuery.data?.connections ?? [])].sort((left, right) =>
@@ -433,20 +715,35 @@ export function OAuthConnections() {
     !connectionsQuery.isPending &&
     !connectionsQuery.isError &&
     (view === 'all'
-      ? allConnections.length === 0
-      : directory.folders.length === 0 && directory.connections.length === 0)
+      ? allConnections.length === 0 && visibleSecrets.length === 0
+      : directory.folders.length === 0 &&
+        directory.connections.length === 0 &&
+        visibleSecrets.length === 0)
   const addConnectionPath = view === 'tree' ? currentPath : ''
 
+  function updateFolders(folders: string[]) {
+    setLocalFolders(folders)
+    window.localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders))
+  }
+
   return (
-    <section className="grid gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Connections</CardTitle>
-          <CardDescription>
-            Browse connection paths and add named provider links anywhere in the
-            tree.
+    <section
+      aria-labelledby="connections-heading"
+      className="grid h-full min-h-0 overflow-hidden"
+    >
+      <Card className="h-full min-h-0 rounded-none border-x-0 border-b-0 border-t-2 border-t-primary">
+        <CardHeader className="gap-2 px-4 md:px-8">
+          <CardTitle
+            id="connections-heading"
+            className="text-2xl font-normal tracking-tight"
+          >
+            Connections
+          </CardTitle>
+          <CardDescription className="max-w-[60ch] leading-relaxed">
+            Organize OAuth accounts and encrypted API keys in browser-local
+            folders.
           </CardDescription>
-          <CardAction className="flex items-center gap-2">
+          <CardAction className="flex flex-wrap items-center justify-end gap-2">
             <ToggleGroup
               type="single"
               variant="outline"
@@ -480,22 +777,38 @@ export function OAuthConnections() {
                 ))}
               </SelectContent>
             </Select>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <PlusIcon />
-              Add connection
-            </Button>
           </CardAction>
         </CardHeader>
 
-        <CardContent className="grid gap-4">
-          {view === 'tree' ? (
-            <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+        <CardContent className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto overscroll-contain px-4 md:px-8">
+          <div className="grid gap-4 border-y py-4 md:grid-cols-[1fr_auto] md:items-center">
+            {view === 'tree' ? (
               <PathBreadcrumb
                 currentPath={currentPath}
-                onNavigate={setCurrentPath}
+                onNavigate={onNavigate}
               />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Every stored connection
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {view === 'tree' ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setFolderDialogOpen(true)}
+                >
+                  <FolderPlusIcon />
+                  Add folder
+                </Button>
+              ) : null}
+              <OAuthConfigDialog managementToken={managementToken} />
+              <Button onClick={() => setAddDialogOpen(true)}>
+                <PlusIcon />
+                Add connection
+              </Button>
             </div>
-          ) : null}
+          </div>
 
           {connectionsQuery.isPending ? <LoadingItems /> : null}
 
@@ -517,23 +830,32 @@ export function OAuthConnections() {
             </Alert>
           ) : null}
 
+          {secretsQuery.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load API keys</AlertTitle>
+              <AlertDescription>{secretsQuery.error.message}</AlertDescription>
+            </Alert>
+          ) : null}
+
           {isEmpty ? (
-            <Empty className="border">
+            <Empty className="border py-16">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <FolderIcon />
                 </EmptyMedia>
                 <EmptyTitle>
-                  {view === 'tree' ? 'This path is empty' : 'No connections'}
+                  {view === 'tree' ? 'This folder is empty' : 'No connections'}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {view === 'tree'
-                    ? 'Add a named connection here, or change the provider filter.'
-                    : 'Add a named connection, or change the provider filter.'}
+                  {view === 'tree' && currentPath
+                    ? 'This folder is stored only in this browser. It won’t appear in the Hookfish API until you add a connection.'
+                    : view === 'tree'
+                      ? 'Add a folder or create a connection here.'
+                      : 'Create an OAuth or API-key connection.'}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                <Button onClick={() => setAddDialogOpen(true)}>
                   <PlusIcon />
                   Add connection
                 </Button>
@@ -542,22 +864,22 @@ export function OAuthConnections() {
           ) : null}
 
           {view === 'tree' &&
-          (directory.folders.length || directory.connections.length) ? (
+          (directory.folders.length ||
+            directory.connections.length ||
+            visibleSecrets.length) ? (
             <ItemGroup>
               {directory.folders.map((folder) => (
                 <Item asChild variant="outline" key={folder.path}>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPath(folder.path)}
-                  >
+                  <button type="button" onClick={() => onNavigate(folder.path)}>
                     <ItemMedia variant="icon">
                       <FolderIcon />
                     </ItemMedia>
                     <ItemContent>
                       <ItemTitle>{folder.name}</ItemTitle>
                       <ItemDescription>
-                        {folder.connectionCount} connection
-                        {folder.connectionCount === 1 ? '' : 's'}
+                        {folder.connectionCount === 0
+                          ? 'Folder'
+                          : `${folder.connectionCount} connection${folder.connectionCount === 1 ? '' : 's'}`}
                       </ItemDescription>
                     </ItemContent>
                     <ItemActions>
@@ -580,10 +902,22 @@ export function OAuthConnections() {
                   }
                 />
               ))}
+              {visibleSecrets.map((secret) => (
+                <ApiKeyItem
+                  key={secret.path}
+                  secret={secret}
+                  deleting={
+                    deleteSecretMutation.isPending &&
+                    deleteSecretMutation.variables === secret.path
+                  }
+                  onDelete={() => deleteSecretMutation.mutate(secret.path)}
+                />
+              ))}
             </ItemGroup>
           ) : null}
 
-          {view === 'all' && allConnections.length ? (
+          {view === 'all' &&
+          (allConnections.length || visibleSecrets.length) ? (
             <ItemGroup>
               {allConnections.map((connection) => (
                 <ConnectionItem
@@ -598,26 +932,48 @@ export function OAuthConnections() {
                   }
                 />
               ))}
+              {visibleSecrets.map((secret) => (
+                <ApiKeyItem
+                  key={secret.path}
+                  secret={secret}
+                  deleting={
+                    deleteSecretMutation.isPending &&
+                    deleteSecretMutation.variables === secret.path
+                  }
+                  onDelete={() => deleteSecretMutation.mutate(secret.path)}
+                />
+              ))}
             </ItemGroup>
           ) : null}
 
-          {disconnectMutation.isError ? (
+          {disconnectMutation.isError || deleteSecretMutation.isError ? (
             <Alert variant="destructive">
-              <AlertTitle>Could not disconnect</AlertTitle>
+              <AlertTitle>Could not remove connection</AlertTitle>
               <AlertDescription>
-                {disconnectMutation.error.message}
+                {disconnectMutation.error?.message ??
+                  deleteSecretMutation.error?.message}
               </AlertDescription>
             </Alert>
           ) : null}
         </CardContent>
       </Card>
 
+      <AddFolderDialog
+        key={`${folderDialogOpen ? 'open' : 'closed'}:${currentPath}`}
+        open={folderDialogOpen}
+        currentPath={currentPath}
+        folders={localFolders}
+        onAdd={updateFolders}
+        onOpenChange={setFolderDialogOpen}
+      />
       <AddConnectionDialog
         key={`${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
         currentPath={addConnectionPath}
         providers={providersQuery.data?.providers ?? []}
-        mutation={authorizeMutation}
+        managementToken={managementToken}
+        authorizeMutation={authorizeMutation}
+        secretMutation={secretMutation}
         onOpenChange={setAddDialogOpen}
       />
     </section>

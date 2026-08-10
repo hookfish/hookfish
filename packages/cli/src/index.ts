@@ -85,6 +85,7 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
 
   const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
   const requestedPort = parsePort(process.env.PORT)
+  const frontendHostname = allocatedPort ? 'localhost' : '127.0.0.1'
   const frontendPort =
     parsePort(process.env.FRONTEND_PORT) ??
     allocatedPort ??
@@ -103,7 +104,8 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
     HOOKFISH_BACKEND_URL:
       process.env.HOOKFISH_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`,
     HOOKFISH_FRONTEND_URL:
-      process.env.HOOKFISH_FRONTEND_URL ?? `http://127.0.0.1:${frontendPort}`,
+      process.env.HOOKFISH_FRONTEND_URL ??
+      `http://${frontendHostname}:${frontendPort}`,
   }
 
   const hyperdriveLocalConnectionString =

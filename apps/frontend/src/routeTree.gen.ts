@@ -9,9 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConnectionsIndexRouteImport } from './routes/connections.index'
+import { Route as ConnectionsSplatRouteImport } from './routes/connections.$'
 
+const ConnectionsRoute = ConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -22,35 +30,72 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnectionsIndexRoute = ConnectionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConnectionsRoute,
+} as any)
+const ConnectionsSplatRoute = ConnectionsSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => ConnectionsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/connections': typeof ConnectionsRouteWithChildren
+  '/connections/$': typeof ConnectionsSplatRoute
+  '/connections/': typeof ConnectionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/connections/$': typeof ConnectionsSplatRoute
+  '/connections': typeof ConnectionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/connections': typeof ConnectionsRouteWithChildren
+  '/connections/$': typeof ConnectionsSplatRoute
+  '/connections/': typeof ConnectionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/connections'
+    | '/connections/$'
+    | '/connections/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about'
-  id: '__root__' | '/' | '/about'
+  to: '/' | '/about' | '/connections/$' | '/connections'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/connections'
+    | '/connections/$'
+    | '/connections/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  ConnectionsRoute: typeof ConnectionsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/connections': {
+      id: '/connections'
+      path: '/connections'
+      fullPath: '/connections'
+      preLoaderRoute: typeof ConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -65,12 +110,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connections/': {
+      id: '/connections/'
+      path: '/'
+      fullPath: '/connections/'
+      preLoaderRoute: typeof ConnectionsIndexRouteImport
+      parentRoute: typeof ConnectionsRoute
+    }
+    '/connections/$': {
+      id: '/connections/$'
+      path: '/$'
+      fullPath: '/connections/$'
+      preLoaderRoute: typeof ConnectionsSplatRouteImport
+      parentRoute: typeof ConnectionsRoute
+    }
   }
 }
+
+interface ConnectionsRouteChildren {
+  ConnectionsSplatRoute: typeof ConnectionsSplatRoute
+  ConnectionsIndexRoute: typeof ConnectionsIndexRoute
+}
+
+const ConnectionsRouteChildren: ConnectionsRouteChildren = {
+  ConnectionsSplatRoute: ConnectionsSplatRoute,
+  ConnectionsIndexRoute: ConnectionsIndexRoute,
+}
+
+const ConnectionsRouteWithChildren = ConnectionsRoute._addFileChildren(
+  ConnectionsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  ConnectionsRoute: ConnectionsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
