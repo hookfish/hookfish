@@ -55,4 +55,17 @@ describe('connection tree', () => {
     expect(validateConnectionPath('team/payments')).toBeUndefined()
     expect(validateConnectionPath('/team')).toContain('slashes')
   })
+
+  it('keeps empty local folders visible beside connection-backed folders', () => {
+    const directory = connectionDirectory(
+      [connection('team/payments/production')],
+      'team',
+      ['team/empty', 'team/payments', 'elsewhere'],
+    )
+
+    expect(directory.folders).toEqual([
+      { name: 'empty', path: 'team/empty', connectionCount: 0 },
+      { name: 'payments', path: 'team/payments', connectionCount: 1 },
+    ])
+  })
 })

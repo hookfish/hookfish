@@ -45,10 +45,25 @@ export function validateConnectionPath(path: string): string | undefined {
 export function connectionDirectory(
   connections: Connection[],
   currentPath: string,
+  localFolders: string[] = [],
 ): ConnectionDirectory {
   const prefix = currentPath ? `${currentPath}/` : ''
   const folders = new Map<string, ConnectionFolder>()
   const directConnections: Connection[] = []
+
+  for (const folderPath of localFolders) {
+    if (!folderPath.startsWith(prefix) || folderPath === currentPath) continue
+
+    const remainder = folderPath.slice(prefix.length)
+    const name = remainder.split('/')[0]
+    if (!name || folders.has(name)) continue
+
+    folders.set(name, {
+      name,
+      path: joinConnectionPath(currentPath, name),
+      connectionCount: 0,
+    })
+  }
 
   for (const connection of connections) {
     if (currentPath && connection.connection_id === currentPath) continue

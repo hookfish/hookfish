@@ -13,7 +13,7 @@ export const Route = createFileRoute('/about')({
 
 function About() {
   return (
-    <main className="max-w-3xl">
+    <main className="h-full overflow-y-auto p-4 md:p-8">
       <Card>
         <CardHeader>
           <CardTitle>About this stack</CardTitle>
