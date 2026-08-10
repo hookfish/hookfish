@@ -67,23 +67,16 @@ database may be a ready Drizzle database, a promise, or a request-aware binding:
 
 ```ts
 // hookfish.config.ts
-import { defineHookfishConfig, z } from '@hookfish/api'
+import { defineHookfishConfig } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
-import { NotionProvider } from '@hookfish/provider-notion'
+import { createNotionProvider } from '@hookfish/provider-notion'
 
-const configSchema = z.object({
-  NOTION_CLIENT_ID: z
-    .string()
-    .optional()
-    .prefault(process.env.NOTION_CLIENT_ID!),
-  NOTION_CLIENT_SECRET: z
-    .string()
-    .optional()
-    .prefault(process.env.NOTION_CLIENT_SECRET!),
-})
+type Bindings = {
+  NOTION_CLIENT_ID?: string
+  NOTION_CLIENT_SECRET?: string
+}
 
-export default defineHookfishConfig({
-  config: configSchema,
+export default defineHookfishConfig<Bindings>({
   db: pglite(process.env.PGLITE_DATA_DIR ?? './pgdata'),
   // Mount the browser-safe facade at /api/client:
   includeClient: true,
@@ -100,10 +93,10 @@ export default defineHookfishConfig({
   // organizationRouting: true,
   // Receive best-effort lifecycle events for audit or telemetry export:
   // onEvent: async (event) => auditLog.write(event),
-  providers: (config) => ({
-    notion: new NotionProvider({
-      clientId: config.NOTION_CLIENT_ID,
-      clientSecret: config.NOTION_CLIENT_SECRET,
+  providers: (env) => ({
+    notion: createNotionProvider({
+      clientId: env.NOTION_CLIENT_ID,
+      clientSecret: env.NOTION_CLIENT_SECRET,
     }),
   }),
 })
@@ -111,18 +104,17 @@ export default defineHookfishConfig({
 
 Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`,
 `OAUTH_REDIRECT_BASE_URL`, and `NODE_ENV` settings lazily when an OAuth request
-arrives. They do not need to be repeated in `configSchema`. Importing the
-config module from a runtime host does not require OAuth secrets; an operation
-that needs a missing broker secret returns `500 missing_configuration`.
+arrives. Request bindings take precedence over the ambient Node environment;
+an operation that needs a missing broker secret returns `500
+missing_configuration`.
 
-`await Hookfish.init(config)` parses the application `configSchema` once
-with `{}` and resolves the provider source once before returning a ready
-handler.
-The schema owns provider-specific environment lookup, defaults, coercion, and
-validation; its inferred output type is passed to a provider factory. Provider
-factories may return a map immediately or asynchronously. A static provider map
-and an existing `ProviderRegistry` remain valid when providers do not depend on
-the parsed configuration.
+Provider factories receive the bindings passed to `hookfish.fetch` and may
+return a map immediately or asynchronously. They run once for each request
+that needs providers, so Worker secret rotations do not leave stale provider
+clients in an isolate. A static provider map and an existing
+`ProviderRegistry` are resolved once when providers do not depend on runtime
+bindings. Hookfish validates its own broker settings; provider binding types
+and any additional validation belong to the host application.
 
 Production deployments must set `OAUTH_REDIRECT_BASE_URL`; development and test
 instances may derive it from the incoming request origin. This keeps registered
@@ -440,14 +432,18 @@ export `create*Provider` helpers:
 ```ts
 import { createGitHubProvider } from '@hookfish/provider-github'
 
-export default defineHookfishConfig({
-  config: configSchema,
+type Bindings = {
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+}
+
+export default defineHookfishConfig<Bindings>({
   db,
   providerManagement: true,
-  providers: (config) => ({
+  providers: (env) => ({
     github: createGitHubProvider({
-      clientId: config.GITHUB_CLIENT_ID,
-      clientSecret: config.GITHUB_CLIENT_SECRET,
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
     }),
   }),
 })
@@ -484,6 +480,9 @@ effect across processes without restart. Fixed IDs are reserved. Setting
 refresh, and revocation for existing connections. Deletion returns `409` while
 a connection still references the provider. `providerManagement` gates only
 the CRUD API; pre-provisioned dynamic rows continue to resolve when it is off.
+`inherit` uses the current request's template credentials from `env`; `custom`
+atomically replaces that pair with the database client id and encrypted vault
+secret.
 
 ## Adding a provider
 
@@ -497,43 +496,30 @@ pnpm add --save-dev @hookfish/cli
 ```
 
 ```ts
-import { defineHookfishConfig, z } from '@hookfish/api'
+import { defineHookfishConfig } from '@hookfish/api'
 import { createGitHubProvider } from '@hookfish/provider-github'
 import { createNotionProvider } from '@hookfish/provider-notion'
 import { SlackProvider } from '@acme/provider-slack'
 
-const configSchema = z.object({
-  GITHUB_CLIENT_ID: z
-    .string()
-    .optional()
-    .prefault(process.env.GITHUB_CLIENT_ID!),
-  GITHUB_CLIENT_SECRET: z
-    .string()
-    .optional()
-    .prefault(process.env.GITHUB_CLIENT_SECRET!),
-  SLACK_CLIENT_ID: z
-    .string()
-    .optional()
-    .prefault(process.env.SLACK_CLIENT_ID!),
-  SLACK_CLIENT_SECRET: z
-    .string()
-    .optional()
-    .prefault(process.env.SLACK_CLIENT_SECRET!),
-})
+type Bindings = {
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+  SLACK_CLIENT_ID?: string
+  SLACK_CLIENT_SECRET?: string
+}
 
-export default defineHookfishConfig({
-  config: configSchema,
+export default defineHookfishConfig<Bindings>({
   includeClient: true,
   includeSwagger: true,
-  providers: (config) => ({
+  providers: (env) => ({
     github: createGitHubProvider({
-      clientId: config.GITHUB_CLIENT_ID,
-      clientSecret: config.GITHUB_CLIENT_SECRET,
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
     }),
     notion: createNotionProvider(),
     slack: new SlackProvider({
-      clientId: config.SLACK_CLIENT_ID,
-      clientSecret: config.SLACK_CLIENT_SECRET,
+      clientId: env.SLACK_CLIENT_ID,
+      clientSecret: env.SLACK_CLIENT_SECRET,
     }),
   }),
 })

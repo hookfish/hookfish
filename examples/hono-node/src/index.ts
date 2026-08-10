@@ -18,19 +18,20 @@ try {
 const { Hookfish } = await import('@hookfish/api')
 const { default: config } = await import('../../../hookfish.config')
 const hookfish = await Hookfish.init(config)
+const providers = await hookfish.getProviders(process.env)
 
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 serve(
   {
-    fetch: (request: Request) => hookfish.fetch(request),
+    fetch: (request: Request) => hookfish.fetch(request, process.env),
     port,
     hostname,
   },
   (info) => {
-    const providerIds = hookfish.providers.listProviderIds()
+    const providerIds = providers.listProviderIds()
     const configured = providerIds.filter((id) =>
-      hookfish.providers.isProviderConfigured(id),
+      providers.isProviderConfigured(id),
     )
     const publicOrigin =
       process.env.OAUTH_REDIRECT_BASE_URL ?? `http://localhost:${info.port}`

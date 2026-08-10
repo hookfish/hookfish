@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { BrokerError } from './errors'
 
 /**
- * Conventional Hookfish configuration fields. The application's config schema
- * may add provider-specific values; runtime service bindings remain separate.
+ * Conventional Hookfish environment fields. Runtime bindings may add
+ * provider-specific values and platform services.
  */
 export type BrokerEnv = {
   NODE_ENV?: string
@@ -45,29 +45,34 @@ function ambientEnvironment(): object {
     : {}
 }
 
-function configValue(
-  config: object,
+function bindingValue(
+  bindings: object,
   ambient: object,
   key: keyof BrokerConfig,
 ): unknown {
-  return Reflect.has(config, key)
-    ? Reflect.get(config, key)
+  return Reflect.has(bindings, key)
+    ? Reflect.get(bindings, key)
     : Reflect.get(ambient, key)
 }
 
 /**
- * Hookfish owns its broker settings. Application schemas only need to declare
- * values consumed by application code or provider factories.
+ * Hookfish owns validation for its broker settings. Request bindings win over
+ * the ambient Node environment so Workers can rotate secrets without reloading
+ * an isolate.
  */
-export function resolveBrokerConfig(config: object): BrokerConfig {
+export function resolveBrokerConfig(bindings: object): BrokerConfig {
   const ambient = ambientEnvironment()
 
   return brokerConfigSchema.parse({
-    NODE_ENV: configValue(config, ambient, 'NODE_ENV'),
-    OAUTH_ENCRYPTION_KEY: configValue(config, ambient, 'OAUTH_ENCRYPTION_KEY'),
-    BROKER_API_KEY: configValue(config, ambient, 'BROKER_API_KEY'),
-    OAUTH_REDIRECT_BASE_URL: configValue(
-      config,
+    NODE_ENV: bindingValue(bindings, ambient, 'NODE_ENV'),
+    OAUTH_ENCRYPTION_KEY: bindingValue(
+      bindings,
+      ambient,
+      'OAUTH_ENCRYPTION_KEY',
+    ),
+    BROKER_API_KEY: bindingValue(bindings, ambient, 'BROKER_API_KEY'),
+    OAUTH_REDIRECT_BASE_URL: bindingValue(
+      bindings,
       ambient,
       'OAUTH_REDIRECT_BASE_URL',
     ),

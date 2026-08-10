@@ -8,7 +8,6 @@ import {
 } from '@hookfish/provider'
 import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
-import type { ZodType } from 'zod'
 
 import {
   type BrowserRequestAuthorizer,
@@ -18,11 +17,7 @@ import {
 } from './client'
 import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { HookfishEventHandler } from './events'
-import {
-  type BrokerConfig,
-  requireBrokerApiKey,
-  resolveBrokerConfig,
-} from './oauth/config'
+import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { ORGANIZATION_PATTERN } from './oauth/organization'
 import { createAdminRoutes } from './routes/admin'
@@ -33,22 +28,18 @@ import { statsRoutes } from './routes/stats'
 
 export type ProviderMap = Record<string, OAuthProvider>
 
-export type ProviderFactory<Config extends object> = (
-  config: Config,
+export type ProviderFactory<Bindings extends object> = (
+  bindings: Bindings,
 ) => ProviderMap | Promise<ProviderMap>
 
-export type HookfishProviders<Config extends object = object> =
+export type HookfishProviders<Bindings extends object = object> =
   | ProviderMap
   | ProviderRegistry
-  | ProviderFactory<Config>
+  | ProviderFactory<Bindings>
 
-export type HookfishConfig<
-  Bindings extends object = object,
-  Config extends object = object,
-> = {
-  /** Application configuration parsed once and passed to a provider factory. */
-  config: ZodType<Config>
-  providers: HookfishProviders<Config>
+export type HookfishConfig<Bindings extends object = object> = {
+  /** Fixed providers or a request-aware factory resolved from runtime bindings. */
+  providers: HookfishProviders<Bindings>
   /** Default database binding. A runtime host may override it in `Hookfish.init`. */
   db: DatabaseInput<Bindings>
   /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
@@ -73,18 +64,18 @@ function normalizeProviders(providers: ProviderMap | ProviderRegistry) {
     : createProviderRegistry(providers)
 }
 
-async function resolveProviderSource<Config extends object>(
-  source: HookfishProviders<Config>,
-  config: Config,
+async function resolveProviderSource<Bindings extends object>(
+  source: HookfishProviders<Bindings>,
+  bindings: Bindings,
 ): Promise<ProviderRegistry> {
-  const providers = typeof source === 'function' ? await source(config) : source
+  const providers =
+    typeof source === 'function' ? await source(bindings) : source
   return normalizeProviders(providers)
 }
 
-export function defineHookfishConfig<
-  Bindings extends object = object,
-  Config extends object = object,
->(config: HookfishConfig<Bindings, Config>): HookfishConfig<Bindings, Config> {
+export function defineHookfishConfig<Bindings extends object = object>(
+  config: HookfishConfig<Bindings>,
+): HookfishConfig<Bindings> {
   return config
 }
 
@@ -111,8 +102,7 @@ function validateHookfishOptions(
 }
 
 function createApiRoutes<Bindings extends object>(
-  providers: ProviderRegistry,
-  resolveConfig: () => BrokerConfig,
+  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
@@ -228,13 +218,10 @@ function createApiRoutes<Bindings extends object>(
     .use('/stats', cors())
     .route('/stats', statsRoutes)
     .use('/admin/*', cors())
+    .route('/admin', createAdminRoutes(database, options.onEvent))
     .route(
       '/admin',
-      createAdminRoutes(resolveConfig, database, options.onEvent),
-    )
-    .route(
-      '/admin',
-      createProviderRoutes(providers, resolveConfig, database, {
+      createProviderRoutes(resolveProviders, database, {
         ...options,
         enabled: options.providerManagement ?? false,
         routeMode: 'global',
@@ -243,7 +230,7 @@ function createApiRoutes<Bindings extends object>(
     .use('/oauth/*', cors())
     .route(
       '/oauth',
-      createOAuthRoutes(providers, resolveConfig, database, {
+      createOAuthRoutes(resolveProviders, database, {
         ...options,
         routeMode: 'global',
       }),
@@ -252,7 +239,7 @@ function createApiRoutes<Bindings extends object>(
     .use('/secrets/*', cors())
     .route(
       '/',
-      createSecretRoutes(resolveConfig, database, {
+      createSecretRoutes(database, {
         ...options,
         routeMode: 'global',
       }),
@@ -261,7 +248,7 @@ function createApiRoutes<Bindings extends object>(
   if (options.organizationRouting) {
     api.use('/organization/:organization/oauth/*', cors()).route(
       '/organization/:organization/oauth',
-      createOAuthRoutes(providers, resolveConfig, database, {
+      createOAuthRoutes(resolveProviders, database, {
         ...options,
         routeMode: 'organization',
       }),
@@ -271,7 +258,7 @@ function createApiRoutes<Bindings extends object>(
       .use('/organization/:organization/secrets/*', cors())
       .route(
         '/organization/:organization',
-        createSecretRoutes(resolveConfig, database, {
+        createSecretRoutes(database, {
           ...options,
           routeMode: 'organization',
         }),
@@ -283,7 +270,7 @@ function createApiRoutes<Bindings extends object>(
         .use('/organization/:organization/admin/providers/*', cors())
         .route(
           '/organization/:organization/admin',
-          createProviderRoutes(providers, resolveConfig, database, {
+          createProviderRoutes(resolveProviders, database, {
             ...options,
             enabled: true,
             routeMode: 'organization',
@@ -314,17 +301,15 @@ export type HookfishRuntime<Bindings extends object = object> = {
  * `fetch` is an instance property so it can be passed directly to Node,
  * Cloudflare Workers, or another Fetch-compatible host without rebinding it.
  */
-export class Hookfish<
-  Bindings extends object = object,
-  Config extends object = object,
-> {
-  readonly config: Config
-  readonly providers: ProviderRegistry
+export class Hookfish<Bindings extends object = object> {
   readonly db: DatabaseInput<Bindings>
   readonly includeClient: boolean
   readonly includeSwagger: boolean
   readonly providerManagement: boolean
   readonly returnTo: string | undefined
+  private readonly resolveProviders: (
+    bindings: Bindings,
+  ) => Promise<ProviderRegistry>
   private readonly app: {
     fetch(
       request: Request,
@@ -334,26 +319,18 @@ export class Hookfish<
   }
 
   private constructor(
-    options: HookfishConfig<Bindings, Config>,
+    options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings>,
-    config: Config,
-    providers: ProviderRegistry,
+    resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
   ) {
-    this.config = config
-    let brokerConfig: BrokerConfig | undefined
-    const resolveConfig = () => {
-      brokerConfig ??= resolveBrokerConfig(this.config)
-      return brokerConfig
-    }
-    this.providers = providers
+    this.resolveProviders = resolveProviders
     this.db = options.db
     this.includeClient = options.includeClient ?? false
     this.includeSwagger = options.includeSwagger ?? true
     this.providerManagement = options.providerManagement ?? false
     this.returnTo = options.returnTo
     const api = createApiRoutes(
-      providers,
-      resolveConfig,
+      resolveProviders,
       this.db,
       options,
       this.includeSwagger,
@@ -367,22 +344,26 @@ export class Hookfish<
       browserOrigins: runtime.browserOrigins,
       brokerApiKey:
         runtime.brokerApiKey ??
-        ((bindings) => requireBrokerApiKey(bindings ?? resolveConfig())),
+        ((bindings) =>
+          requireBrokerApiKey(resolveBrokerConfig(bindings ?? {}))),
       authorizeBrowserRequest: runtime.authorizeBrowserRequest,
     })
   }
 
-  static async init<
-    Bindings extends object = object,
-    Config extends object = object,
-  >(
-    options: HookfishConfig<Bindings, Config>,
+  static async init<Bindings extends object = object>(
+    options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings> = {},
-  ): Promise<Hookfish<Bindings, Config>> {
+  ): Promise<Hookfish<Bindings>> {
     validateHookfishOptions(options)
-    const config = options.config.parse({})
-    const providers = await resolveProviderSource(options.providers, config)
-    return new Hookfish(options, runtime, config, providers)
+    const staticProviders =
+      typeof options.providers === 'function'
+        ? undefined
+        : normalizeProviders(options.providers)
+    const resolveProviders = staticProviders
+      ? async () => staticProviders
+      : (bindings: Bindings) =>
+          resolveProviderSource(options.providers, bindings)
+    return new Hookfish(options, runtime, resolveProviders)
   }
 
   readonly fetch = (
@@ -393,17 +374,22 @@ export class Hookfish<
     return this.app.fetch(request, bindings ?? {}, executionContext)
   }
 
+  /** Resolve the provider registry for one runtime binding set. */
+  readonly getProviders = (bindings: Bindings): Promise<ProviderRegistry> => {
+    return this.resolveProviders(bindings)
+  }
+
   readonly migrate = (bindings: Bindings): Promise<void> => {
     return migrateDatabase(this.db, bindings)
   }
 }
 
-export function isHookfish(value: unknown): value is Hookfish<object, object> {
+export function isHookfish(value: unknown): value is Hookfish<object> {
   return (
     typeof value === 'object' &&
     value !== null &&
     typeof Reflect.get(value, 'fetch') === 'function' &&
-    isProviderRegistry(Reflect.get(value, 'providers'))
+    typeof Reflect.get(value, 'getProviders') === 'function'
   )
 }
 

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineHookfishConfig, z } from '@hookfish/api'
+import { defineHookfishConfig } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import {
   createGitHubProvider,
@@ -10,16 +10,18 @@ import {
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
-const configSchema = z.object({
-  GITHUB_CLIENT_ID: z
-    .string()
-    .optional()
-    .prefault(process.env.GITHUB_CLIENT_ID!),
-  GITHUB_CLIENT_SECRET: z
-    .string()
-    .optional()
-    .prefault(process.env.GITHUB_CLIENT_SECRET!),
-})
+export type HookfishBindings = {
+  NODE_ENV?: string
+  OAUTH_ENCRYPTION_KEY?: string
+  BROKER_API_KEY?: string
+  OAUTH_REDIRECT_BASE_URL?: string
+  GITHUB_CLIENT_ID?: string
+  GITHUB_CLIENT_SECRET?: string
+  LINEAR_CLIENT_ID?: string
+  LINEAR_CLIENT_SECRET?: string
+  NOTION_CLIENT_ID?: string
+  NOTION_CLIENT_SECRET?: string
+}
 
 const db = pglite(
   process.env.PGLITE_DATA_DIR ??
@@ -38,8 +40,7 @@ const db = pglite(
 // )
 // const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
 
-export default defineHookfishConfig({
-  config: configSchema,
+export default defineHookfishConfig<HookfishBindings>({
   db,
   includeClient: true,
   includeSwagger: true,
@@ -48,15 +49,19 @@ export default defineHookfishConfig({
   organizationRouting: false, // Use /api/organization/:organization/oauth management routes.
   providerManagement: true,
   // onEvent: async (event) => auditLog.write(event),
-  providers: (config) => ({
-    // Providers can receive credentials explicitly from validated config.
+  providers: (env) => ({
+    // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({
-      clientId: config.GITHUB_CLIENT_ID,
-      clientSecret: config.GITHUB_CLIENT_SECRET,
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
     }),
-    // Or retain their conventional <PROVIDER>_CLIENT_ID / _CLIENT_SECRET
-    // environment lookup when constructor credentials are omitted.
-    linear: createLinearProvider(),
-    notion: createNotionProvider(),
+    linear: createLinearProvider({
+      clientId: env.LINEAR_CLIENT_ID,
+      clientSecret: env.LINEAR_CLIENT_SECRET,
+    }),
+    notion: createNotionProvider({
+      clientId: env.NOTION_CLIENT_ID,
+      clientSecret: env.NOTION_CLIENT_SECRET,
+    }),
   }),
 })

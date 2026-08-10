@@ -5,7 +5,7 @@ import {
   assertConnectionAccess,
   assertConnectionPrefixAccess,
 } from '../oauth/access-token'
-import type { BrokerConfig } from '../oauth/config'
+import { resolveBrokerConfig } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
@@ -208,12 +208,11 @@ function serializeMetadata(secret: {
 }
 
 export function createSecretRoutes<Bindings extends object>(
-  resolveConfig: () => BrokerConfig,
   database: DatabaseInput<Bindings>,
   options: SecretRouteOptions,
 ) {
   const routes = new OpenAPIHono<BrokerContext<Bindings>>()
-  const authenticate = requireApiKey<Bindings>(resolveConfig)
+  const authenticate = requireApiKey<Bindings>()
   const connectDatabase = withDatabase(database, (request) => ({
     organization: requestOrganization(request, options),
   }))
@@ -254,7 +253,7 @@ export function createSecretRoutes<Bindings extends object>(
     assertConnectionAccess(c.get('accessGrant'), path)
     const stored = await putVaultSecret(
       c.get('db'),
-      resolveConfig(),
+      resolveBrokerConfig(c.env),
       path,
       c.req.valid('json').value,
       organization,
@@ -276,7 +275,7 @@ export function createSecretRoutes<Bindings extends object>(
     assertConnectionAccess(c.get('accessGrant'), path)
     const secret = await getVaultSecret(
       c.get('db'),
-      resolveConfig(),
+      resolveBrokerConfig(c.env),
       path,
       organization,
     )

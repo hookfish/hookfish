@@ -277,9 +277,7 @@ export async function createHarness(
     STUB_NOSCOPE_CLIENT_ID: 'stub-noscope-client',
     STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
-  const configSchema = z.object({}).transform(() => env)
   const app = await Hookfish.init({
-    config: configSchema,
     db,
     providers,
     returnTo: options.returnTo,

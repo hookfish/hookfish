@@ -18,7 +18,9 @@ try {
 const { Hookfish } = await import('@hookfish/api')
 const { default: config } = await import('../../../hookfish.config')
 const hookfish = await Hookfish.init(config)
-const handleHookfish = getRequestListener((request) => hookfish.fetch(request))
+const handleHookfish = getRequestListener((request) =>
+  hookfish.fetch(request, process.env),
+)
 
 const app = express()
 

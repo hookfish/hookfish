@@ -18,7 +18,7 @@ import {
   startAuthorization,
 } from '../oauth/broker'
 import {
-  type BrokerConfig,
+  resolveBrokerConfig,
   resolveRedirectUri,
   validateReturnTo,
 } from '../oauth/config'
@@ -591,22 +591,24 @@ const disconnectRuntimeRoute = createRoute({
 // ---------------------------------------------------------------------------
 
 export function createOAuthRoutes<Bindings extends object>(
-  providers: ProviderRegistry,
-  resolveConfig: () => BrokerConfig,
+  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
   database: DatabaseInput<Bindings>,
   options: OAuthRouteOptions,
 ) {
   const oauthRoutes = new OpenAPIHono<BrokerContext<Bindings>>()
-  const authenticate = requireApiKey<Bindings>(resolveConfig)
+  const authenticate = requireApiKey<Bindings>()
   const connectManagementDatabase = withDatabase(database, (request) => ({
     organization: requestOrganization(request, options),
   }))
-  const connectCallbackDatabase = withDatabase(database, async (request) => ({
-    organization: await organizationFromAuthorizationState(
-      resolveConfig(),
-      request.query('state'),
-    ),
-  }))
+  const connectCallbackDatabase = withDatabase(
+    database,
+    async (request, bindings) => ({
+      organization: await organizationFromAuthorizationState(
+        resolveBrokerConfig(bindings),
+        request.query('state'),
+      ),
+    }),
+  )
 
   oauthRoutes.use('/providers', connectManagementDatabase, authenticate)
   oauthRoutes.use(
@@ -630,7 +632,8 @@ export function createOAuthRoutes<Bindings extends object>(
     if (organization) {
       assertConnectionPrefixAccess(c.get('accessGrant'), organization)
     }
-    const config = resolveConfig()
+    const config = resolveBrokerConfig(c.env)
+    const providers = await resolveProviders(c.env)
     return c.json(
       {
         providers: (
@@ -663,7 +666,8 @@ export function createOAuthRoutes<Bindings extends object>(
   const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
     const body = c.req.valid('json')
-    const config = resolveConfig()
+    const config = resolveBrokerConfig(c.env)
+    const providers = await resolveProviders(c.env)
     const { organization } = c.get('databaseContext')
     const connectionIdPrefix =
       body.connection_id_prefix ??
@@ -796,7 +800,8 @@ export function createOAuthRoutes<Bindings extends object>(
       )
     }
 
-    const config = resolveConfig()
+    const config = resolveBrokerConfig(c.env)
+    const providers = await resolveProviders(c.env)
     let completed: Awaited<ReturnType<typeof completeAuthorization>>
     try {
       completed = await completeAuthorization(
@@ -913,7 +918,8 @@ export function createOAuthRoutes<Bindings extends object>(
     const { organization } = c.get('databaseContext')
     assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
-    const config = resolveConfig()
+    const config = resolveBrokerConfig(c.env)
+    const providers = await resolveProviders(c.env)
     const token = await getAccessToken(
       c.get('db'),
       config,
@@ -953,7 +959,8 @@ export function createOAuthRoutes<Bindings extends object>(
     const { organization } = c.get('databaseContext')
     assertOrganizationConnection(organization, connectionId)
     assertConnectionAccess(c.get('accessGrant'), connectionId)
-    const config = resolveConfig()
+    const config = resolveBrokerConfig(c.env)
+    const providers = await resolveProviders(c.env)
     const connection = await findConnection(
       c.get('db'),
       connectionId,

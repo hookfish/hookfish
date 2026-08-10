@@ -9,7 +9,7 @@ import type { DatabaseInput } from '../db/binding'
 import { oauthConnections, oauthProviders } from '../db/schema'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import { assertRootAccess } from '../oauth/access-token'
-import type { BrokerConfig } from '../oauth/config'
+import { resolveBrokerConfig } from '../oauth/config'
 import {
   findDynamicProvider,
   listProviderDescriptors,
@@ -295,13 +295,12 @@ function serializeProvider(
 }
 
 export function createProviderRoutes<Bindings extends object>(
-  providers: ProviderRegistry,
-  resolveConfig: () => BrokerConfig,
+  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
   database: DatabaseInput<Bindings>,
   options: ProviderRouteOptions,
 ) {
   const routes = new OpenAPIHono<BrokerContext<Bindings>>()
-  const authenticate = requireApiKey<Bindings>(resolveConfig)
+  const authenticate = requireApiKey<Bindings>()
   const connectDatabase = withDatabase(database, (request) => ({
     organization: requestOrganization(request, options),
   }))
@@ -323,9 +322,10 @@ export function createProviderRoutes<Bindings extends object>(
   const listApi = routes.openapi(listRoute, async (c) => {
     assertRootAccess(c.get('accessGrant'))
     const { organization } = c.get('databaseContext')
+    const providers = await resolveProviders(c.env)
     const descriptors = await listProviderDescriptors(
       c.get('db'),
-      resolveConfig(),
+      resolveBrokerConfig(c.env),
       providers,
       organization,
     )
@@ -350,10 +350,11 @@ export function createProviderRoutes<Bindings extends object>(
     assertRootAccess(c.get('accessGrant'))
     const providerId = normalizeProviderId(c.req.valid('param').provider_id)
     const { organization } = c.get('databaseContext')
+    const providers = await resolveProviders(c.env)
     const descriptor = (
       await listProviderDescriptors(
         c.get('db'),
-        resolveConfig(),
+        resolveBrokerConfig(c.env),
         providers,
         organization,
       )
@@ -375,6 +376,7 @@ export function createProviderRoutes<Bindings extends object>(
   const putApi = getApi.openapi(putRoute, async (c) => {
     assertRootAccess(c.get('accessGrant'))
     const providerId = normalizeProviderId(c.req.valid('param').provider_id)
+    const providers = await resolveProviders(c.env)
     if (providers.getProvider(providerId)) {
       throw new BrokerError(
         409,
@@ -395,7 +397,7 @@ export function createProviderRoutes<Bindings extends object>(
     if (body.credentials.mode === 'custom') {
       await putVaultSecret(
         c.get('db'),
-        resolveConfig(),
+        resolveBrokerConfig(c.env),
         secretPath,
         body.credentials.client_secret,
         organization,
@@ -447,7 +449,7 @@ export function createProviderRoutes<Bindings extends object>(
     const descriptor = (
       await listProviderDescriptors(
         c.get('db'),
-        resolveConfig(),
+        resolveBrokerConfig(c.env),
         providers,
         organization,
       )
@@ -465,6 +467,7 @@ export function createProviderRoutes<Bindings extends object>(
     assertRootAccess(c.get('accessGrant'))
     const providerId = normalizeProviderId(c.req.valid('param').provider_id)
     const { organization } = c.get('databaseContext')
+    const providers = await resolveProviders(c.env)
     const existing = await findDynamicProvider(
       c.get('db'),
       providerId,
@@ -487,7 +490,7 @@ export function createProviderRoutes<Bindings extends object>(
     if (body.credentials?.mode === 'custom') {
       await putVaultSecret(
         c.get('db'),
-        resolveConfig(),
+        resolveBrokerConfig(c.env),
         secretPath,
         body.credentials.client_secret,
         organization,
@@ -532,7 +535,7 @@ export function createProviderRoutes<Bindings extends object>(
     const descriptor = (
       await listProviderDescriptors(
         c.get('db'),
-        resolveConfig(),
+        resolveBrokerConfig(c.env),
         providers,
         organization,
       )

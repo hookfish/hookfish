@@ -14,7 +14,7 @@ const handle = async (request: Request) => {
   ]).then(([{ Hookfish }, { default: config }]) => Hookfish.init(config))
   const hookfish = await hookfishPromise
 
-  return hookfish.fetch(request)
+  return hookfish.fetch(request, process.env)
 }
 
 export {
