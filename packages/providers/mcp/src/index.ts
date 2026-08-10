@@ -327,8 +327,8 @@ export class McpProvider implements OAuthProviderTemplate {
       metadataUrl.protocol === 'https:'
     ) {
       metadataUrl.pathname = metadataUrl.pathname.replace(
-        /\/callback$/,
-        '/client-metadata.json',
+        '/oauth/callback/',
+        '/oauth/client-metadata/',
       )
       return { clientId: metadataUrl.toString() }
     }

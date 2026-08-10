@@ -49,7 +49,7 @@ describe('McpProvider', () => {
         const url = String(input)
         if (url === `${issuer}/register`) {
           expect(JSON.parse(String(init?.body))).toMatchObject({
-            redirect_uris: ['https://broker.example/api/oauth/acme/callback'],
+            redirect_uris: ['https://broker.example/api/oauth/callback/acme'],
             token_endpoint_auth_method: 'none',
             application_type: 'web',
           })
@@ -80,7 +80,7 @@ describe('McpProvider', () => {
     })
     const credentials = await template.registerClient({
       configuration,
-      redirectUri: 'https://broker.example/api/oauth/acme/callback',
+      redirectUri: 'https://broker.example/api/oauth/callback/acme',
     })
     expect(credentials).toEqual({ clientId: 'registered-client' })
 
@@ -89,7 +89,7 @@ describe('McpProvider', () => {
       configuration,
     )
     const authorization = await provider.createAuthorization({
-      redirectUri: 'https://broker.example/api/oauth/acme/callback',
+      redirectUri: 'https://broker.example/api/oauth/callback/acme',
       state: 'state-value',
       scopes: [],
     })
@@ -108,7 +108,7 @@ describe('McpProvider', () => {
 
     const result = await provider.exchangeCode({
       code: 'authorization-code',
-      redirectUri: 'https://broker.example/api/oauth/acme/callback',
+      redirectUri: 'https://broker.example/api/oauth/callback/acme',
       codeVerifier: authorization.codeVerifier,
       issuer,
     })
@@ -125,7 +125,7 @@ describe('McpProvider', () => {
     await expect(
       provider.exchangeCode({
         code: 'code',
-        redirectUri: 'https://broker.example/api/oauth/acme/callback',
+        redirectUri: 'https://broker.example/api/oauth/callback/acme',
         issuer: 'https://attacker.example.com',
       }),
     ).rejects.toThrow('does not match')
@@ -148,11 +148,11 @@ describe('McpProvider', () => {
     const provider = new McpProvider({ fetch: fetcher })
     const credentials = await provider.registerClient({
       configuration: { resource_url: resourceUrl },
-      redirectUri: 'https://broker.example/api/oauth/acme/callback',
+      redirectUri: 'https://broker.example/api/oauth/callback/acme',
     })
 
     expect(credentials).toEqual({
-      clientId: 'https://broker.example/api/oauth/acme/client-metadata.json',
+      clientId: 'https://broker.example/api/oauth/client-metadata/acme',
     })
     expect(fetcher).not.toHaveBeenCalledWith(
       `${issuer}/register`,

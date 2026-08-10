@@ -195,6 +195,7 @@ export function BrokerAccessPrompt({
 
 function AddProviderDialog({
   open,
+  currentPath,
   templates,
   existingIds,
   callbackUrls,
@@ -204,6 +205,7 @@ function AddProviderDialog({
   onOpenChange,
 }: {
   open: boolean
+  currentPath: string
   templates: Array<{ id: string; label: string }>
   existingIds: string[]
   callbackUrls: Record<string, string>
@@ -212,9 +214,16 @@ function AddProviderDialog({
   onSubmit: (input: StoreProviderInput) => void
   onOpenChange: (open: boolean) => void
 }) {
+  const existingNames = existingIds
+    .filter((providerId) => {
+      const separator = providerId.lastIndexOf('/')
+      const parent = separator < 0 ? '' : providerId.slice(0, separator)
+      return parent === currentPath
+    })
+    .map((providerId) => providerId.slice(providerId.lastIndexOf('/') + 1))
   const initialTemplate = templates[0]?.id ?? ''
   const [id, setId] = useState(() =>
-    defaultOAuthConfigId(initialTemplate, existingIds),
+    defaultOAuthConfigId(initialTemplate, existingNames),
   )
   const [idEdited, setIdEdited] = useState(false)
   const [label, setLabel] = useState('')
@@ -228,9 +237,12 @@ function AddProviderDialog({
     'idle',
   )
   const normalizedId = id.trim().toLowerCase()
+  const providerPath = currentPath
+    ? `${currentPath}/${normalizedId}`
+    : normalizedId
   const isMcp = template === 'mcp'
-  const redirectUri = oauthRedirectUri(callbackUrls[template], normalizedId)
-  const idTaken = existingIds.includes(normalizedId)
+  const redirectUri = oauthRedirectUri(callbackUrls[template], providerPath)
+  const idTaken = existingIds.includes(providerPath)
   const idFormatError =
     normalizedId && !PROVIDER_ID_PATTERN.test(normalizedId)
       ? 'Use lowercase letters, numbers, and single hyphens.'
@@ -266,10 +278,10 @@ function AddProviderDialog({
     : Boolean(clientId.trim() && clientSecret)
 
   function handleTemplateChange(nextTemplate: string) {
-    const currentDefault = defaultOAuthConfigId(template, existingIds)
+    const currentDefault = defaultOAuthConfigId(template, existingNames)
     setTemplate(nextTemplate)
     if (!idEdited || id === currentDefault) {
-      setId(defaultOAuthConfigId(nextTemplate, existingIds))
+      setId(defaultOAuthConfigId(nextTemplate, existingNames))
       setIdEdited(false)
     }
     setCopyStatus('idle')
@@ -301,7 +313,7 @@ function AddProviderDialog({
       return
     }
     const base = {
-      id: normalizedId,
+      id: providerPath,
       template,
       ...(label.trim() ? { label: label.trim() } : {}),
     }
@@ -440,7 +452,7 @@ function AddProviderDialog({
             <DialogTitle>Add provider</DialogTitle>
             <DialogDescription>
               Configure an OAuth application or connect Hookfish to a remote MCP
-              server.
+              server in {currentPath || 'the root folder'}.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -461,7 +473,7 @@ function AddProviderDialog({
             </Field>
             <Field data-invalid={Boolean(idError)}>
               <div className="flex items-center justify-between gap-4">
-                <FieldLabel htmlFor="provider-id">Configuration ID</FieldLabel>
+                <FieldLabel htmlFor="provider-id">Provider name</FieldLabel>
                 {normalizedId && !idFormatError ? (
                   <span
                     role="status"
@@ -498,7 +510,8 @@ function AddProviderDialog({
                 }}
               />
               <FieldDescription>
-                Edit this ID to update the redirect URI below.
+                Provider path: <code>{providerPath}</code>. Edit the name to
+                update the redirect URI below.
               </FieldDescription>
               <FieldError>{idError}</FieldError>
             </Field>
@@ -620,8 +633,10 @@ function AddProviderDialog({
 
 export function OAuthConfigDialog({
   managementToken,
+  currentPath = '',
 }: {
   managementToken: string
+  currentPath?: string
 }) {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -629,10 +644,6 @@ export function OAuthConfigDialog({
     queryKey: ['management', 'providers', managementToken],
     queryFn: () => listManagedProviders(managementToken),
     enabled: false,
-  })
-  const publicProvidersQuery = hookfish.useProviderSearch({
-    limit: 100,
-    source: 'fixed',
   })
   const storeMutation = useMutation({
     async mutationFn(input: StoreProviderInput) {
@@ -663,13 +674,11 @@ export function OAuthConfigDialog({
     .map(({ id, label }) => ({ id, label }))
   const existingIds = (managedProvidersQuery.data ?? []).map(({ id }) => id)
   const callbackUrls = Object.fromEntries(
-    (publicProvidersQuery.data?.providers ?? []).map((provider) => [
-      provider.id,
-      provider.callback_url,
-    ]),
+    (managedProvidersQuery.data ?? [])
+      .filter((provider) => provider.source === 'fixed')
+      .map((provider) => [provider.id, provider.callback_url]),
   )
-  const loading =
-    managedProvidersQuery.isFetching || publicProvidersQuery.isFetching
+  const loading = managedProvidersQuery.isFetching
 
   async function openDialog() {
     storeMutation.reset()
@@ -690,15 +699,12 @@ export function OAuthConfigDialog({
       <AddProviderDialog
         key={`${dialogOpen ? 'open' : 'closed'}:${templates.map(({ id }) => id).join(',')}`}
         open={dialogOpen}
+        currentPath={currentPath}
         templates={templates}
         existingIds={existingIds}
         callbackUrls={callbackUrls}
         pending={storeMutation.isPending}
-        error={
-          managedProvidersQuery.error ??
-          publicProvidersQuery.error ??
-          storeMutation.error
-        }
+        error={managedProvidersQuery.error ?? storeMutation.error}
         onSubmit={(input) => storeMutation.mutate(input)}
         onOpenChange={(open) => {
           if (open) storeMutation.reset()

@@ -65,7 +65,7 @@ describe('OAuth broker integration', () => {
     expect(stub).toMatchObject({
       kind: 'oauth',
       configured: true,
-      callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
+      callback_url: `http://127.0.0.1:8787/api/oauth/callback/${h.providerId}`,
       scopes: ['read', 'write'],
       available_scopes: ['read', 'write'],
       supports_revocation: false,
@@ -84,14 +84,12 @@ describe('OAuth broker integration', () => {
   })
 
   it('serves public OAuth client metadata for MCP authorization servers', async () => {
-    const response = await h.fetch(
-      '/api/oauth/example-mcp/client-metadata.json',
-    )
+    const response = await h.fetch('/api/oauth/client-metadata/example-mcp')
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      client_id: `${API_ORIGIN}/api/oauth/example-mcp/client-metadata.json`,
+      client_id: `${API_ORIGIN}/api/oauth/client-metadata/example-mcp`,
       client_name: 'Hookfish MCP OAuth broker',
-      redirect_uris: [`${API_ORIGIN}/api/oauth/example-mcp/callback`],
+      redirect_uris: [`${API_ORIGIN}/api/oauth/callback/example-mcp`],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
@@ -210,7 +208,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('mints an unnamed connection below a requested path', async () => {
-    const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const response = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -224,7 +222,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('rejects an explicit connection id combined with a generated-id path', async () => {
-    const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const response = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -326,7 +324,9 @@ describe('OAuth broker integration', () => {
     } = await (await fetchApp('/api/openapi.json')).json()
     expect(document.servers).toEqual([{ url: '/api/client' }])
     expect(document.paths['/oauth/providers']?.get).toBeDefined()
-    expect(document.paths['/oauth/{provider}/authorize']?.post).toBeDefined()
+    expect(
+      document.paths['/oauth/authorize/{provider_path}']?.post,
+    ).toBeDefined()
     expect(document.paths['/oauth/tokens/{connectionId}']).toBeUndefined()
     expect(document.paths['/admin/tokens']).toBeUndefined()
   })
@@ -550,38 +550,32 @@ describe('OAuth broker integration', () => {
     }
 
     const missingConnectionId = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
+      `/api/oauth/authorize/${h.providerId}`,
       {
         method: 'POST',
         headers: { ...scopedHeaders, 'content-type': 'application/json' },
         body: '{}',
       },
     )
-    expect(missingConnectionId.status).toBe(400)
+    expect(missingConnectionId.status).toBe(403)
     expect(await missingConnectionId.json()).toMatchObject({
       error: {
-        code: 'connection_id_required',
-        message: expect.stringContaining(
-          'connection_id or connection_id_prefix',
-        ),
+        code: 'insufficient_scope',
       },
     })
 
     const scopedPrefixAuthorize = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
+      `/api/oauth/authorize/${h.providerId}`,
       {
         method: 'POST',
         headers: { ...scopedHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ connection_id_prefix: 'team/generated' }),
       },
     )
-    expect(scopedPrefixAuthorize.status).toBe(200)
-    expect(await scopedPrefixAuthorize.json()).toMatchObject({
-      connection_id: expect.stringMatching(/^team\/generated\//),
-    })
+    expect(scopedPrefixAuthorize.status).toBe(403)
 
     const outsidePrefixAuthorize = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
+      `/api/oauth/authorize/${h.providerId}`,
       {
         method: 'POST',
         headers: { ...scopedHeaders, 'content-type': 'application/json' },
@@ -648,7 +642,7 @@ describe('OAuth broker integration', () => {
     })
     const rootMint: { access_token: string } = await rootMintResponse.json()
     const rootAuthorize = await h.fetch(
-      `/api/oauth/${h.providerId}/authorize`,
+      `/api/oauth/authorize/${h.providerId}`,
       {
         method: 'POST',
         headers: {
@@ -830,7 +824,7 @@ describe('OAuth broker integration', () => {
     const first = await h.authorizeAndCallback({ connectionId })
     expect(first.callback.status).toBe(200)
 
-    const conflict = await h.fetch(`/api/oauth/${h.altProviderId}/authorize`, {
+    const conflict = await h.fetch(`/api/oauth/authorize/${h.altProviderId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: connectionId }),
@@ -851,7 +845,7 @@ describe('OAuth broker integration', () => {
     const { connectionId, callback } = await h.authorizeAndCallback()
     expect(callback.status).toBe(200)
 
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const authorizeRes = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: `${connectionId}-replay` }),
@@ -929,7 +923,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the provider token endpoint fails', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const authorizeRes = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'token-fail' }),
@@ -959,7 +953,7 @@ describe('OAuth broker integration', () => {
 
     try {
       const authorize = await configured.fetch(
-        `/api/oauth/${configured.providerId}/authorize`,
+        `/api/oauth/authorize/${configured.providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1003,7 +997,7 @@ describe('OAuth broker integration', () => {
 
     try {
       const untrusted = await configured.fetch(
-        `/api/oauth/${configured.providerId}/authorize`,
+        `/api/oauth/authorize/${configured.providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1017,7 +1011,7 @@ describe('OAuth broker integration', () => {
       expect((await untrusted.json()).error.code).toBe('untrusted_return_to')
 
       const authorize = await configured.fetch(
-        `/api/oauth/${configured.providerId}/authorize`,
+        `/api/oauth/authorize/${configured.providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1090,19 +1084,21 @@ describe('OAuth broker integration', () => {
       })
       expect(
         openApi.paths[
-          '/organization/{organization}/oauth/{provider}/authorize'
+          '/organization/{organization}/oauth/authorize/{provider_path}'
         ],
       ).toBeDefined()
       expect(openApi.paths['/oauth/providers']).toBeUndefined()
-      expect(openApi.paths['/oauth/{provider}/authorize']).toBeUndefined()
-      expect(openApi.paths['/oauth/{provider}/callback']).toBeDefined()
+      expect(openApi.paths['/oauth/authorize/{provider_path}']).toBeUndefined()
+      expect(openApi.paths['/oauth/callback/{provider_path}']).toBeDefined()
       expect(
-        openApi.paths['/organization/{organization}/oauth/{provider}/callback'],
+        openApi.paths[
+          '/organization/{organization}/oauth/callback/{provider_path}'
+        ],
       ).toBeUndefined()
       expect(openApi.paths['/{organization}/oauth/providers']).toBeUndefined()
 
       const invalidRoutedState = await configured.fetch(
-        `/api/oauth/${configured.providerId}/callback?code=test&state=hookfish_state_v1.invalid`,
+        `/api/oauth/callback/${configured.providerId}?code=test&state=hookfish_state_v1.invalid`,
       )
       expect(invalidRoutedState.status).toBe(400)
       expect((await invalidRoutedState.json()).error.code).toBe('invalid_state')
@@ -1117,10 +1113,10 @@ describe('OAuth broker integration', () => {
       expect(
         providerBody.providers.find(({ id }) => id === configured.providerId)
           ?.callback_url,
-      ).toBe(`${API_ORIGIN}/api/oauth/${configured.providerId}/callback`)
+      ).toBe(`${API_ORIGIN}/api/oauth/callback/${configured.providerId}`)
 
       const authorize = await configured.fetch(
-        `/api/organization/acme/oauth/${configured.providerId}/authorize`,
+        `/api/organization/acme/oauth/authorize/${configured.providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1139,7 +1135,7 @@ describe('OAuth broker integration', () => {
       })
       const callbackUrl = new URL(consent.headers.get('location')!)
       expect(callbackUrl.pathname).toBe(
-        `/api/oauth/${configured.providerId}/callback`,
+        `/api/oauth/callback/${configured.providerId}`,
       )
       const callback = await configured.fetch(
         `${callbackUrl.pathname}${callbackUrl.search}`,
@@ -1186,7 +1182,7 @@ describe('OAuth broker integration', () => {
           `/api/organization/globex/oauth/connections?connection_id_prefix=acme`,
         ),
         configured.fetch(
-          `/api/organization/globex/oauth/${configured.providerId}/authorize`,
+          `/api/organization/globex/oauth/authorize/${configured.providerId}`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1196,7 +1192,7 @@ describe('OAuth broker integration', () => {
           },
         ),
         configured.fetch(
-          `/api/organization/globex/oauth/${configured.providerId}/authorize`,
+          `/api/organization/globex/oauth/authorize/${configured.providerId}`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1253,7 +1249,7 @@ describe('OAuth broker integration', () => {
       expect(
         (
           await configured.fetch(
-            `/api/organization/acme/oauth/${configured.providerId}/callback`,
+            `/api/organization/acme/oauth/callback/${configured.providerId}`,
           )
         ).status,
       ).toBe(404)
@@ -1287,7 +1283,7 @@ describe('OAuth broker integration', () => {
     }
 
     const authorize = await fetchApp(
-      `/api/organization/acme/oauth/${h.providerId}/authorize`,
+      `/api/organization/acme/oauth/authorize/${h.providerId}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1336,7 +1332,7 @@ describe('OAuth broker integration', () => {
     try {
       for (const connectionId of invalidPaths) {
         const response = await configured.fetch(
-          `/api/organization/acme/oauth/${configured.providerId}/authorize`,
+          `/api/organization/acme/oauth/authorize/${configured.providerId}`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -1412,7 +1408,7 @@ describe('OAuth broker integration', () => {
 
   it('returns provider denial and invalid callback errors', async () => {
     const startDeniedFlow = async () => {
-      const response = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+      const response = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
@@ -1423,7 +1419,7 @@ describe('OAuth broker integration', () => {
 
     const deniedState = await startDeniedFlow()
     const denied = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied&error_description=nope&state=${deniedState}`,
+      `/api/oauth/callback/${h.providerId}?error=access_denied&error_description=nope&state=${deniedState}`,
     )
     expect(denied.status).toBe(400)
     expect(await denied.json()).toEqual({
@@ -1432,21 +1428,21 @@ describe('OAuth broker integration', () => {
 
     const deniedDefaultState = await startDeniedFlow()
     const deniedDefault = await h.fetch(
-      `/api/oauth/${h.providerId}/callback?error=access_denied&state=${deniedDefaultState}`,
+      `/api/oauth/callback/${h.providerId}?error=access_denied&state=${deniedDefaultState}`,
     )
     expect(deniedDefault.status).toBe(400)
     const deniedBody: { error: { message: string } } =
       await deniedDefault.json()
     expect(deniedBody.error.message).toContain('denied')
 
-    const missing = await h.fetch(`/api/oauth/${h.providerId}/callback`)
+    const missing = await h.fetch(`/api/oauth/callback/${h.providerId}`)
     expect(missing.status).toBe(400)
     const missingBody: { error: { code: string } } = await missing.json()
     expect(missingBody.error.code).toBe('invalid_callback')
   })
 
   it('rejects unknown providers and missing credentials', async () => {
-    const unknown = await h.fetch('/api/oauth/not-a-provider/authorize', {
+    const unknown = await h.fetch('/api/oauth/authorize/not-a-provider', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
@@ -1470,7 +1466,7 @@ describe('OAuth broker integration', () => {
       },
     })
     const missingCreds = await h.fetch(
-      `/api/oauth/${unconfiguredSlug}/authorize`,
+      `/api/oauth/authorize/${unconfiguredSlug}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1485,7 +1481,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('applies scopes requested by the authorize API', async () => {
-    const res = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const res = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -1585,7 +1581,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('rejects expired authorization state', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const authorizeRes = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'expired-state' }),
@@ -1650,7 +1646,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('returns 502 when the token endpoint returns non-JSON', async () => {
-    const authorizeRes = await h.fetch(`/api/oauth/${h.providerId}/authorize`, {
+    const authorizeRes = await h.fetch(`/api/oauth/authorize/${h.providerId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ connection_id: 'non-json-token' }),
@@ -1677,7 +1673,7 @@ describe('OAuth broker integration', () => {
   it('rejects a missing or invalid encryption key', async () => {
     const startFlow = async (connectionId: string) => {
       const authorizeRes = await h.fetch(
-        `/api/oauth/${h.providerId}/authorize`,
+        `/api/oauth/authorize/${h.providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -1821,7 +1817,7 @@ describe('OAuth broker integration', () => {
     } = await res.json()
     const stub = body.providers.find((p) => p.id === h.providerId)
     expect(stub?.callback_url).toBe(
-      `${API_ORIGIN}/api/oauth/${h.providerId}/callback`,
+      `${API_ORIGIN}/api/oauth/callback/${h.providerId}`,
     )
   })
 
@@ -1831,7 +1827,7 @@ describe('OAuth broker integration', () => {
       connectionId: 'housekeeping',
       provider: h.providerId,
       codeVerifier: null,
-      redirectUri: `${API_ORIGIN}/api/oauth/${h.providerId}/callback`,
+      redirectUri: `${API_ORIGIN}/api/oauth/callback/${h.providerId}`,
       scopes: [],
       expiresAt: new Date(Date.now() - 60_000),
     })
@@ -2007,7 +2003,7 @@ describe('OAuth broker integration', () => {
       .object({ paths: z.record(z.string(), z.unknown()) })
       .parse(await (await h.fetch('/api/openapi.json')).json())
     expect(defaultOpenApi.paths).not.toHaveProperty(
-      '/admin/providers/{provider_id}',
+      '/admin/providers/{provider_path}',
     )
 
     const managed = await createHarness({ providerManagement: true })
@@ -2099,7 +2095,7 @@ describe('OAuth broker integration', () => {
       )
       expect(disabled.status).toBe(200)
       expect(
-        await managed.fetch(`/api/oauth/${providerId}/authorize`, {
+        await managed.fetch(`/api/oauth/authorize/${providerId}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ connection_id: 'managed/disabled' }),
@@ -2125,7 +2121,7 @@ describe('OAuth broker integration', () => {
       const openApi = z
         .object({ paths: z.record(z.string(), z.unknown()) })
         .parse(await (await managed.fetch('/api/openapi.json')).json())
-      expect(openApi.paths).toHaveProperty('/admin/providers/{provider_id}')
+      expect(openApi.paths).toHaveProperty('/admin/providers/{provider_path}')
     } finally {
       await managed.close()
     }
@@ -2187,7 +2183,7 @@ describe('OAuth broker integration', () => {
 
       expect(response.status).toBe(200)
       expect(registeredRedirectUri).toBe(
-        `${API_ORIGIN}/api/oauth/${providerId}/callback`,
+        `${API_ORIGIN}/api/oauth/callback/${providerId}`,
       )
       expect(await response.json()).toMatchObject({
         provider: {
@@ -2217,13 +2213,163 @@ describe('OAuth broker integration', () => {
     }
   })
 
+  it('applies hierarchical broker scopes to provider paths', async () => {
+    const managed = await createHarness({ providerManagement: true })
+    const providerPath = 'team/payments/stub'
+    const outsideProviderPath = 'other/stub'
+
+    try {
+      for (const path of [providerPath, outsideProviderPath]) {
+        const response = await managed.fetch(`/api/admin/providers/${path}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        })
+        expect(response.status).toBe(200)
+      }
+
+      const mintResponse = await managed.fetch('/api/admin/tokens', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'team-provider-user',
+          scopes: ['team'],
+          expires_in: 3600,
+        }),
+      })
+      const minted = z
+        .object({ access_token: z.string() })
+        .parse(await mintResponse.json())
+      const headers = {
+        Authorization: `Bearer ${minted.access_token}`,
+        'content-type': 'application/json',
+      }
+
+      const providers = await managed.fetch('/api/oauth/providers', {
+        headers,
+      })
+      expect(providers.status).toBe(200)
+      expect(
+        z
+          .object({ providers: z.array(z.object({ id: z.string() })) })
+          .parse(await providers.json())
+          .providers.map(({ id }) => id),
+      ).toEqual([providerPath])
+
+      const authorize = await managed.fetch(
+        `/api/oauth/authorize/${providerPath}`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ connection_id: 'team/payments/account' }),
+        },
+      )
+      expect(authorize.status).toBe(200)
+
+      for (const inaccessibleProvider of [
+        managed.providerId,
+        outsideProviderPath,
+      ]) {
+        const response = await managed.fetch(
+          `/api/oauth/authorize/${inaccessibleProvider}`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ connection_id: 'team/payments/blocked' }),
+          },
+        )
+        expect(response.status).toBe(403)
+        expect(await response.json()).toMatchObject({
+          error: { code: 'insufficient_scope' },
+        })
+      }
+
+      const providerWrite = await managed.fetch(
+        '/api/admin/providers/team/payments/new-provider',
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(providerWrite.status).toBe(200)
+      expect(await providerWrite.json()).toMatchObject({
+        provider: { id: 'team/payments/new-provider' },
+      })
+
+      const managedProviders = await managed.fetch('/api/admin/providers', {
+        headers,
+      })
+      expect(managedProviders.status).toBe(200)
+      expect(
+        z
+          .object({
+            providers: z.array(
+              z.object({ id: z.string(), source: z.string() }),
+            ),
+          })
+          .parse(await managedProviders.json())
+          .providers.filter(({ source }) => source === 'dynamic')
+          .map(({ id }) => id)
+          .sort(),
+      ).toEqual(['team/payments/new-provider', providerPath])
+
+      const providerPatch = await managed.fetch(
+        '/api/admin/providers/team/payments/new-provider',
+        {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ label: 'Scoped provider' }),
+        },
+      )
+      expect(providerPatch.status).toBe(200)
+      expect(await providerPatch.json()).toMatchObject({
+        provider: { label: 'Scoped provider' },
+      })
+
+      const providerDelete = await managed.fetch(
+        '/api/admin/providers/team/payments/new-provider',
+        { method: 'DELETE', headers },
+      )
+      expect(providerDelete.status).toBe(200)
+      expect(await providerDelete.json()).toEqual({
+        id: 'team/payments/new-provider',
+        deleted: true,
+      })
+
+      const outsideProviderWrite = await managed.fetch(
+        '/api/admin/providers/other/new-provider',
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(outsideProviderWrite.status).toBe(403)
+      expect(await outsideProviderWrite.json()).toMatchObject({
+        error: { code: 'insufficient_scope' },
+      })
+    } finally {
+      await managed.close()
+    }
+  })
+
   it('isolates dynamic providers and secrets in organization routes', async () => {
     const managed = await createHarness({
       organizationRouting: true,
       providerManagement: true,
     })
     try {
-      const providerId = 'acme-stub'
+      const providerId = 'acme/acme-stub'
       const provider = await managed.fetch(
         `/api/organization/acme/admin/providers/${providerId}`,
         {
@@ -2257,7 +2403,7 @@ describe('OAuth broker integration', () => {
       ).toHaveProperty('status', 403)
 
       const authorize = await managed.fetch(
-        `/api/organization/acme/oauth/${providerId}/authorize`,
+        `/api/organization/acme/oauth/authorize/${providerId}`,
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

@@ -31,7 +31,7 @@ type ConnectionsEndpoint = HookfishClient['oauth']['connections']['$get']
 type ConnectionEndpoint =
   HookfishClient['oauth']['connections'][':connection_id{.+}']['$get']
 type AuthorizeEndpoint =
-  HookfishClient['oauth'][':provider']['authorize']['$post']
+  HookfishClient['oauth']['authorize'][':provider_path{.+}']['$post']
 type DisconnectEndpoint =
   HookfishClient['oauth']['connections'][':connection_id{.+}']['$delete']
 
@@ -57,5 +57,5 @@ export type ConnectionsFilter = InferRequestType<ConnectionsEndpoint>['query']
 type AuthorizeRequest = InferRequestType<AuthorizeEndpoint>
 
 export type AuthorizeConnectionInput = AuthorizeRequest['json'] & {
-  provider: AuthorizeRequest['param']['provider']
+  provider: AuthorizeRequest['param']['provider_path']
 }

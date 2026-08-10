@@ -306,7 +306,7 @@ export async function createHarness(
     if (options.connectionId) body.connection_id = options.connectionId
     if (options.scopes) body.scopes = options.scopes
 
-    const authorizeRes = await apiFetch(`/api/oauth/${provider}/authorize`, {
+    const authorizeRes = await apiFetch(`/api/oauth/authorize/${provider}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
