@@ -257,7 +257,12 @@ function AddProviderDialog({
       ? 'Enter the client ID that belongs to this secret.'
       : undefined
   const providerFieldsValid = isMcp
-    ? Boolean(resourceUrl.trim() && !resourceUrlError && !clientCredentialError)
+    ? Boolean(
+        label.trim() &&
+          resourceUrl.trim() &&
+          !resourceUrlError &&
+          !clientCredentialError,
+      )
     : Boolean(clientId.trim() && clientSecret)
 
   function handleTemplateChange(nextTemplate: string) {
@@ -288,7 +293,10 @@ function AddProviderDialog({
       !template ||
       (!isMcp && (!clientId.trim() || !clientSecret)) ||
       (isMcp &&
-        (!resourceUrl.trim() || resourceUrlError || clientCredentialError))
+        (!label.trim() ||
+          !resourceUrl.trim() ||
+          resourceUrlError ||
+          clientCredentialError))
     ) {
       return
     }
@@ -326,10 +334,16 @@ function AddProviderDialog({
         id="provider-label"
         value={label}
         name="provider-label"
+        required={isMcp}
         autoComplete="off"
-        placeholder={isMcp ? 'Production MCP…' : 'GitHub production…'}
+        placeholder={isMcp ? 'Notion MCP…' : 'GitHub production…'}
         onChange={(event) => setLabel(event.target.value)}
       />
+      {isMcp ? (
+        <FieldDescription>
+          Used to distinguish this server anywhere providers are listed.
+        </FieldDescription>
+      ) : null}
     </Field>
   )
   const clientCredentialFields = (
@@ -488,6 +502,7 @@ function AddProviderDialog({
               </FieldDescription>
               <FieldError>{idError}</FieldError>
             </Field>
+            {displayNameField}
             {isMcp ? (
               <Field data-invalid={Boolean(resourceUrlError)}>
                 <FieldLabel htmlFor="provider-resource-url">
@@ -537,7 +552,6 @@ function AddProviderDialog({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <FieldGroup className="pt-4">
-                    {displayNameField}
                     <Field>
                       <FieldLabel htmlFor="provider-scopes">
                         OAuth scopes
@@ -563,7 +577,6 @@ function AddProviderDialog({
               </Collapsible>
             ) : (
               <>
-                {displayNameField}
                 {clientCredentialFields}
                 {redirectUriField}
               </>

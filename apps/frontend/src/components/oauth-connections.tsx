@@ -430,6 +430,11 @@ function AddConnectionDialog({
   const configuredProviders = providers.filter(
     (provider) => provider.configured,
   )
+  const providerLabelCounts = configuredProviders.reduce(
+    (counts, provider) =>
+      counts.set(provider.label, (counts.get(provider.label) ?? 0) + 1),
+    new Map<string, number>(),
+  )
   const [kind, setKind] = useState<ConnectionKind>('oauth')
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
@@ -548,7 +553,9 @@ function AddConnectionDialog({
                   <SelectContent>
                     {configuredProviders.map((provider) => (
                       <SelectItem value={provider.id} key={provider.id}>
-                        {provider.label}
+                        {providerLabelCounts.get(provider.label) === 1
+                          ? provider.label
+                          : `${provider.label} (${provider.id})`}
                       </SelectItem>
                     ))}
                   </SelectContent>
