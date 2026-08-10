@@ -452,6 +452,7 @@ function ProviderCombobox({
   )
   const providerLabels = useRef(new Map<string, string>())
   const selectedProviderId = useRef(value)
+  const initialValueDisplayed = useRef(false)
   selectedProviderId.current = value
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search), 200)
@@ -478,6 +479,13 @@ function ProviderCombobox({
     providers.map((provider) => [provider.id, provider]),
   )
   const providerIds = providers.map((provider) => provider.id)
+  useEffect(() => {
+    if (!value || initialValueDisplayed.current) return
+    const label = providerLabels.current.get(value)
+    if (!label) return
+    setInputValue(label)
+    initialValueDisplayed.current = true
+  }, [providers, value])
 
   return (
     <Combobox
@@ -596,9 +604,9 @@ function AddConnectionDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const [kind, setKind] = useState<ConnectionKind>('oauth')
-  const [name, setName] = useState('OAuth connection')
+  const [name, setName] = useState('')
   const [nameEdited, setNameEdited] = useState(false)
-  const [slug, setSlug] = useState('oauth-connection')
+  const [slug, setSlug] = useState('')
   const [slugEdited, setSlugEdited] = useState(false)
   const [debouncedConnectionId, setDebouncedConnectionId] = useState('')
   const [value, setValue] = useState('')
@@ -654,6 +662,7 @@ function AddConnectionDialog({
       availabilityQuery.isError &&
       availabilityQuery.error.status === 404,
   )
+  const showConnectionIdentity = kind === 'api-key' || Boolean(providerId)
   const apiKeyError =
     kind === 'api-key' && !managementToken
       ? 'Enter a broker access token above to store encrypted API keys.'
@@ -713,15 +722,15 @@ function AddConnectionDialog({
                   if (nameEdited) return
 
                   const suggestedName =
-                    value === 'api-key'
-                      ? 'API key'
-                      : providerLabel || 'OAuth connection'
+                    value === 'api-key' ? 'API key' : providerLabel
                   setName(suggestedName)
                   if (!slugEdited) {
                     setSlug(
                       value === 'oauth' && providerId
                         ? providerId
-                        : connectionSlug(suggestedName),
+                        : suggestedName
+                          ? connectionSlug(suggestedName)
+                          : '',
                     )
                   }
                 }}
@@ -756,91 +765,102 @@ function AddConnectionDialog({
               </Field>
             ) : null}
 
-            <Field>
-              <FieldLabel htmlFor="connection-name">Connection name</FieldLabel>
-              <Input
-                id="connection-name"
-                value={name}
-                name="connection-name"
-                required
-                spellCheck={false}
-                placeholder={
-                  kind === 'api-key'
-                    ? 'Production API key…'
-                    : 'Notion production…'
-                }
-                autoComplete="off"
-                onChange={(event) => {
-                  const nextName = event.target.value
-                  const currentGeneratedSlug = connectionSlug(name)
-                  setName(nextName)
-                  setNameEdited(true)
-                  if (!slugEdited || normalizedSlug === currentGeneratedSlug) {
-                    setSlug(connectionSlug(nextName))
-                    setSlugEdited(false)
-                  }
-                }}
-              />
-              <FieldDescription>
-                Used to generate the connection ID below.
-              </FieldDescription>
-            </Field>
-
-            <Field data-invalid={Boolean(idError)}>
-              <div className="flex items-center justify-between gap-4">
-                <FieldLabel htmlFor="connection-id">Connection ID</FieldLabel>
-                {normalizedSlug && !slugFormatError ? (
-                  <span
-                    role="status"
-                    aria-live="polite"
-                    className={
-                      connectionTaken || availabilityError
-                        ? 'flex items-center gap-2 text-xs tracking-wide text-destructive uppercase'
-                        : 'flex items-center gap-2 text-xs tracking-wide text-primary uppercase'
+            {showConnectionIdentity ? (
+              <>
+                <Field>
+                  <FieldLabel htmlFor="connection-name">
+                    Connection name
+                  </FieldLabel>
+                  <Input
+                    id="connection-name"
+                    value={name}
+                    name="connection-name"
+                    required
+                    spellCheck={false}
+                    placeholder={
+                      kind === 'api-key'
+                        ? 'Production API key…'
+                        : 'Notion production…'
                     }
-                  >
-                    {checkingAvailability ? (
-                      <Spinner className="size-3.5" />
-                    ) : connectionTaken || availabilityError ? (
-                      <CircleXIcon className="size-3.5" />
-                    ) : (
-                      <CircleCheckIcon className="size-3.5" />
-                    )}
-                    {checkingAvailability
-                      ? 'Checking'
-                      : connectionTaken
-                        ? 'Taken'
-                        : availabilityError
-                          ? 'Unavailable'
-                          : 'Available'}
-                  </span>
-                ) : null}
-              </div>
-              <Input
-                id="connection-id"
-                value={slug}
-                name="connection-id"
-                required
-                maxLength={64}
-                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={
-                  kind === 'api-key'
-                    ? 'production-api-key'
-                    : 'notion-production'
-                }
-                aria-invalid={Boolean(idError)}
-                onChange={(event) => {
-                  setSlug(event.target.value)
-                  setSlugEdited(true)
-                }}
-              />
-              <FieldDescription>
-                Full ID: <code>{connectionId || 'connection-id'}</code>
-              </FieldDescription>
-              <FieldError>{idError}</FieldError>
-            </Field>
+                    autoComplete="off"
+                    onChange={(event) => {
+                      const nextName = event.target.value
+                      const currentGeneratedSlug = connectionSlug(name)
+                      setName(nextName)
+                      setNameEdited(true)
+                      if (
+                        !slugEdited ||
+                        normalizedSlug === currentGeneratedSlug
+                      ) {
+                        setSlug(connectionSlug(nextName))
+                        setSlugEdited(false)
+                      }
+                    }}
+                  />
+                  <FieldDescription>
+                    Used to generate the connection ID below.
+                  </FieldDescription>
+                </Field>
+
+                <Field data-invalid={Boolean(idError)}>
+                  <div className="flex items-center justify-between gap-4">
+                    <FieldLabel htmlFor="connection-id">
+                      Connection ID
+                    </FieldLabel>
+                    {normalizedSlug && !slugFormatError ? (
+                      <span
+                        role="status"
+                        aria-live="polite"
+                        className={
+                          connectionTaken || availabilityError
+                            ? 'flex items-center gap-2 text-xs tracking-wide text-destructive uppercase'
+                            : 'flex items-center gap-2 text-xs tracking-wide text-primary uppercase'
+                        }
+                      >
+                        {checkingAvailability ? (
+                          <Spinner className="size-3.5" />
+                        ) : connectionTaken || availabilityError ? (
+                          <CircleXIcon className="size-3.5" />
+                        ) : (
+                          <CircleCheckIcon className="size-3.5" />
+                        )}
+                        {checkingAvailability
+                          ? 'Checking'
+                          : connectionTaken
+                            ? 'Taken'
+                            : availabilityError
+                              ? 'Unavailable'
+                              : 'Available'}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Input
+                    id="connection-id"
+                    value={slug}
+                    name="connection-id"
+                    required
+                    maxLength={64}
+                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={
+                      kind === 'api-key'
+                        ? 'production-api-key'
+                        : 'notion-production'
+                    }
+                    aria-invalid={Boolean(idError)}
+                    onChange={(event) => {
+                      setSlug(event.target.value)
+                      setSlugEdited(true)
+                    }}
+                  />
+                  <FieldDescription>
+                    Full ID: <code>{connectionId || 'connection-id'}</code>
+                  </FieldDescription>
+                  <FieldError>{idError}</FieldError>
+                </Field>
+              </>
+            ) : null}
 
             {kind === 'api-key' ? (
               <Field data-invalid={Boolean(apiKeyError)}>
