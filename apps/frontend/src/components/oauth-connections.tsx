@@ -464,7 +464,10 @@ function ProviderCombobox({
     },
     { placeholderData: (previous) => previous },
   )
-  const providers = providersQuery.data?.providers ?? []
+  const returnedProviders = providersQuery.data?.providers ?? []
+  const providers = configuredOnly
+    ? returnedProviders.filter((provider) => provider.configured)
+    : returnedProviders
   for (const provider of providers) {
     providerLabels.current.set(provider.id, provider.label)
   }
@@ -547,7 +550,6 @@ function ProviderCombobox({
                   key={provider.id}
                   value={provider.id}
                   index={index}
-                  disabled={configuredOnly && !provider.configured}
                 >
                   <span className="grid min-w-0">
                     <span className="truncate">{provider.label}</span>
@@ -566,7 +568,7 @@ function ProviderCombobox({
             }}
           </ComboboxCollection>
         </ComboboxList>
-        {providers.length === PROVIDER_SEARCH_LIMIT ? (
+        {returnedProviders.length === PROVIDER_SEARCH_LIMIT ? (
           <p className="border-t px-3 py-2 text-xs text-muted-foreground">
             Showing the first {PROVIDER_SEARCH_LIMIT} matches. Type to narrow
             the results.
