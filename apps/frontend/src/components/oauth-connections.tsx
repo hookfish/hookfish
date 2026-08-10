@@ -1,9 +1,13 @@
-import type { AuthorizeConnectionInput } from '@hookfish/hooks'
+import type {
+  AuthorizeConnectionInput,
+  AuthorizeConnectionResponse,
+} from '@hookfish/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
   CircleCheckIcon,
   CircleXIcon,
+  ExternalLinkIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
@@ -121,6 +125,10 @@ import {
 
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 type ConnectionKind = 'oauth' | 'api-key'
+type PendingAuthorization = AuthorizeConnectionResponse & {
+  status: 'auth_required'
+  provider: string
+}
 
 const ALL_PROVIDERS = '__all__'
 const PROVIDER_SEARCH_LIMIT = 50
@@ -197,6 +205,54 @@ function ConnectionItem({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      </ItemActions>
+    </Item>
+  )
+}
+
+function AuthRequiredConnectionItem({
+  connection,
+  onDismiss,
+}: {
+  connection: PendingAuthorization
+  onDismiss: () => void
+}) {
+  const connectionName =
+    connection.connection_id.split('/').at(-1) ?? connection.connection_id
+  const expiresAt = new Date(connection.expires_at).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+
+  return (
+    <Item variant="outline">
+      <ItemMedia variant="icon">
+        <Link2Icon />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>
+          {connectionName}
+          <Badge variant="outline">{connection.provider}</Badge>
+          <Badge variant="secondary">Auth required</Badge>
+        </ItemTitle>
+        <ItemDescription>
+          Authorization link expires at {expiresAt} · {connection.connection_id}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <Button asChild size="sm">
+          <a
+            href={connection.authorize_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Authorize
+            <ExternalLinkIcon />
+          </a>
+        </Button>
+        <Button size="sm" variant="outline" onClick={onDismiss}>
+          Dismiss
+        </Button>
       </ItemActions>
     </Item>
   )
@@ -581,6 +637,7 @@ function AddConnectionDialog({
   open,
   currentPath,
   existingSecretPaths,
+  pendingConnectionIds,
   managementToken,
   authorizeMutation,
   secretMutation,
@@ -589,6 +646,7 @@ function AddConnectionDialog({
   open: boolean
   currentPath: string
   existingSecretPaths: string[]
+  pendingConnectionIds: string[]
   managementToken: string
   authorizeMutation: AuthorizeMutation
   secretMutation: ReturnType<
@@ -626,6 +684,7 @@ function AddConnectionDialog({
     retry: false,
   })
   const secretTaken = existingSecretPaths.includes(connectionId)
+  const authorizationPending = pendingConnectionIds.includes(connectionId)
   const checkingAvailability = Boolean(
     normalizedSlug &&
       !slugFormatError &&
@@ -635,6 +694,7 @@ function AddConnectionDialog({
   )
   const connectionTaken =
     secretTaken ||
+    authorizationPending ||
     (debouncedConnectionId === connectionId && availabilityQuery.isSuccess)
   const availabilityError =
     debouncedConnectionId === connectionId &&
@@ -922,15 +982,35 @@ export function OAuthConnections({
   const [view, setView] = useState<ConnectionView>('tree')
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [pendingAuthorizations, setPendingAuthorizations] = useState<
+    PendingAuthorization[]
+  >([])
+  const activePendingAuthorizations = pendingAuthorizations.filter(
+    (authorization) => Date.parse(authorization.expires_at) > Date.now(),
+  )
   const [localFolders, setLocalFolders] = useState<string[]>(() =>
     typeof window === 'undefined' ? [] : readLocalFolders(window.localStorage),
   )
-  const connectionsQuery = hookfish.useConnections({
-    ...(view === 'tree' && currentPath
-      ? { connection_id_prefix: currentPath }
-      : {}),
-    ...(providerFilter === ALL_PROVIDERS ? {} : { provider: providerFilter }),
-  })
+  const connectionsQuery = hookfish.useConnections(
+    {
+      ...(view === 'tree' && currentPath
+        ? { connection_id_prefix: currentPath }
+        : {}),
+      ...(providerFilter === ALL_PROVIDERS ? {} : { provider: providerFilter }),
+    },
+    {
+      refetchInterval: (query) =>
+        activePendingAuthorizations.some(
+          (authorization) =>
+            !query.state.data?.connections.some(
+              (connection) =>
+                connection.connection_id === authorization.connection_id,
+            ),
+        )
+          ? 3_000
+          : false,
+    },
+  )
   const secretsQuery = useQuery({
     queryKey: [
       'management',
@@ -946,8 +1026,14 @@ export function OAuthConnections({
     enabled: Boolean(managementToken),
   })
   const authorizeMutation = hookfish.useAuthorizeConnection({
-    onSuccess(data) {
-      window.location.assign(data.authorize_url)
+    onSuccess(data, input) {
+      setPendingAuthorizations((current) => [
+        ...current.filter(
+          (authorization) => authorization.connection_id !== data.connection_id,
+        ),
+        { ...data, status: 'auth_required', provider: input.provider },
+      ])
+      setAddDialogOpen(false)
     },
   })
   const disconnectMutation = hookfish.useDisconnectConnection()
@@ -964,6 +1050,28 @@ export function OAuthConnections({
   })
 
   useEffect(() => {
+    const connectedIds = new Set(
+      (connectionsQuery.data?.connections ?? []).map(
+        (connection) => connection.connection_id,
+      ),
+    )
+    if (connectedIds.size === 0) return
+
+    setPendingAuthorizations((current) => {
+      if (
+        !current.some((authorization) =>
+          connectedIds.has(authorization.connection_id),
+        )
+      ) {
+        return current
+      }
+      return current.filter(
+        (authorization) => !connectedIds.has(authorization.connection_id),
+      )
+    })
+  }, [connectionsQuery.data?.connections])
+
+  useEffect(() => {
     function refreshConnections() {
       void queryClient.invalidateQueries({
         queryKey: hookfish.keys.connectionsRoot(),
@@ -977,7 +1085,11 @@ export function OAuthConnections({
 
     refreshConnections()
     window.addEventListener('pageshow', refreshConnections)
-    return () => window.removeEventListener('pageshow', refreshConnections)
+    window.addEventListener('focus', refreshConnections)
+    return () => {
+      window.removeEventListener('pageshow', refreshConnections)
+      window.removeEventListener('focus', refreshConnections)
+    }
   }, [managementToken, queryClient])
 
   const secretFolders = secretFolderPaths(secretsQuery.data ?? [])
@@ -1006,19 +1118,49 @@ export function OAuthConnections({
       ),
     [connectionsQuery.data?.connections],
   )
+  const visiblePendingAuthorizations = activePendingAuthorizations.filter(
+    (authorization) => {
+      if (
+        providerFilter !== ALL_PROVIDERS &&
+        authorization.provider !== providerFilter
+      ) {
+        return false
+      }
+      if (view === 'all') return true
+
+      const prefix = currentPath ? `${currentPath}/` : ''
+      const remainder = authorization.connection_id.slice(prefix.length)
+      return (
+        authorization.connection_id.startsWith(prefix) &&
+        Boolean(remainder) &&
+        !remainder.includes('/')
+      )
+    },
+  )
   const isEmpty =
     !connectionsQuery.isPending &&
     !connectionsQuery.isError &&
     (view === 'all'
-      ? allConnections.length === 0 && visibleSecrets.length === 0
+      ? allConnections.length === 0 &&
+        visiblePendingAuthorizations.length === 0 &&
+        visibleSecrets.length === 0
       : directory.folders.length === 0 &&
         directory.connections.length === 0 &&
+        visiblePendingAuthorizations.length === 0 &&
         visibleSecrets.length === 0)
   const addConnectionPath = view === 'tree' ? currentPath : ''
 
   function updateFolders(folders: string[]) {
     setLocalFolders(folders)
     window.localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders))
+  }
+
+  function dismissAuthorization(connectionId: string) {
+    setPendingAuthorizations((current) =>
+      current.filter(
+        (authorization) => authorization.connection_id !== connectionId,
+      ),
+    )
   }
 
   return (
@@ -1142,6 +1284,7 @@ export function OAuthConnections({
           {view === 'tree' &&
           (directory.folders.length ||
             directory.connections.length ||
+            visiblePendingAuthorizations.length ||
             visibleSecrets.length) ? (
             <ItemGroup>
               {directory.folders.map((folder) => (
@@ -1178,6 +1321,15 @@ export function OAuthConnections({
                   }
                 />
               ))}
+              {visiblePendingAuthorizations.map((authorization) => (
+                <AuthRequiredConnectionItem
+                  key={authorization.connection_id}
+                  connection={authorization}
+                  onDismiss={() =>
+                    dismissAuthorization(authorization.connection_id)
+                  }
+                />
+              ))}
               {visibleSecrets.map((secret) => (
                 <ApiKeyItem
                   key={secret.path}
@@ -1193,7 +1345,9 @@ export function OAuthConnections({
           ) : null}
 
           {view === 'all' &&
-          (allConnections.length || visibleSecrets.length) ? (
+          (allConnections.length ||
+            visiblePendingAuthorizations.length ||
+            visibleSecrets.length) ? (
             <ItemGroup>
               {allConnections.map((connection) => (
                 <ConnectionItem
@@ -1205,6 +1359,15 @@ export function OAuthConnections({
                   }
                   onDisconnect={() =>
                     disconnectMutation.mutate(connection.connection_id)
+                  }
+                />
+              ))}
+              {visiblePendingAuthorizations.map((authorization) => (
+                <AuthRequiredConnectionItem
+                  key={authorization.connection_id}
+                  connection={authorization}
+                  onDismiss={() =>
+                    dismissAuthorization(authorization.connection_id)
                   }
                 />
               ))}
@@ -1248,6 +1411,9 @@ export function OAuthConnections({
         currentPath={addConnectionPath}
         existingSecretPaths={(secretsQuery.data ?? []).map(
           (secret) => secret.path,
+        )}
+        pendingConnectionIds={activePendingAuthorizations.map(
+          (authorization) => authorization.connection_id,
         )}
         managementToken={managementToken}
         authorizeMutation={authorizeMutation}
