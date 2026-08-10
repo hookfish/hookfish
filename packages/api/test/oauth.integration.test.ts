@@ -1,5 +1,7 @@
 import {
+  isOAuthProviderTemplate,
   type OAuthProvider,
+  type OAuthProviderTemplate,
   ProviderConfigurationError,
   ProviderRequestError,
 } from '@hookfish/provider'
@@ -50,6 +52,7 @@ describe('OAuth broker integration', () => {
     const body: {
       providers: Array<{
         id: string
+        kind: 'oauth' | 'mcp'
         configured: boolean
         callback_url: string
         scopes: string[]
@@ -60,11 +63,38 @@ describe('OAuth broker integration', () => {
 
     const stub = body.providers.find((p) => p.id === h.providerId)
     expect(stub).toMatchObject({
+      kind: 'oauth',
       configured: true,
       callback_url: `http://127.0.0.1:8787/api/oauth/${h.providerId}/callback`,
       scopes: ['read', 'write'],
       available_scopes: ['read', 'write'],
       supports_revocation: false,
+    })
+  })
+
+  it('searches and bounds provider registry results', async () => {
+    const response = await h.fetch(
+      `/api/oauth/providers?search=${encodeURIComponent(h.providerId)}&limit=1&source=fixed`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      providers: [expect.objectContaining({ id: h.providerId })],
+    })
+  })
+
+  it('serves public OAuth client metadata for MCP authorization servers', async () => {
+    const response = await h.fetch(
+      '/api/oauth/example-mcp/client-metadata.json',
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      client_id: `${API_ORIGIN}/api/oauth/example-mcp/client-metadata.json`,
+      client_name: 'Hookfish MCP OAuth broker',
+      redirect_uris: [`${API_ORIGIN}/api/oauth/example-mcp/callback`],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
     })
   })
 
@@ -2096,6 +2126,92 @@ describe('OAuth broker integration', () => {
         .object({ paths: z.record(z.string(), z.unknown()) })
         .parse(await (await managed.fetch('/api/openapi.json')).json())
       expect(openApi.paths).toHaveProperty('/admin/providers/{provider_id}')
+    } finally {
+      await managed.close()
+    }
+  })
+
+  it('stores provider configuration and supports automatic public-client registration', async () => {
+    const managed = await createHarness({ providerManagement: true })
+    try {
+      const base = managed.providers.getProvider(managed.providerId)
+      if (!base || !isOAuthProviderTemplate(base)) {
+        throw new Error('Expected the stub provider template')
+      }
+      const createProvider = base.createProvider.bind(base)
+      let registeredRedirectUri: string | undefined
+      const configurableTemplate: OAuthProviderTemplate = {
+        ...base,
+        label: 'Configurable Stub',
+        allowsPublicClient: true,
+        normalizeConfiguration(configuration) {
+          if (typeof configuration.resource_url !== 'string') {
+            throw new ProviderConfigurationError('resource_url is required')
+          }
+          return configuration
+        },
+        async registerClient({ redirectUri }) {
+          registeredRedirectUri = redirectUri
+          return { clientId: 'registered-public-client' }
+        },
+        createProvider(credentials, configuration) {
+          if (typeof configuration?.resource_url !== 'string') {
+            throw new ProviderConfigurationError('resource_url is required')
+          }
+          return createProvider({
+            clientId: credentials?.clientId ?? '',
+            clientSecret: credentials?.clientSecret ?? '',
+          })
+        },
+      }
+      managed.providers.register({
+        'configurable-stub': configurableTemplate,
+      })
+
+      const providerId = 'managed-mcp'
+      const response = await managed.fetch(
+        `/api/admin/providers/${providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: 'configurable-stub',
+            configuration: {
+              resource_url: 'https://mcp.example.com/mcp',
+              scopes: ['tools:read'],
+            },
+            credentials: { mode: 'register' },
+          }),
+        },
+      )
+
+      expect(response.status).toBe(200)
+      expect(registeredRedirectUri).toBe(
+        `${API_ORIGIN}/api/oauth/${providerId}/callback`,
+      )
+      expect(await response.json()).toMatchObject({
+        provider: {
+          id: providerId,
+          configured: true,
+          credentials: {
+            mode: 'custom',
+            client_id: 'registered-public-client',
+          },
+          configuration: {
+            resource_url: 'https://mcp.example.com/mcp',
+            scopes: ['tools:read'],
+          },
+        },
+      })
+
+      const [stored] = await managed.db
+        .select()
+        .from(oauthProviders)
+        .where(eq(oauthProviders.providerId, providerId))
+      expect(stored.clientSecretPath).toBeNull()
+      expect(stored.configuration).toMatchObject({
+        resource_url: 'https://mcp.example.com/mcp',
+      })
     } finally {
       await managed.close()
     }

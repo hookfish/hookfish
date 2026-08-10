@@ -6,6 +6,7 @@ export {
   createLinearProvider,
   LinearProvider,
 } from '@hookfish/provider-linear'
+export { createMcpProvider, McpProvider } from '@hookfish/provider-mcp'
 export {
   createNotionProvider,
   NotionProvider,

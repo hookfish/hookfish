@@ -3,7 +3,7 @@ import {
   type OAuthProvider,
   type ProviderRegistry,
 } from '@hookfish/provider'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, ilike, or } from 'drizzle-orm'
 import type { Database, OAuthProviderRecord } from '../db/schema'
 import { oauthProviders } from '../db/schema'
 import { getVaultSecret, organizationKey } from '../vault'
@@ -82,13 +82,9 @@ async function instantiateDynamicProvider(
   }
 
   if (record.credentialMode === 'inherit') {
-    return template.createProvider()
+    return template.createProvider(undefined, record.configuration)
   }
-  if (
-    record.credentialMode !== 'custom' ||
-    !record.clientId ||
-    !record.clientSecretPath
-  ) {
+  if (record.credentialMode !== 'custom' || !record.clientId) {
     throw new BrokerError(
       500,
       'invalid_provider_credentials',
@@ -96,29 +92,42 @@ async function instantiateDynamicProvider(
     )
   }
 
-  let secret: Awaited<ReturnType<typeof getVaultSecret>>
-  try {
-    secret = await getVaultSecret(
-      db,
-      env,
-      record.clientSecretPath,
-      record.organization || undefined,
-      true,
-    )
-  } catch (error) {
-    if (error instanceof BrokerError && error.code === 'secret_not_found') {
-      throw new BrokerError(
-        500,
-        'missing_provider_credentials',
-        `Dynamic provider "${record.providerId}" is missing its stored client secret.`,
+  let clientSecret: string | undefined
+  if (record.clientSecretPath) {
+    try {
+      const secret = await getVaultSecret(
+        db,
+        env,
+        record.clientSecretPath,
+        record.organization || undefined,
+        true,
       )
+      clientSecret = secret.value
+    } catch (error) {
+      if (error instanceof BrokerError && error.code === 'secret_not_found') {
+        throw new BrokerError(
+          500,
+          'missing_provider_credentials',
+          `Dynamic provider "${record.providerId}" is missing its stored client secret.`,
+        )
+      }
+      throw error
     }
-    throw error
   }
-  return template.createProvider({
-    clientId: record.clientId,
-    clientSecret: secret.value,
-  })
+  if (!clientSecret && !template.allowsPublicClient) {
+    throw new BrokerError(
+      500,
+      'missing_provider_credentials',
+      `Dynamic provider "${record.providerId}" requires a stored client secret.`,
+    )
+  }
+  return template.createProvider(
+    {
+      clientId: record.clientId,
+      clientSecret: clientSecret ?? '',
+    },
+    record.configuration,
+  )
 }
 
 export async function resolveRequestProviderConfig(
@@ -164,7 +173,14 @@ export type ProviderDescriptor = {
   source: 'fixed' | 'dynamic'
   templateId?: string
   credentialMode?: 'inherit' | 'custom'
+  configuration?: Record<string, unknown>
   provider?: OAuthProvider
+}
+
+export type ProviderDescriptorFilter = {
+  limit?: number
+  search?: string
+  source?: 'fixed' | 'dynamic'
 }
 
 export async function listProviderDescriptors(
@@ -172,9 +188,18 @@ export async function listProviderDescriptors(
   env: object,
   providers: ProviderRegistry,
   organization?: string,
+  filter: ProviderDescriptorFilter = {},
 ): Promise<ProviderDescriptor[]> {
+  const search = filter.search?.trim().toLowerCase()
   const fixed: ProviderDescriptor[] = providers
     .listProviders()
+    .filter(
+      ([id, provider]) =>
+        filter.source !== 'dynamic' &&
+        (!search ||
+          id.toLowerCase().includes(search) ||
+          provider.label?.toLowerCase().includes(search)),
+    )
     .map(([id, provider]) => ({
       id,
       label: provider.label ?? id,
@@ -183,41 +208,69 @@ export async function listProviderDescriptors(
       source: 'fixed',
       provider,
     }))
+  let dynamicRecords: OAuthProviderRecord[] = []
+  if (filter.source !== 'fixed') {
+    const conditions = [
+      eq(oauthProviders.organization, organizationKey(organization)),
+    ]
+    if (search) {
+      const pattern = `%${search}%`
+      conditions.push(
+        or(
+          ilike(oauthProviders.providerId, pattern),
+          ilike(oauthProviders.label, pattern),
+          ilike(oauthProviders.templateId, pattern),
+        )!,
+      )
+    }
+    const query = db
+      .select()
+      .from(oauthProviders)
+      .where(and(...conditions))
+      .orderBy(asc(oauthProviders.providerId))
+    dynamicRecords = filter.limit
+      ? await query.limit(filter.limit)
+      : await query
+  }
   const dynamic = await Promise.all(
-    (await listDynamicProviders(db, organization)).map(
-      async (record): Promise<ProviderDescriptor> => {
-        try {
-          const provider = await instantiateDynamicProvider(
-            db,
-            env,
-            record,
-            providers,
-          )
-          return {
-            id: record.providerId,
-            label: record.label ?? provider.label ?? record.providerId,
-            configured: record.enabled && (provider.isConfigured?.() ?? true),
-            enabled: record.enabled,
-            source: 'dynamic',
-            templateId: record.templateId,
-            credentialMode:
-              record.credentialMode === 'custom' ? 'custom' : 'inherit',
-            provider,
-          }
-        } catch {
-          return {
-            id: record.providerId,
-            label: record.label ?? record.providerId,
-            configured: false,
-            enabled: record.enabled,
-            source: 'dynamic',
-            templateId: record.templateId,
-            credentialMode:
-              record.credentialMode === 'custom' ? 'custom' : 'inherit',
-          }
+    dynamicRecords.map(async (record): Promise<ProviderDescriptor> => {
+      try {
+        const provider = await instantiateDynamicProvider(
+          db,
+          env,
+          record,
+          providers,
+        )
+        return {
+          id: record.providerId,
+          label: record.label ?? provider.label ?? record.providerId,
+          configured: record.enabled && (provider.isConfigured?.() ?? true),
+          enabled: record.enabled,
+          source: 'dynamic',
+          templateId: record.templateId,
+          credentialMode:
+            record.credentialMode === 'custom' ? 'custom' : 'inherit',
+          configuration: record.configuration,
+          provider,
         }
-      },
-    ),
+      } catch {
+        return {
+          id: record.providerId,
+          label: record.label ?? record.providerId,
+          configured: false,
+          enabled: record.enabled,
+          source: 'dynamic',
+          templateId: record.templateId,
+          credentialMode:
+            record.credentialMode === 'custom' ? 'custom' : 'inherit',
+          configuration: record.configuration,
+        }
+      }
+    }),
   )
-  return [...fixed, ...dynamic]
+  const descriptors = [...fixed, ...dynamic].sort(
+    (left, right) =>
+      left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+  )
+  return filter.limit ? descriptors.slice(0, filter.limit) : descriptors
 }

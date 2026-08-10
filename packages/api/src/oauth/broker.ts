@@ -305,7 +305,7 @@ async function toStoredFields(
 export async function completeAuthorization(
   db: Database,
   env: object,
-  input: { provider: string; code: string; state: string },
+  input: { provider: string; code: string; state: string; issuer?: string },
   providers: ProviderRegistry = defaultProviderRegistry,
 ): Promise<{
   connection: OAuthConnection
@@ -406,6 +406,7 @@ export async function completeAuthorization(
         code: input.code,
         redirectUri: pending.redirectUri,
         codeVerifier: pending.codeVerifier ?? undefined,
+        issuer: input.issuer,
       }),
     )
     const fields = await toStoredFields(env, response, pending.scopes)

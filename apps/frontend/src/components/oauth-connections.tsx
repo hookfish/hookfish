@@ -1,10 +1,9 @@
-import type {
-  AuthorizeConnectionInput,
-  ProvidersResponse,
-} from '@hookfish/hooks'
+import type { AuthorizeConnectionInput } from '@hookfish/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
+  CircleCheckIcon,
+  CircleXIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
@@ -14,7 +13,14 @@ import {
   PlusIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
-import { Fragment, type FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { OAuthConfigDialog } from '@/components/credential-management'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -47,6 +53,15 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 import {
   Dialog,
   DialogContent,
@@ -93,8 +108,10 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import {
   type Connection,
   connectionDirectory,
+  connectionSlug,
   joinConnectionPath,
   validateConnectionName,
+  validateConnectionSlug,
 } from '@/lib/connection-tree'
 import {
   LOCAL_FOLDERS_KEY,
@@ -109,11 +126,11 @@ import {
 } from '@/lib/management-api'
 import { hookfish } from '@/lib/hookfish'
 
-type Provider = ProvidersResponse['providers'][number]
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 type ConnectionKind = 'oauth' | 'api-key'
 
 const ALL_PROVIDERS = '__all__'
+const PROVIDER_SEARCH_LIMIT = 50
 type ConnectionView = 'tree' | 'all'
 
 function directSecrets(secrets: SecretMetadata[], currentPath: string) {
@@ -408,10 +425,169 @@ function AddFolderDialog({
   )
 }
 
+function ProviderCombobox({
+  id,
+  value,
+  configuredOnly = false,
+  allowEmpty = false,
+  placeholder = 'Search providers…',
+  ariaLabel,
+  className,
+  onValueChange,
+}: {
+  id: string
+  value: string
+  configuredOnly?: boolean
+  allowEmpty?: boolean
+  placeholder?: string
+  ariaLabel?: string
+  className?: string
+  onValueChange: (providerId: string, providerLabel?: string) => void
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+    null,
+  )
+  const providerLabels = useRef(new Map<string, string>())
+  const selectedProviderId = useRef(value)
+  const initialValueDisplayed = useRef(false)
+  selectedProviderId.current = value
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(search), 200)
+    return () => window.clearTimeout(timeout)
+  }, [search])
+  useEffect(() => {
+    setPortalContainer(
+      document.getElementById(id)?.closest<HTMLElement>('[role="dialog"]') ??
+        null,
+    )
+  }, [id])
+  const providersQuery = hookfish.useProviderSearch(
+    {
+      limit: PROVIDER_SEARCH_LIMIT,
+      ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    },
+    { placeholderData: (previous) => previous },
+  )
+  const providers = providersQuery.data?.providers ?? []
+  for (const provider of providers) {
+    providerLabels.current.set(provider.id, provider.label)
+  }
+  const providersById = new Map(
+    providers.map((provider) => [provider.id, provider]),
+  )
+  const providerIds = providers.map((provider) => provider.id)
+  useEffect(() => {
+    if (!value || initialValueDisplayed.current) return
+    const label = providerLabels.current.get(value)
+    if (!label) return
+    setInputValue(label)
+    initialValueDisplayed.current = true
+  }, [providers, value])
+
+  return (
+    <Combobox
+      items={providerIds}
+      defaultValue={value || null}
+      inputValue={inputValue}
+      filter={null}
+      itemToStringLabel={(providerId: string) =>
+        providerLabels.current.get(providerId) ?? providerId
+      }
+      itemToStringValue={(providerId: string) => providerId}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          setSearch('')
+        } else {
+          window.setTimeout(() => {
+            const selectedId = selectedProviderId.current
+            setInputValue(
+              selectedId
+                ? (providerLabels.current.get(selectedId) ?? selectedId)
+                : '',
+            )
+          })
+        }
+      }}
+      onInputValueChange={(nextInputValue) => {
+        setInputValue(nextInputValue)
+        setSearch(nextInputValue)
+      }}
+      onValueChange={(providerId: string | null) => {
+        if (providerId && !providersById.has(providerId)) return
+        selectedProviderId.current = providerId ?? ''
+        setInputValue(
+          providerId
+            ? (providerLabels.current.get(providerId) ?? providerId)
+            : '',
+        )
+        onValueChange(
+          providerId ?? '',
+          providerId ? providerLabels.current.get(providerId) : undefined,
+        )
+      }}
+    >
+      <ComboboxInput
+        id={id}
+        aria-label={ariaLabel}
+        className={className ?? 'w-full'}
+        placeholder={placeholder}
+        showClear={allowEmpty}
+      />
+      <ComboboxContent container={portalContainer ?? undefined}>
+        <ComboboxEmpty>
+          {providersQuery.isFetching
+            ? 'Loading providers…'
+            : providersQuery.isError
+              ? 'Could not load providers.'
+              : 'No providers found.'}
+        </ComboboxEmpty>
+        <ComboboxList>
+          <ComboboxCollection>
+            {(providerId: string, index) => {
+              const provider = providersById.get(providerId)
+              if (!provider) return null
+              return (
+                <ComboboxItem
+                  key={provider.id}
+                  value={provider.id}
+                  index={index}
+                  disabled={configuredOnly && !provider.configured}
+                >
+                  <span className="grid min-w-0">
+                    <span className="truncate">{provider.label}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {provider.kind === 'mcp'
+                        ? 'MCP'
+                        : `${provider.label} OAuth`}{' '}
+                      · {provider.id}
+                      {!configuredOnly && !provider.configured
+                        ? ' · Not configured'
+                        : ''}
+                    </span>
+                  </span>
+                </ComboboxItem>
+              )
+            }}
+          </ComboboxCollection>
+        </ComboboxList>
+        {providers.length === PROVIDER_SEARCH_LIMIT ? (
+          <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+            Showing the first {PROVIDER_SEARCH_LIMIT} matches. Type to narrow
+            the results.
+          </p>
+        ) : null}
+      </ComboboxContent>
+    </Combobox>
+  )
+}
+
 function AddConnectionDialog({
   open,
   currentPath,
-  providers,
+  existingSecretPaths,
   managementToken,
   authorizeMutation,
   secretMutation,
@@ -419,7 +595,7 @@ function AddConnectionDialog({
 }: {
   open: boolean
   currentPath: string
-  providers: Provider[]
+  existingSecretPaths: string[]
   managementToken: string
   authorizeMutation: AuthorizeMutation
   secretMutation: ReturnType<
@@ -427,23 +603,66 @@ function AddConnectionDialog({
   >
   onOpenChange: (open: boolean) => void
 }) {
-  const configuredProviders = providers.filter(
-    (provider) => provider.configured,
-  )
   const [kind, setKind] = useState<ConnectionKind>('oauth')
   const [name, setName] = useState('')
+  const [nameEdited, setNameEdited] = useState(false)
+  const [slug, setSlug] = useState('')
+  const [slugEdited, setSlugEdited] = useState(false)
+  const [debouncedConnectionId, setDebouncedConnectionId] = useState('')
   const [value, setValue] = useState('')
-  const [providerId, setProviderId] = useState(configuredProviders[0]?.id ?? '')
-  const normalizedName = name.trim()
-  const connectionId = joinConnectionPath(currentPath, normalizedName)
-  const connectionIdPreview = normalizedName
-    ? connectionId
-    : currentPath
-      ? `${currentPath}/word-word-number`
-      : 'word-word-number'
-  const nameError = normalizedName
-    ? validateConnectionName(normalizedName)
+  const [providerId, setProviderId] = useState('')
+  const [providerLabel, setProviderLabel] = useState('')
+  const normalizedSlug = slug.trim()
+  const connectionId = joinConnectionPath(currentPath, normalizedSlug)
+  const slugFormatError = normalizedSlug
+    ? validateConnectionSlug(normalizedSlug)
     : undefined
+  useEffect(() => {
+    if (!open || !normalizedSlug || slugFormatError) {
+      setDebouncedConnectionId('')
+      return
+    }
+    const timeout = window.setTimeout(
+      () => setDebouncedConnectionId(connectionId),
+      250,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [connectionId, normalizedSlug, open, slugFormatError])
+  const availabilityQuery = hookfish.useConnection(debouncedConnectionId, {
+    enabled: Boolean(debouncedConnectionId),
+    retry: false,
+  })
+  const secretTaken = existingSecretPaths.includes(connectionId)
+  const checkingAvailability = Boolean(
+    normalizedSlug &&
+      !slugFormatError &&
+      (!debouncedConnectionId ||
+        debouncedConnectionId !== connectionId ||
+        availabilityQuery.isFetching),
+  )
+  const connectionTaken =
+    secretTaken ||
+    (debouncedConnectionId === connectionId && availabilityQuery.isSuccess)
+  const availabilityError =
+    debouncedConnectionId === connectionId &&
+    availabilityQuery.isError &&
+    availabilityQuery.error.status !== 404
+      ? 'Could not check whether this connection ID is available.'
+      : undefined
+  const idError = slugFormatError
+    ? slugFormatError
+    : connectionTaken
+      ? 'This connection ID is already taken.'
+      : availabilityError
+  const idAvailable = Boolean(
+    normalizedSlug &&
+      !idError &&
+      !checkingAvailability &&
+      debouncedConnectionId === connectionId &&
+      availabilityQuery.isError &&
+      availabilityQuery.error.status === 404,
+  )
+  const showConnectionIdentity = kind === 'api-key' || Boolean(providerId)
   const apiKeyError =
     kind === 'api-key' && !managementToken
       ? 'Enter a broker access token above to store encrypted API keys.'
@@ -451,10 +670,10 @@ function AddConnectionDialog({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (nameError) return
+    if (!name.trim() || !idAvailable) return
 
     if (kind === 'api-key') {
-      if (!managementToken || !normalizedName || !value) return
+      if (!managementToken || !value) return
       secretMutation.mutate(
         { path: connectionId, value },
         { onSuccess: () => onOpenChange(false) },
@@ -466,18 +685,17 @@ function AddConnectionDialog({
     const input: AuthorizeConnectionInput = {
       provider: providerId,
       return_to: window.location.href,
-      ...(normalizedName
-        ? { connection_id: connectionId }
-        : currentPath
-          ? { connection_id_prefix: currentPath }
-          : {}),
+      connection_id: connectionId,
     }
     authorizeMutation.mutate(input)
   }
 
   const pending = authorizeMutation.isPending || secretMutation.isPending
   const submitDisabled =
-    pending || (kind === 'oauth' ? !providerId : !managementToken)
+    pending ||
+    !name.trim() ||
+    !idAvailable ||
+    (kind === 'oauth' ? !providerId : !managementToken)
 
   return (
     <Dialog
@@ -499,67 +717,152 @@ function AddConnectionDialog({
               <Select
                 value={kind}
                 onValueChange={(value) => {
-                  if (value === 'oauth' || value === 'api-key') setKind(value)
+                  if (value !== 'oauth' && value !== 'api-key') return
+                  setKind(value)
+                  if (nameEdited) return
+
+                  const suggestedName =
+                    value === 'api-key' ? 'API key' : providerLabel
+                  setName(suggestedName)
+                  if (!slugEdited) {
+                    setSlug(
+                      value === 'oauth' && providerId
+                        ? providerId
+                        : suggestedName
+                          ? connectionSlug(suggestedName)
+                          : '',
+                    )
+                  }
                 }}
               >
                 <SelectTrigger id="connection-kind" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="oauth">OAuth account</SelectItem>
+                  <SelectItem value="oauth">OAuth / MCP account</SelectItem>
                   <SelectItem value="api-key">API key</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
-            <Field data-invalid={Boolean(nameError)}>
-              <FieldLabel htmlFor="connection-name">
-                Connection name {kind === 'oauth' ? '(optional)' : ''}
-              </FieldLabel>
-              <Input
-                id="connection-name"
-                value={name}
-                name="connection-name"
-                required={kind === 'api-key'}
-                pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
-                spellCheck={false}
-                placeholder={
-                  kind === 'oauth'
-                    ? 'Generated automatically…'
-                    : 'production-api-key…'
-                }
-                autoComplete="off"
-                aria-invalid={Boolean(nameError)}
-                onChange={(event) => setName(event.target.value)}
-              />
-              <FieldDescription>
-                Full ID: <code>{connectionIdPreview}</code>
-              </FieldDescription>
-              <FieldError>{nameError}</FieldError>
-            </Field>
-
             {kind === 'oauth' ? (
               <Field>
                 <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
-                <Select value={providerId} onValueChange={setProviderId}>
-                  <SelectTrigger id="connection-provider" className="w-full">
-                    <SelectValue placeholder="Select a provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {configuredProviders.map((provider) => (
-                      <SelectItem value={provider.id} key={provider.id}>
-                        {provider.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {configuredProviders.length === 0 ? (
-                  <FieldError>
-                    Configure OAuth credentials before adding a connection.
-                  </FieldError>
-                ) : null}
+                <ProviderCombobox
+                  id="connection-provider"
+                  value={providerId}
+                  configuredOnly
+                  onValueChange={(nextProviderId, nextProviderLabel) => {
+                    setProviderId(nextProviderId)
+                    setProviderLabel(nextProviderLabel ?? '')
+                    if (!nextProviderId || nameEdited) return
+
+                    const suggestedName = nextProviderLabel ?? nextProviderId
+                    setName(suggestedName)
+                    if (!slugEdited) setSlug(nextProviderId)
+                  }}
+                />
               </Field>
-            ) : (
+            ) : null}
+
+            {showConnectionIdentity ? (
+              <>
+                <Field>
+                  <FieldLabel htmlFor="connection-name">
+                    Connection name
+                  </FieldLabel>
+                  <Input
+                    id="connection-name"
+                    value={name}
+                    name="connection-name"
+                    required
+                    spellCheck={false}
+                    placeholder={
+                      kind === 'api-key'
+                        ? 'Production API key…'
+                        : 'Notion production…'
+                    }
+                    autoComplete="off"
+                    onChange={(event) => {
+                      const nextName = event.target.value
+                      const currentGeneratedSlug = connectionSlug(name)
+                      setName(nextName)
+                      setNameEdited(true)
+                      if (
+                        !slugEdited ||
+                        normalizedSlug === currentGeneratedSlug
+                      ) {
+                        setSlug(connectionSlug(nextName))
+                        setSlugEdited(false)
+                      }
+                    }}
+                  />
+                  <FieldDescription>
+                    Used to generate the connection ID below.
+                  </FieldDescription>
+                </Field>
+
+                <Field data-invalid={Boolean(idError)}>
+                  <div className="flex items-center justify-between gap-4">
+                    <FieldLabel htmlFor="connection-id">
+                      Connection ID
+                    </FieldLabel>
+                    {normalizedSlug && !slugFormatError ? (
+                      <span
+                        role="status"
+                        aria-live="polite"
+                        className={
+                          connectionTaken || availabilityError
+                            ? 'flex items-center gap-2 text-xs tracking-wide text-destructive uppercase'
+                            : 'flex items-center gap-2 text-xs tracking-wide text-primary uppercase'
+                        }
+                      >
+                        {checkingAvailability ? (
+                          <Spinner className="size-3.5" />
+                        ) : connectionTaken || availabilityError ? (
+                          <CircleXIcon className="size-3.5" />
+                        ) : (
+                          <CircleCheckIcon className="size-3.5" />
+                        )}
+                        {checkingAvailability
+                          ? 'Checking'
+                          : connectionTaken
+                            ? 'Taken'
+                            : availabilityError
+                              ? 'Unavailable'
+                              : 'Available'}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Input
+                    id="connection-id"
+                    value={slug}
+                    name="connection-id"
+                    required
+                    maxLength={64}
+                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={
+                      kind === 'api-key'
+                        ? 'production-api-key'
+                        : 'notion-production'
+                    }
+                    aria-invalid={Boolean(idError)}
+                    onChange={(event) => {
+                      setSlug(event.target.value)
+                      setSlugEdited(true)
+                    }}
+                  />
+                  <FieldDescription>
+                    Full ID: <code>{connectionId || 'connection-id'}</code>
+                  </FieldDescription>
+                  <FieldError>{idError}</FieldError>
+                </Field>
+              </>
+            ) : null}
+
+            {kind === 'api-key' ? (
               <Field data-invalid={Boolean(apiKeyError)}>
                 <FieldLabel htmlFor="api-key-value">API key</FieldLabel>
                 <Input
@@ -579,7 +882,7 @@ function AddConnectionDialog({
                 </FieldDescription>
                 <FieldError>{apiKeyError}</FieldError>
               </Field>
-            )}
+            ) : null}
           </FieldGroup>
 
           {authorizeMutation.isError || secretMutation.isError ? (
@@ -629,7 +932,6 @@ export function OAuthConnections({
   const [localFolders, setLocalFolders] = useState<string[]>(() =>
     typeof window === 'undefined' ? [] : readLocalFolders(window.localStorage),
   )
-  const providersQuery = hookfish.useProviders()
   const connectionsQuery = hookfish.useConnections({
     ...(view === 'tree' && currentPath
       ? { connection_id_prefix: currentPath }
@@ -740,8 +1042,8 @@ export function OAuthConnections({
             Connections
           </CardTitle>
           <CardDescription className="max-w-[60ch] leading-relaxed">
-            Organize OAuth accounts and encrypted API keys in browser-local
-            folders.
+            Organize OAuth accounts, remote MCP servers, and encrypted API keys
+            in browser-local folders.
           </CardDescription>
           <CardAction className="flex flex-wrap items-center justify-end gap-2">
             <ToggleGroup
@@ -764,19 +1066,17 @@ export function OAuthConnections({
                 All
               </ToggleGroupItem>
             </ToggleGroup>
-            <Select value={providerFilter} onValueChange={setProviderFilter}>
-              <SelectTrigger size="sm" aria-label="Filter by provider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value={ALL_PROVIDERS}>All providers</SelectItem>
-                {providersQuery.data?.providers.map((provider) => (
-                  <SelectItem value={provider.id} key={provider.id}>
-                    {provider.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ProviderCombobox
+              id="provider-filter"
+              className="w-52"
+              value={providerFilter === ALL_PROVIDERS ? '' : providerFilter}
+              allowEmpty
+              placeholder="All providers"
+              ariaLabel="Filter by provider"
+              onValueChange={(providerId) =>
+                setProviderFilter(providerId || ALL_PROVIDERS)
+              }
+            />
           </CardAction>
         </CardHeader>
 
@@ -821,15 +1121,6 @@ export function OAuthConnections({
             </Alert>
           ) : null}
 
-          {providersQuery.isError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load providers</AlertTitle>
-              <AlertDescription>
-                {providersQuery.error.message}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
           {secretsQuery.isError ? (
             <Alert variant="destructive">
               <AlertTitle>Could not load API keys</AlertTitle>
@@ -851,7 +1142,7 @@ export function OAuthConnections({
                     ? 'This folder is stored only in this browser. It won’t appear in the Hookfish API until you add a connection.'
                     : view === 'tree'
                       ? 'Add a folder or create a connection here.'
-                      : 'Create an OAuth or API-key connection.'}
+                      : 'Create an OAuth, MCP, or API-key connection.'}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -959,7 +1250,7 @@ export function OAuthConnections({
       </Card>
 
       <AddFolderDialog
-        key={`${folderDialogOpen ? 'open' : 'closed'}:${currentPath}`}
+        key={`folder:${folderDialogOpen ? 'open' : 'closed'}:${currentPath}`}
         open={folderDialogOpen}
         currentPath={currentPath}
         folders={localFolders}
@@ -967,10 +1258,12 @@ export function OAuthConnections({
         onOpenChange={setFolderDialogOpen}
       />
       <AddConnectionDialog
-        key={`${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
+        key={`connection:${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
         currentPath={addConnectionPath}
-        providers={providersQuery.data?.providers ?? []}
+        existingSecretPaths={(secretsQuery.data ?? []).map(
+          (secret) => secret.path,
+        )}
         managementToken={managementToken}
         authorizeMutation={authorizeMutation}
         secretMutation={secretMutation}

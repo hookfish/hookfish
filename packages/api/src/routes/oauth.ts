@@ -344,6 +344,13 @@ const listProvidersRoute = createRoute({
   description:
     "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
   security: brokerAuth,
+  request: {
+    query: z.object({
+      search: z.string().trim().max(128).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+      source: z.enum(['fixed', 'dynamic']).optional(),
+    }),
+  },
   responses: {
     200: {
       description: 'Provider registry',
@@ -354,6 +361,7 @@ const listProvidersRoute = createRoute({
               z.object({
                 id: z.string(),
                 label: z.string(),
+                kind: z.enum(['oauth', 'mcp']),
                 configured: z.boolean(),
                 callback_url: z.string(),
                 scopes: z.array(z.string()),
@@ -440,6 +448,7 @@ const callbackRoute = createRoute({
       state: z.string().optional(),
       error: z.string().optional(),
       error_description: z.string().optional(),
+      iss: z.string().optional(),
     }),
   },
   responses: {
@@ -451,6 +460,30 @@ const callbackRoute = createRoute({
     },
     302: { description: 'Redirected to the configured `returnTo` URL' },
     ...commonErrors,
+  },
+})
+
+const clientMetadataRoute = createRoute({
+  method: 'get',
+  path: '/{provider}/client-metadata.json',
+  summary: 'OAuth client metadata document for MCP authorization servers',
+  request: { params: providerParamSchema },
+  responses: {
+    200: {
+      description: 'OAuth client metadata document',
+      content: {
+        'application/json': {
+          schema: z.object({
+            client_id: z.url(),
+            client_name: z.string(),
+            redirect_uris: z.array(z.url()),
+            grant_types: z.array(z.string()),
+            response_types: z.array(z.string()),
+            token_endpoint_auth_method: z.string(),
+          }),
+        },
+      },
+    },
   },
 })
 
@@ -627,41 +660,71 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
-  const providersApi = oauthRoutes.openapi(listProvidersRoute, async (c) => {
-    const { organization } = c.get('databaseContext')
-    if (organization) {
-      assertConnectionPrefixAccess(c.get('accessGrant'), organization)
-    }
-    const config = resolveBrokerConfig(c.env)
-    const providers = await resolveProviders(c.env)
+  const clientMetadataApi = oauthRoutes.openapi(clientMetadataRoute, (c) => {
+    const clientId = new URL(c.req.url)
+    clientId.search = ''
+    const redirectUri = new URL(clientId)
+    redirectUri.pathname = redirectUri.pathname.replace(
+      /\/client-metadata\.json$/,
+      '/callback',
+    )
     return c.json(
       {
-        providers: (
-          await listProviderDescriptors(
-            c.get('db'),
-            config,
-            providers,
-            organization,
-          )
-        ).map(({ id: slug, label, configured, provider }) => {
-          return {
-            id: slug,
-            label,
-            configured,
-            // Derived from this request, so it stays correct across branches,
-            // `pnpm dev` vs. `server dev`, and deployed environments.
-            callback_url: resolveRedirectUri(config, c.req.url, slug),
-            scopes: [...(provider?.defaultScopes ?? [])],
-            available_scopes: [...(provider?.availableScopes ?? [])],
-            supports_refresh: provider?.refreshToken !== undefined,
-            supports_revocation: provider?.revokeToken !== undefined,
-            uses_pkce: provider?.usesPkce ?? false,
-          }
-        }),
+        client_id: clientId.toString(),
+        client_name: 'Hookfish MCP OAuth broker',
+        redirect_uris: [redirectUri.toString()],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        token_endpoint_auth_method: 'none',
       },
       200,
     )
   })
+
+  const providersApi = clientMetadataApi.openapi(
+    listProvidersRoute,
+    async (c) => {
+      const filter = c.req.valid('query')
+      const { organization } = c.get('databaseContext')
+      if (organization) {
+        assertConnectionPrefixAccess(c.get('accessGrant'), organization)
+      }
+      const config = resolveBrokerConfig(c.env)
+      const providers = await resolveProviders(c.env)
+      return c.json(
+        {
+          providers: (
+            await listProviderDescriptors(
+              c.get('db'),
+              config,
+              providers,
+              organization,
+              filter,
+            )
+          ).map(({ id: slug, label, configured, provider, templateId }) => {
+            const template = templateId
+              ? providers.getProvider(templateId)
+              : undefined
+            return {
+              id: slug,
+              label,
+              kind: provider?.kind ?? template?.kind ?? 'oauth',
+              configured,
+              // Derived from this request, so it stays correct across branches,
+              // `pnpm dev` vs. `server dev`, and deployed environments.
+              callback_url: resolveRedirectUri(config, c.req.url, slug),
+              scopes: [...(provider?.defaultScopes ?? [])],
+              available_scopes: [...(provider?.availableScopes ?? [])],
+              supports_refresh: provider?.refreshToken !== undefined,
+              supports_revocation: provider?.revokeToken !== undefined,
+              uses_pkce: provider?.usesPkce ?? false,
+            }
+          }),
+        },
+        200,
+      )
+    },
+  )
 
   const authorizeApi = providersApi.openapi(authorizeRoute, async (c) => {
     const { provider } = c.req.valid('param')
@@ -807,7 +870,12 @@ export function createOAuthRoutes<Bindings extends object>(
       completed = await completeAuthorization(
         c.get('db'),
         config,
-        { provider, code: query.code, state: query.state },
+        {
+          provider,
+          code: query.code,
+          state: query.state,
+          issuer: query.iss,
+        },
         providers,
       )
     } catch (error) {

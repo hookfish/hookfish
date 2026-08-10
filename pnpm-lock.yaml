@@ -399,6 +399,9 @@ importers:
       '@hookfish/provider-linear':
         specifier: workspace:*
         version: link:linear
+      '@hookfish/provider-mcp':
+        specifier: workspace:*
+        version: link:mcp
       '@hookfish/provider-notion':
         specifier: workspace:*
         version: link:notion
@@ -427,6 +430,22 @@ importers:
         version: 3.2.7(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@24.12.4)(typescript@5.9.3))(tsx@4.23.1)(yaml@2.9.0)
 
   packages/providers/linear:
+    dependencies:
+      '@hookfish/provider':
+        specifier: workspace:*
+        version: link:../../provider
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(msw@2.14.6(@types/node@24.12.4)(typescript@5.9.3))(tsx@4.23.1)(yaml@2.9.0)
+
+  packages/providers/mcp:
     dependencies:
       '@hookfish/provider':
         specifier: workspace:*

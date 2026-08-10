@@ -127,6 +127,10 @@ export const oauthProviders = pgTable(
     credentialMode: text('credential_mode').notNull().default('inherit'),
     clientId: text('client_id'),
     clientSecretPath: text('client_secret_path'),
+    configuration: jsonb('configuration')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     enabled: boolean('enabled').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

@@ -1,6 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
   isOAuthProviderTemplate,
+  ProviderConfigurationError,
+  ProviderRequestError,
+  type OAuthProviderTemplate,
+  type ProviderConfiguration,
   type ProviderRegistry,
 } from '@hookfish/provider'
 import { and, eq, isNull, or, sql } from 'drizzle-orm'
@@ -9,7 +13,7 @@ import type { DatabaseInput } from '../db/binding'
 import { oauthConnections, oauthProviders } from '../db/schema'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import { assertRootAccess } from '../oauth/access-token'
-import { resolveBrokerConfig } from '../oauth/config'
+import { resolveBrokerConfig, resolveRedirectUri } from '../oauth/config'
 import {
   findDynamicProvider,
   listProviderDescriptors,
@@ -41,12 +45,28 @@ const inheritedCredentials = z.object({ mode: z.literal('inherit') })
 const customCredentials = z.object({
   mode: z.literal('custom'),
   client_id: z.string().trim().min(1).max(512),
-  client_secret: z.string().min(1).max(65_536),
+  client_secret: z.string().min(1).max(65_536).optional(),
 })
+const registeredCredentials = z.object({ mode: z.literal('register') })
 const credentialsSchema = z.discriminatedUnion('mode', [
   inheritedCredentials,
   customCredentials,
+  registeredCredentials,
 ])
+const resolvedCredentialsSchema = z.discriminatedUnion('mode', [
+  inheritedCredentials,
+  z.object({
+    mode: z.literal('custom'),
+    credentials: z.object({
+      clientId: z.string().trim().min(1).max(512),
+      clientSecret: z.string().min(1).max(65_536).optional(),
+    }),
+  }),
+])
+const storedCredentialModeSchema = z
+  .enum(['inherit', 'custom'])
+  .catch('inherit')
+const configurationSchema = z.record(z.string(), z.unknown())
 
 const providerResponseSchema = z.object({
   id: z.string(),
@@ -61,6 +81,7 @@ const providerResponseSchema = z.object({
       client_id: z.string().nullable(),
     })
     .nullable(),
+  configuration: configurationSchema.nullable(),
   created_at: z.string().nullable(),
   updated_at: z.string().nullable(),
 })
@@ -91,6 +112,10 @@ const errors = {
   },
   500: {
     description: 'Broker configuration error',
+    content: { 'application/json': { schema: errorSchema } },
+  },
+  502: {
+    description: 'Upstream provider request failed',
     content: { 'application/json': { schema: errorSchema } },
   },
 }
@@ -147,6 +172,7 @@ const putRoute = createRoute({
           schema: z.object({
             template: z.string().min(1).max(128).regex(PROVIDER_ID_PATTERN),
             label: z.string().trim().min(1).max(128).optional(),
+            configuration: configurationSchema.optional(),
             credentials: credentialsSchema,
             enabled: z.boolean().optional().default(true),
           }),
@@ -186,6 +212,7 @@ const patchRoute = createRoute({
                 .regex(PROVIDER_ID_PATTERN)
                 .optional(),
               label: z.string().trim().min(1).max(128).nullable().optional(),
+              configuration: configurationSchema.optional(),
               credentials: credentialsSchema.optional(),
               enabled: z.boolean().optional(),
             })
@@ -269,6 +296,106 @@ function requireTemplate(providers: ProviderRegistry, templateId: string) {
       `Fixed provider "${templateId}" is not registered as a reusable provider template.`,
     )
   }
+  return template
+}
+
+function normalizeConfiguration(
+  template: OAuthProviderTemplate,
+  configuration: ProviderConfiguration = {},
+): ProviderConfiguration {
+  try {
+    return template.normalizeConfiguration?.(configuration) ?? configuration
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw new BrokerError(
+        400,
+        'invalid_provider_configuration',
+        error.message,
+      )
+    }
+    throw error
+  }
+}
+
+async function resolveCredentials(
+  template: OAuthProviderTemplate,
+  credentials:
+    | z.infer<typeof inheritedCredentials>
+    | z.infer<typeof customCredentials>
+    | z.infer<typeof registeredCredentials>,
+  configuration: ProviderConfiguration,
+  redirectUri: string,
+): Promise<z.infer<typeof resolvedCredentialsSchema>> {
+  if (credentials.mode === 'inherit') {
+    return { mode: 'inherit' }
+  }
+
+  if (credentials.mode === 'custom') {
+    if (!credentials.client_secret && !template.allowsPublicClient) {
+      throw new BrokerError(
+        400,
+        'missing_client_secret',
+        'This provider requires a client secret.',
+      )
+    }
+    return {
+      mode: 'custom',
+      credentials: {
+        clientId: credentials.client_id,
+        clientSecret: credentials.client_secret,
+      },
+    }
+  }
+
+  if (!template.registerClient) {
+    throw new BrokerError(
+      400,
+      'registration_unsupported',
+      'This provider does not support automatic client registration.',
+    )
+  }
+
+  try {
+    return {
+      mode: 'custom',
+      credentials: await template.registerClient({
+        configuration,
+        redirectUri,
+      }),
+    }
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw new BrokerError(
+        400,
+        'client_registration_unavailable',
+        error.message,
+      )
+    }
+    if (error instanceof ProviderRequestError) {
+      throw new BrokerError(502, 'client_registration_failed', error.message)
+    }
+    throw error
+  }
+}
+
+function providerCredentialFields(
+  credentials: z.infer<typeof resolvedCredentialsSchema>,
+  secretPath: string,
+) {
+  const resolved = resolvedCredentialsSchema.parse(credentials)
+  if (resolved.mode === 'inherit') {
+    return {
+      credentialMode: 'inherit' as const,
+      clientId: null,
+      clientSecretPath: null,
+    }
+  }
+
+  return {
+    credentialMode: 'custom' as const,
+    clientId: resolved.credentials.clientId,
+    clientSecretPath: resolved.credentials.clientSecret ? secretPath : null,
+  }
 }
 
 function serializeProvider(
@@ -289,6 +416,8 @@ function serializeProvider(
             client_id: record?.clientId ?? null,
           }
         : null,
+    configuration:
+      descriptor.source === 'dynamic' ? (descriptor.configuration ?? {}) : null,
     created_at: record?.createdAt.toISOString() ?? null,
     updated_at: record?.updatedAt.toISOString() ?? null,
   }
@@ -386,7 +515,17 @@ export function createProviderRoutes<Bindings extends object>(
     }
     const body = c.req.valid('json')
     const templateId = normalizeProviderId(body.template)
-    requireTemplate(providers, templateId)
+    const template = requireTemplate(providers, templateId)
+    const configuration = normalizeConfiguration(
+      template,
+      body.configuration ?? {},
+    )
+    const resolvedCredentials = await resolveCredentials(
+      template,
+      body.credentials,
+      configuration,
+      resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
+    )
     const { organization } = c.get('databaseContext')
     const existing = await findDynamicProvider(
       c.get('db'),
@@ -394,12 +533,19 @@ export function createProviderRoutes<Bindings extends object>(
       organization,
     )
     const secretPath = providerClientSecretPath(providerId)
-    if (body.credentials.mode === 'custom') {
+    const credentialFields = providerCredentialFields(
+      resolvedCredentials,
+      secretPath,
+    )
+    if (
+      resolvedCredentials.mode === 'custom' &&
+      resolvedCredentials.credentials.clientSecret
+    ) {
       await putVaultSecret(
         c.get('db'),
         resolveBrokerConfig(c.env),
         secretPath,
-        body.credentials.client_secret,
+        resolvedCredentials.credentials.clientSecret,
         organization,
         true,
       )
@@ -412,13 +558,8 @@ export function createProviderRoutes<Bindings extends object>(
         providerId,
         templateId,
         label: normalizeProviderLabel(body.label),
-        credentialMode: body.credentials.mode,
-        clientId:
-          body.credentials.mode === 'custom'
-            ? body.credentials.client_id
-            : null,
-        clientSecretPath:
-          body.credentials.mode === 'custom' ? secretPath : null,
+        ...credentialFields,
+        configuration,
         enabled: body.enabled,
       })
       .onConflictDoUpdate({
@@ -426,19 +567,18 @@ export function createProviderRoutes<Bindings extends object>(
         set: {
           templateId,
           label: normalizeProviderLabel(body.label) ?? null,
-          credentialMode: body.credentials.mode,
-          clientId:
-            body.credentials.mode === 'custom'
-              ? body.credentials.client_id
-              : null,
-          clientSecretPath:
-            body.credentials.mode === 'custom' ? secretPath : null,
+          ...credentialFields,
+          configuration,
           enabled: body.enabled,
           updatedAt: new Date(),
         },
       })
       .returning()
-    if (body.credentials.mode === 'inherit' && existing?.clientSecretPath) {
+    if (
+      existing?.clientSecretPath &&
+      (resolvedCredentials.mode === 'inherit' ||
+        !resolvedCredentials.credentials.clientSecret)
+    ) {
       await deleteVaultSecret(
         c.get('db'),
         existing.clientSecretPath,
@@ -484,47 +624,66 @@ export function createProviderRoutes<Bindings extends object>(
     const templateId = body.template
       ? normalizeProviderId(body.template)
       : existing.templateId
-    requireTemplate(providers, templateId)
-    const credentialMode = body.credentials?.mode ?? existing.credentialMode
+    const template = requireTemplate(providers, templateId)
+    const configuration = normalizeConfiguration(
+      template,
+      body.configuration ?? existing.configuration,
+    )
+    const resolvedCredentials = body.credentials
+      ? await resolveCredentials(
+          template,
+          body.credentials,
+          configuration,
+          resolveRedirectUri(resolveBrokerConfig(c.env), c.req.url, providerId),
+        )
+      : undefined
     const secretPath = providerClientSecretPath(providerId)
-    if (body.credentials?.mode === 'custom') {
+    let credentialFields = {
+      credentialMode: storedCredentialModeSchema.parse(existing.credentialMode),
+      clientId: existing.clientId,
+      clientSecretPath: existing.clientSecretPath,
+    }
+    if (resolvedCredentials) {
+      credentialFields = providerCredentialFields(
+        resolvedCredentials,
+        secretPath,
+      )
+    }
+    if (
+      resolvedCredentials?.mode === 'custom' &&
+      resolvedCredentials.credentials.clientSecret
+    ) {
       await putVaultSecret(
         c.get('db'),
         resolveBrokerConfig(c.env),
         secretPath,
-        body.credentials.client_secret,
+        resolvedCredentials.credentials.clientSecret,
         organization,
         true,
       )
+    }
+    let label = existing.label
+    if (body.label !== undefined) {
+      label = normalizeProviderLabel(body.label ?? undefined) ?? null
     }
     const [record] = await c
       .get('db')
       .update(oauthProviders)
       .set({
         templateId,
-        label:
-          body.label === undefined
-            ? existing.label
-            : (normalizeProviderLabel(body.label ?? undefined) ?? null),
-        credentialMode,
-        clientId:
-          body.credentials?.mode === 'custom'
-            ? body.credentials.client_id
-            : body.credentials?.mode === 'inherit'
-              ? null
-              : existing.clientId,
-        clientSecretPath:
-          body.credentials?.mode === 'custom'
-            ? secretPath
-            : body.credentials?.mode === 'inherit'
-              ? null
-              : existing.clientSecretPath,
+        label,
+        ...credentialFields,
+        configuration,
         enabled: body.enabled ?? existing.enabled,
         updatedAt: new Date(),
       })
       .where(eq(oauthProviders.id, existing.id))
       .returning()
-    if (body.credentials?.mode === 'inherit' && existing.clientSecretPath) {
+    if (
+      existing.clientSecretPath &&
+      resolvedCredentials &&
+      !credentialFields.clientSecretPath
+    ) {
       await deleteVaultSecret(
         c.get('db'),
         existing.clientSecretPath,

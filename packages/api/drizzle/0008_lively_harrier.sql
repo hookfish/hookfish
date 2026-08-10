@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_providers" ADD COLUMN "configuration" jsonb DEFAULT '{}'::jsonb NOT NULL;
