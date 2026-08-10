@@ -9,7 +9,9 @@ import { z } from 'zod'
 import {
   brokerAccessTokens,
   oauthConnections,
+  oauthProviders,
   oauthStates,
+  vaultSecrets,
 } from '../src/db/schema'
 import { type DatabaseContext, defineDatabase, Hookfish } from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
@@ -18,22 +20,19 @@ import {
   API_ORIGIN,
   createHarness,
   OTHER_ENCRYPTION_KEY,
-  TEST_ENCRYPTION_KEY,
   type TestHarness,
 } from './harness'
 
 describe('OAuth broker integration', () => {
   let h: TestHarness
 
-  async function createHookfish(
-    overrides: Partial<TestHarness['env']> = {},
-  ): Promise<Hookfish> {
-    const config = { ...h.env, ...overrides }
-    return Hookfish.init({
-      config: z.object({}).transform(() => config),
+  async function createHookfish(overrides: Partial<TestHarness['env']> = {}) {
+    const bindings = { ...h.env, ...overrides }
+    const hookfish = await Hookfish.init<TestHarness['env']>({
       db: h.db,
       providers: h.providers,
     })
+    return { bindings, hookfish }
   }
 
   beforeAll(async () => {
@@ -283,7 +282,6 @@ describe('OAuth broker integration', () => {
 
   it('can limit OpenAPI to client-safe operations', async () => {
     const app = await Hookfish.init({
-      config: z.object({}).transform(() => h.env),
       db: h.db,
       providers: h.providers,
       includeSwagger: false,
@@ -306,7 +304,6 @@ describe('OAuth broker integration', () => {
   it('mounts the configured client facade on the Hookfish fetch handler', async () => {
     const app = await Hookfish.init(
       {
-        config: z.object({}).transform(() => h.env),
         db: h.db,
         providers: h.providers,
         includeClient: true,
@@ -1243,7 +1240,6 @@ describe('OAuth broker integration', () => {
   it('passes organization context to request-aware database bindings', async () => {
     const contexts: DatabaseContext[] = []
     const app = await Hookfish.init({
-      config: z.object({}).transform(() => h.env),
       db: defineDatabase((_bindings, context = {}) => {
         contexts.push(context)
         return h.db
@@ -1665,11 +1661,13 @@ describe('OAuth broker integration', () => {
       return consentRes.headers.get('location')!
     }
 
-    const missingKeyApp = await createHookfish({
-      OAUTH_ENCRYPTION_KEY: undefined,
-    })
+    const { hookfish: missingKeyApp, bindings: missingKeyBindings } =
+      await createHookfish({
+        OAUTH_ENCRYPTION_KEY: undefined,
+      })
     const stats = await missingKeyApp.fetch(
       new Request(`${API_ORIGIN}/api/stats`),
+      missingKeyBindings,
     )
     expect(stats.status).toBe(200)
 
@@ -1679,6 +1677,7 @@ describe('OAuth broker integration', () => {
       new Request(
         `${API_ORIGIN}${missingCallback.pathname}${missingCallback.search}`,
       ),
+      missingKeyBindings,
     )
     expect(missingKey.status).toBe(500)
     const missingKeyBody: { error: { code: string } } = await missingKey.json()
@@ -1687,11 +1686,13 @@ describe('OAuth broker integration', () => {
     // Valid base64, but not 32 bytes — hits the length check in importKey.
     const invalidLocation = await startFlow('bad-enc-key')
     const invalidCallback = new URL(invalidLocation)
-    const badKeyApp = await createHookfish({ OAUTH_ENCRYPTION_KEY: 'YWJj' })
+    const { hookfish: badKeyApp, bindings: badKeyBindings } =
+      await createHookfish({ OAUTH_ENCRYPTION_KEY: 'YWJj' })
     const badKey = await badKeyApp.fetch(
       new Request(
         `${API_ORIGIN}${invalidCallback.pathname}${invalidCallback.search}`,
       ),
+      badKeyBindings,
     )
 
     expect(badKey.status).toBe(500)
@@ -1705,13 +1706,15 @@ describe('OAuth broker integration', () => {
     })
     expect(callback.status).toBe(200)
 
-    const rotatedKeyApp = await createHookfish({
-      OAUTH_ENCRYPTION_KEY: OTHER_ENCRYPTION_KEY,
-    })
+    const { hookfish: rotatedKeyApp, bindings: rotatedKeyBindings } =
+      await createHookfish({
+        OAUTH_ENCRYPTION_KEY: OTHER_ENCRYPTION_KEY,
+      })
     const tokenRes = await rotatedKeyApp.fetch(
       new Request(`${API_ORIGIN}/api/oauth/tokens/${connectionId}`, {
         headers: { Authorization: 'Bearer test' },
       }),
+      rotatedKeyBindings,
     )
 
     expect(tokenRes.status).toBe(500)
@@ -1724,7 +1727,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('treats blank NODE_ENV as development', async () => {
-    const app = await createHookfish({
+    const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: '   ',
       BROKER_API_KEY: undefined,
     })
@@ -1732,18 +1735,20 @@ describe('OAuth broker integration', () => {
       new Request(`${API_ORIGIN}/api/oauth/providers`, {
         headers: { Authorization: 'Bearer test' },
       }),
+      bindings,
     )
 
     expect(res.status).toBe(200)
   })
 
   it('requires BROKER_API_KEY in production when unset', async () => {
-    const app = await createHookfish({
+    const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: 'production',
       BROKER_API_KEY: undefined,
     })
     const res = await app.fetch(
       new Request(`${API_ORIGIN}/api/oauth/providers`),
+      bindings,
     )
 
     expect(res.status).toBe(500)
@@ -1752,7 +1757,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('requires a fixed OAuth redirect base URL in production', async () => {
-    const app = await createHookfish({
+    const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: 'production',
       BROKER_API_KEY: 'production-key',
       OAUTH_REDIRECT_BASE_URL: undefined,
@@ -1761,6 +1766,7 @@ describe('OAuth broker integration', () => {
       new Request(`${API_ORIGIN}/api/oauth/providers`, {
         headers: { Authorization: 'Bearer production-key' },
       }),
+      bindings,
     )
 
     expect(res.status).toBe(500)
@@ -1769,11 +1775,14 @@ describe('OAuth broker integration', () => {
   })
 
   it('falls back to the request origin when OAUTH_REDIRECT_BASE_URL is unset', async () => {
-    const app = await createHookfish({ OAUTH_REDIRECT_BASE_URL: undefined })
+    const { hookfish: app, bindings } = await createHookfish({
+      OAUTH_REDIRECT_BASE_URL: undefined,
+    })
     const res = await app.fetch(
       new Request(`${API_ORIGIN}/api/oauth/providers`, {
         headers: { Authorization: 'Bearer test' },
       }),
+      bindings,
     )
 
     expect(res.status).toBe(200)
@@ -1818,77 +1827,354 @@ describe('OAuth broker integration', () => {
     if (original) h.providers.register({ notion: original })
   })
 
-  it('parses configuration once and resolves an async provider factory once', async () => {
+  it('resolves an async provider factory from bindings for each request', async () => {
     const provider = h.providers.getProvider(h.providerId)
     if (!provider) throw new Error('Stub provider is missing.')
 
-    let parseCount = 0
-    let factoryCount = 0
-    const configSchema = z
-      .object({
-        NODE_ENV: z.string().default('test'),
-        OAUTH_ENCRYPTION_KEY: z.string().default(TEST_ENCRYPTION_KEY),
-        BROKER_API_KEY: z.string().default('factory-key'),
-      })
-      .transform((config) => {
-        parseCount += 1
-        return config
-      })
-    const hookfish = await Hookfish.init({
-      config: configSchema,
+    const rotatedProvider = { ...provider, label: 'Rotated provider' }
+    const resolvedBindings: object[] = []
+    type Bindings = typeof h.env & { DYNAMIC_PROVIDER: OAuthProvider }
+    const firstBindings: Bindings = {
+      ...h.env,
+      BROKER_API_KEY: 'factory-key',
+      DYNAMIC_PROVIDER: provider,
+    }
+    const rotatedBindings: Bindings = {
+      ...firstBindings,
+      BROKER_API_KEY: 'rotated-key',
+      DYNAMIC_PROVIDER: rotatedProvider,
+    }
+    const hookfish = await Hookfish.init<Bindings>({
       db: h.db,
-      providers: async (config) => {
-        factoryCount += 1
-        expect(config.BROKER_API_KEY).toBe('factory-key')
-        return { dynamic: provider }
+      providers: async (env) => {
+        resolvedBindings.push(env)
+        return { dynamic: env.DYNAMIC_PROVIDER }
       },
     })
-    const request = () =>
+    const request = (bindings: Bindings) =>
       hookfish.fetch(
         new Request(`${API_ORIGIN}/api/oauth/providers`, {
-          headers: { Authorization: 'Bearer factory-key' },
+          headers: { Authorization: `Bearer ${bindings.BROKER_API_KEY}` },
         }),
+        bindings,
       )
 
-    expect(hookfish.providers.getProvider('dynamic')).toBe(provider)
-
-    expect((await request()).status).toBe(200)
-    expect((await request()).status).toBe(200)
-    expect(parseCount).toBe(1)
-    expect(factoryCount).toBe(1)
-  })
-
-  it('rejects an invalid configuration while initializing Hookfish', async () => {
-    await expect(
-      Hookfish.init({
-        config: z.object({ BROKER_API_KEY: z.string() }),
-        db: h.db,
-        providers: h.providers,
-      }),
-    ).rejects.toThrow()
+    expect(resolvedBindings).toEqual([])
+    const first = await request(firstBindings)
+    const rotated = await request(rotatedBindings)
+    expect(first.status).toBe(200)
+    expect(rotated.status).toBe(200)
+    expect(await rotated.json()).toMatchObject({
+      providers: [expect.objectContaining({ label: 'Rotated provider' })],
+    })
+    expect(resolvedBindings).toEqual([firstBindings, rotatedBindings])
+    expect(
+      (await hookfish.getProviders(firstBindings)).getProvider('dynamic'),
+    ).toBe(provider)
+    expect(resolvedBindings).toEqual([
+      firstBindings,
+      rotatedBindings,
+      firstBindings,
+    ])
   })
 
   it('resolves a request-aware database binding and exposes a bound fetch', async () => {
     type Bindings = typeof h.env & { DATABASE: typeof h.db }
-    let resolvedBindings: Bindings | undefined
+    let databaseBindings: Bindings | undefined
+    let providerBindings: Bindings | undefined
     const hookfish = await Hookfish.init<Bindings>({
-      config: z.object({}).transform(() => h.env),
       db: defineDatabase((bindings: Bindings) => {
-        resolvedBindings = bindings
+        databaseBindings = bindings
         return bindings.DATABASE
       }),
-      providers: h.providers,
+      providers: (bindings) => {
+        providerBindings = bindings
+        return Object.fromEntries(h.providers.listProviders())
+      },
     })
     const bindings = { ...h.env, DATABASE: h.db }
     const { fetch: hookfishFetch } = hookfish
     const res = await hookfishFetch(
-      new Request(`${API_ORIGIN}/api/oauth/connections`, {
+      new Request(`${API_ORIGIN}/api/oauth/providers`, {
         headers: { Authorization: 'Bearer test' },
       }),
       bindings,
     )
 
     expect(res.status).toBe(200)
-    expect(resolvedBindings).toBe(bindings)
+    expect(databaseBindings).toBe(bindings)
+    expect(providerBindings).toBe(bindings)
+  })
+
+  it('stores arbitrary secrets encrypted behind hierarchical broker scopes', async () => {
+    const secretPath = 'vault-test/team/browserbase/api-key'
+    const put = await h.fetch(`/api/secrets/${secretPath}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'browserbase-secret' }),
+    })
+    expect(put.status).toBe(200)
+    expect(await put.json()).toMatchObject({
+      secret: { path: secretPath },
+    })
+
+    const list = await h.fetch('/api/secrets?path_prefix=vault-test/team')
+    const listText = await list.text()
+    expect(JSON.parse(listText)).toMatchObject({
+      secrets: [{ path: secretPath }],
+    })
+    expect(listText).not.toContain('browserbase-secret')
+
+    const get = await h.fetch(`/api/secrets/${secretPath}`)
+    expect(get.headers.get('cache-control')).toBe('no-store')
+    expect(await get.json()).toEqual({
+      path: secretPath,
+      value: 'browserbase-secret',
+    })
+
+    const mint = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'vault-test-worker',
+        scopes: ['vault-test/team'],
+      }),
+    })
+    const scoped: { access_token: string } = await mint.json()
+    const scopedHeaders = {
+      Authorization: `Bearer ${scoped.access_token}`,
+    }
+    expect(
+      await h.fetch(`/api/secrets/${secretPath}`, { headers: scopedHeaders }),
+    ).toHaveProperty('status', 200)
+    expect(
+      await h.fetch('/api/secrets/vault-test/other/key', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 403)
+
+    const reserved = await h.fetch(
+      '/api/secrets/__hookfish/providers/nope/client-secret',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: 'nope' }),
+      },
+    )
+    expect(reserved.status).toBe(400)
+
+    expect(
+      await h.fetch(`/api/secrets/${secretPath}`, { method: 'DELETE' }),
+    ).toHaveProperty('status', 200)
+    await h.fetch('/api/admin/tokens/vault-test-worker', {
+      method: 'DELETE',
+    })
+  })
+
+  it('keeps provider management opt-in and resolves managed providers per request', async () => {
+    expect(await h.fetch('/api/admin/providers')).toHaveProperty('status', 404)
+    const defaultOpenApi = z
+      .object({ paths: z.record(z.string(), z.unknown()) })
+      .parse(await (await h.fetch('/api/openapi.json')).json())
+    expect(defaultOpenApi.paths).not.toHaveProperty(
+      '/admin/providers/{provider_id}',
+    )
+
+    const managed = await createHarness({ providerManagement: true })
+    try {
+      const fixedConflict = await managed.fetch(
+        `/api/admin/providers/${managed.providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(fixedConflict.status).toBe(409)
+
+      const providerId = 'customer-stub'
+      const created = await managed.fetch(
+        `/api/admin/providers/${providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            label: 'Customer Stub',
+            credentials: {
+              mode: 'custom',
+              client_id: 'customer-client',
+              client_secret: 'customer-secret',
+            },
+          }),
+        },
+      )
+      expect(created.status).toBe(200)
+      const createdText = await created.text()
+      expect(createdText).not.toContain('customer-secret')
+      expect(JSON.parse(createdText)).toMatchObject({
+        provider: {
+          id: providerId,
+          template: managed.providerId,
+          source: 'dynamic',
+          configured: true,
+          credentials: {
+            mode: 'custom',
+            client_id: 'customer-client',
+          },
+        },
+      })
+      const [storedProvider] = await managed.db
+        .select()
+        .from(oauthProviders)
+        .where(eq(oauthProviders.providerId, providerId))
+      const [storedSecret] = await managed.db
+        .select()
+        .from(vaultSecrets)
+        .where(eq(vaultSecrets.path, storedProvider.clientSecretPath!))
+      expect(storedSecret.value).not.toContain('customer-secret')
+
+      const publicProviders = await managed.fetch('/api/oauth/providers')
+      expect(await publicProviders.json()).toMatchObject({
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            id: providerId,
+            label: 'Customer Stub',
+            configured: true,
+          }),
+        ]),
+      })
+
+      const connectionId = 'managed/customer-stub'
+      const connected = await managed.authorizeAndCallback({
+        provider: providerId,
+        connectionId,
+      })
+      expect(connected.callback.status).toBe(200)
+      expect(managed.stub.tokenRequests.at(-1)?.body).toMatchObject({
+        client_id: 'customer-client',
+        client_secret: 'customer-secret',
+      })
+
+      const disabled = await managed.fetch(
+        `/api/admin/providers/${providerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: false }),
+        },
+      )
+      expect(disabled.status).toBe(200)
+      expect(
+        await managed.fetch(`/api/oauth/${providerId}/authorize`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: 'managed/disabled' }),
+        }),
+      ).toHaveProperty('status', 409)
+      expect(
+        await managed.fetch(`/api/oauth/tokens/${connectionId}`),
+      ).toHaveProperty('status', 200)
+
+      const inUse = await managed.fetch(`/api/admin/providers/${providerId}`, {
+        method: 'DELETE',
+      })
+      expect(inUse.status).toBe(409)
+      await managed.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
+      expect(
+        await managed.fetch(`/api/admin/providers/${providerId}`, {
+          method: 'DELETE',
+        }),
+      ).toHaveProperty('status', 200)
+
+      const openApi = z
+        .object({ paths: z.record(z.string(), z.unknown()) })
+        .parse(await (await managed.fetch('/api/openapi.json')).json())
+      expect(openApi.paths).toHaveProperty('/admin/providers/{provider_id}')
+    } finally {
+      await managed.close()
+    }
+  })
+
+  it('isolates dynamic providers and secrets in organization routes', async () => {
+    const managed = await createHarness({
+      organizationRouting: true,
+      providerManagement: true,
+    })
+    try {
+      const providerId = 'acme-stub'
+      const provider = await managed.fetch(
+        `/api/organization/acme/admin/providers/${providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(provider.status).toBe(200)
+
+      const secretPath = 'acme/user-123/service/api-key'
+      expect(
+        await managed.fetch(`/api/organization/acme/secrets/${secretPath}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ value: 'organization-secret' }),
+        }),
+      ).toHaveProperty('status', 200)
+      expect(
+        await managed.fetch(
+          '/api/organization/acme/secrets/other/user/api-key',
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ value: 'outside' }),
+          },
+        ),
+      ).toHaveProperty('status', 403)
+
+      const authorize = await managed.fetch(
+        `/api/organization/acme/oauth/${providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: 'acme/user-123/stub' }),
+        },
+      )
+      expect(authorize.status).toBe(200)
+      const authorization = z
+        .object({ authorize_url: z.string() })
+        .parse(await authorize.json())
+      const consent = await fetch(authorization.authorize_url, {
+        redirect: 'manual',
+      })
+      const location = consent.headers.get('location')
+      if (!location) throw new Error('Stub authorization did not redirect.')
+      const callback = new URL(location)
+      expect(
+        await managed.fetch(`${callback.pathname}${callback.search}`),
+      ).toHaveProperty('status', 200)
+
+      await managed.fetch(
+        '/api/organization/acme/oauth/connections/acme/user-123/stub',
+        { method: 'DELETE' },
+      )
+      await managed.fetch(
+        `/api/organization/acme/admin/providers/${providerId}`,
+        { method: 'DELETE' },
+      )
+      await managed.fetch(`/api/organization/acme/secrets/${secretPath}`, {
+        method: 'DELETE',
+      })
+    } finally {
+      await managed.close()
+    }
   })
 })

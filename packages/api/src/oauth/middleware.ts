@@ -6,7 +6,7 @@ import {
 } from '../db/binding'
 import type { Database } from '../db/schema'
 import { type AccessGrant, authenticateAccessToken } from './access-token'
-import { type BrokerConfig, requireBrokerApiKey } from './config'
+import { requireBrokerApiKey, resolveBrokerConfig } from './config'
 import { safeEqual } from './crypto'
 import { BrokerError } from './errors'
 
@@ -24,8 +24,9 @@ type DatabaseContextRequest = {
   query(name: string): string | undefined
 }
 
-type ResolveDatabaseContext = (
+type ResolveDatabaseContext<Bindings extends object> = (
   request: DatabaseContextRequest,
+  bindings: Bindings,
 ) => DatabaseContext | Promise<DatabaseContext>
 
 /**
@@ -36,10 +37,10 @@ type ResolveDatabaseContext = (
  */
 export function withDatabase<Bindings extends object>(
   database: DatabaseInput<Bindings>,
-  resolveContext: ResolveDatabaseContext = () => ({}),
+  resolveContext: ResolveDatabaseContext<Bindings> = () => ({}),
 ) {
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
-    const context = await resolveContext(c.req)
+    const context = await resolveContext(c.req, c.env)
     c.set('databaseContext', context)
     c.set('db', await resolveDatabase(database, c.env, context))
     await next()
@@ -51,11 +52,9 @@ export function withDatabase<Bindings extends object>(
  * The OAuth callback is deliberately exempt: it is hit by the user's browser
  * and is authenticated instead by the single-use `state` value.
  */
-export function requireApiKey<Bindings extends object>(
-  resolveConfig: () => BrokerConfig,
-) {
+export function requireApiKey<Bindings extends object>() {
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
-    const expected = requireBrokerApiKey(resolveConfig())
+    const expected = requireBrokerApiKey(resolveBrokerConfig(c.env))
     const header = c.req.header('Authorization') ?? ''
     const presented = header.startsWith('Bearer ') ? header.slice(7) : ''
 

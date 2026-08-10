@@ -1,6 +1,6 @@
 # Hookfish
 
-A portable OAuth broker with a static React dashboard and Fetch-compatible
+A portable OAuth and encrypted-secret broker with a static React dashboard and Fetch-compatible
 backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
@@ -79,7 +79,9 @@ pnpm --filter @hookfish/example-cloudflare-worker dev
 
 The root `hookfish.config.ts` owns the default PGlite database, providers,
 browser policy, and documentation visibility. Node examples use it unchanged;
-the Worker replaces only `db` with its Hyperdrive/Postgres binding.
+the Worker replaces only `db` with its Hyperdrive/Postgres binding. Provider
+factories receive the bindings passed to `Hookfish.fetch`, so the same config
+reads Node environment variables and Worker secrets without a config schema.
 
 ## Cloudflare Worker backend
 
@@ -115,12 +117,15 @@ Store production credentials as Worker secrets and deploy:
 ```sh
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put GITHUB_CLIENT_ID
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put GITHUB_CLIENT_SECRET
 pnpm --filter @hookfish/example-cloudflare-worker deploy
 ```
 
 Wrangler generates `Env` from `wrangler.jsonc`; do not add a handwritten
-binding interface. Change the config and rerun `pnpm cf-typegen` whenever a
-binding changes.
+binding interface. The checked-in `wrangler-typegen.env` contains binding names
+only so secrets appear in that generated type without storing their values.
+Rerun `pnpm cf-typegen` whenever a binding changes.
 
 ## Production frontend
 
@@ -155,8 +160,9 @@ function RuntimeStats() {
 ```
 
 The facade only forwards stats, provider metadata, connection metadata,
-authorization starts, and disconnects. Token retrieval and administration
-remain server-only. More detail is in [packages/api/OAUTH.md](packages/api/OAUTH.md).
+authorization starts, and disconnects. OAuth token retrieval, secret-vault
+operations, and administration remain server-only. More detail is in
+[packages/api/OAUTH.md](packages/api/OAUTH.md).
 
 ## Commands
 

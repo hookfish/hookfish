@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -110,14 +111,76 @@ export const brokerAccessTokens = pgTable(
   ],
 )
 
+/**
+ * Runtime-configured provider instances. `template_id` names one of the
+ * trusted providers supplied to Hookfish at initialization; executable code is
+ * never loaded from the database. An empty organization is the global store.
+ */
+export const oauthProviders = pgTable(
+  'oauth_providers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organization: text('organization').notNull().default(''),
+    providerId: text('provider_id').notNull(),
+    templateId: text('template_id').notNull(),
+    label: text('label'),
+    credentialMode: text('credential_mode').notNull().default('inherit'),
+    clientId: text('client_id'),
+    clientSecretPath: text('client_secret_path'),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('oauth_providers_organization_provider_id_idx').on(
+      table.organization,
+      table.providerId,
+    ),
+    index('oauth_providers_organization_idx').on(table.organization),
+    index('oauth_providers_template_id_idx').on(table.templateId),
+  ],
+)
+
+/** Encrypted arbitrary credentials. Plaintext values never touch the database. */
+export const vaultSecrets = pgTable(
+  'vault_secrets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organization: text('organization').notNull().default(''),
+    path: text('path').notNull(),
+    value: text('value_encrypted').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('vault_secrets_organization_path_idx').on(
+      table.organization,
+      table.path,
+    ),
+    index('vault_secrets_organization_idx').on(table.organization),
+  ],
+)
+
 export type OAuthConnection = typeof oauthConnections.$inferSelect
 export type OAuthState = typeof oauthStates.$inferSelect
 export type BrokerAccessToken = typeof brokerAccessTokens.$inferSelect
+export type OAuthProviderRecord = typeof oauthProviders.$inferSelect
+export type VaultSecret = typeof vaultSecrets.$inferSelect
 
 type Schema = {
   brokerAccessTokens: typeof brokerAccessTokens
   oauthConnections: typeof oauthConnections
+  oauthProviders: typeof oauthProviders
   oauthStates: typeof oauthStates
+  vaultSecrets: typeof vaultSecrets
 }
 
 /**

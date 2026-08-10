@@ -15,10 +15,15 @@ import {
   oauthConnections,
   oauthStates,
 } from '../db/schema'
-import { readEnvString, resolveProviderConfig } from './config'
 import { generateConnectionId } from './connection-id'
-import { decryptSecret, encryptSecret, hashToken } from './crypto'
+import {
+  decryptSecret,
+  encryptSecret,
+  hashToken,
+  requireEncryptionKey,
+} from './crypto'
 import { BrokerError } from './errors'
+import { resolveRequestProviderConfig } from './dynamic-provider'
 import { createAuthorizationState } from './state'
 
 /** How long a pending authorization stays valid. */
@@ -67,20 +72,6 @@ const tokenResponseSchema = z.looseObject({
   expires_in: z.coerce.number().int().positive().optional(),
   scope: z.union([z.string(), z.array(z.string())]).optional(),
 })
-
-function requireEncryptionKey(env: object): string {
-  const key = readEnvString(env, 'OAUTH_ENCRYPTION_KEY')
-
-  if (!key) {
-    throw new BrokerError(
-      500,
-      'missing_configuration',
-      'OAUTH_ENCRYPTION_KEY is not set. Generate one with: openssl rand -base64 32',
-    )
-  }
-
-  return key
-}
 
 function parseScopeValue(value: string | string[] | undefined): string[] {
   if (value === undefined) return []
@@ -169,7 +160,14 @@ export async function startAuthorization(
   expiresAt: Date
   connectionId: string
 }> {
-  const config = resolveProviderConfig(input.provider, providers)
+  const config = await resolveRequestProviderConfig(
+    db,
+    env,
+    input.provider,
+    providers,
+    input.organization,
+    { forNewAuthorization: true },
+  )
   const { provider } = config
 
   if (input.connectionId && input.connectionIdPrefix) {
@@ -386,7 +384,13 @@ export async function completeAuthorization(
   }
 
   try {
-    const config = resolveProviderConfig(input.provider, providers)
+    const config = await resolveRequestProviderConfig(
+      db,
+      env,
+      input.provider,
+      providers,
+      pending.organization ?? undefined,
+    )
 
     // The check in `startAuthorization` goes stale as soon as a second flow is
     // opened on the same id, so re-check before spending the authorization code.
@@ -564,7 +568,13 @@ async function refreshConnection(
   connection: OAuthConnection,
   providers: ProviderRegistry,
 ): Promise<OAuthConnection> {
-  const config = resolveProviderConfig(connection.provider, providers)
+  const config = await resolveRequestProviderConfig(
+    db,
+    env,
+    connection.provider,
+    providers,
+    connection.organization ?? undefined,
+  )
   const encryptionKey = requireEncryptionKey(env)
 
   if (!connection.refreshToken || !config.provider.refreshToken) {
@@ -760,7 +770,15 @@ export async function deleteConnection(
     return { deleted: false, revocation: 'not_found' }
   }
 
-  const provider = providers.getProvider(connection.provider)
+  const provider = (
+    await resolveRequestProviderConfig(
+      db,
+      env,
+      connection.provider,
+      providers,
+      organization,
+    )
+  ).provider
   const revokeToken = provider?.revokeToken?.bind(provider)
   let revocation: DeleteConnectionResult['revocation'] = 'unsupported'
 

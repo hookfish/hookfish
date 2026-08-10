@@ -2,6 +2,7 @@ import {
   type CreateAuthorizationInput,
   type ExchangeCodeInput,
   type OAuthProvider,
+  type OAuthProviderTemplate,
   type ProviderCredentials,
   ProviderRequestError,
   type ProviderTokenResponse,
@@ -29,7 +30,7 @@ export type LinearProviderOptions = ProviderCredentials & {
   fetch?: ProviderFetch
 }
 
-export class LinearProvider implements OAuthProvider {
+export class LinearProvider implements OAuthProviderTemplate {
   readonly label = 'Linear'
   readonly defaultScopes = ['read', 'write'] as const
   readonly availableScopes = ['read', 'write'] as const
@@ -41,6 +42,14 @@ export class LinearProvider implements OAuthProvider {
   constructor(options: LinearProviderOptions = {}) {
     this.credentials = options
     this.fetcher = options.fetch ?? fetch
+  }
+
+  createProvider(credentials?: Required<ProviderCredentials>): OAuthProvider {
+    return new LinearProvider({
+      ...this.credentials,
+      fetch: this.fetcher,
+      ...credentials,
+    })
   }
 
   isConfigured() {
@@ -160,4 +169,10 @@ export class LinearProvider implements OAuthProvider {
       )
     }
   }
+}
+
+export function createLinearProvider(
+  options: LinearProviderOptions = {},
+): LinearProvider {
+  return new LinearProvider(options)
 }

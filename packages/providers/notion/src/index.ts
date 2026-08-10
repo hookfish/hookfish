@@ -2,6 +2,7 @@ import {
   type CreateAuthorizationInput,
   type ExchangeCodeInput,
   type OAuthProvider,
+  type OAuthProviderTemplate,
   type ProviderCredentials,
   ProviderRequestError,
   type ProviderTokenResponse,
@@ -34,7 +35,7 @@ export type NotionProviderOptions = ProviderCredentials & {
   client?: NotionOAuthClient
 }
 
-export class NotionProvider implements OAuthProvider {
+export class NotionProvider implements OAuthProviderTemplate {
   readonly label = 'Notion'
   readonly defaultScopes: readonly string[] = []
   readonly availableScopes: readonly string[] = []
@@ -46,6 +47,14 @@ export class NotionProvider implements OAuthProvider {
   constructor(options: NotionProviderOptions = {}) {
     this.credentials = options
     this.client = options.client ?? new Client()
+  }
+
+  createProvider(credentials?: Required<ProviderCredentials>): OAuthProvider {
+    return new NotionProvider({
+      ...this.credentials,
+      client: this.client,
+      ...credentials,
+    })
   }
 
   isConfigured() {
@@ -116,4 +125,10 @@ export class NotionProvider implements OAuthProvider {
       })
     }
   }
+}
+
+export function createNotionProvider(
+  options: NotionProviderOptions = {},
+): NotionProvider {
+  return new NotionProvider(options)
 }

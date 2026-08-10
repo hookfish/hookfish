@@ -6,6 +6,21 @@ import { BrokerError } from './errors'
 
 const IV_BYTES = 12
 
+export function requireEncryptionKey(env: object): string {
+  const value = Reflect.get(env, 'OAUTH_ENCRYPTION_KEY')
+  const key = typeof value === 'string' ? value.trim() : ''
+
+  if (!key) {
+    throw new BrokerError(
+      500,
+      'missing_configuration',
+      'OAUTH_ENCRYPTION_KEY is not set. Generate one with: openssl rand -base64 32',
+    )
+  }
+
+  return key
+}
+
 function toBase64(bytes: Uint8Array): string {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)

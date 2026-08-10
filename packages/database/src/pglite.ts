@@ -5,13 +5,21 @@ import {
   type DatabaseBinding,
   defineDatabase,
   oauthConnections,
+  oauthProviders,
   oauthStates,
+  vaultSecrets,
 } from '@hookfish/api/database'
 import { migrationsFolder as bundledMigrations } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 
-const schema = { brokerAccessTokens, oauthConnections, oauthStates }
+const schema = {
+  brokerAccessTokens,
+  oauthConnections,
+  oauthProviders,
+  oauthStates,
+  vaultSecrets,
+}
 
 export type PgliteDatabaseOptions = {
   /** Override the bundled Hookfish migrations, or set false to skip them. */

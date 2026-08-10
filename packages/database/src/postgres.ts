@@ -3,7 +3,9 @@ import {
   type DatabaseBinding,
   defineDatabase,
   oauthConnections,
+  oauthProviders,
   oauthStates,
+  vaultSecrets,
 } from '@hookfish/api/database'
 import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
@@ -11,7 +13,13 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgresClient from 'postgres'
 
-const schema = { brokerAccessTokens, oauthConnections, oauthStates }
+const schema = {
+  brokerAccessTokens,
+  oauthConnections,
+  oauthProviders,
+  oauthStates,
+  vaultSecrets,
+}
 type Schema = typeof schema
 
 export type PostgresConnection<Bindings extends object> =
