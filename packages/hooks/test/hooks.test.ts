@@ -141,6 +141,33 @@ describe('createHookfishHooks', () => {
     })
   })
 
+  it('searches providers with a bounded, independently cached query', async () => {
+    const requests: Request[] = []
+    const hookfish = createHookfishHooks({
+      baseUrl: 'https://broker.example/api',
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(new Request(input, init))
+        return jsonResponse({ providers: [] })
+      },
+    })
+
+    const data = await queryClient().fetchQuery(
+      hookfish.options.providerSearch({
+        search: 'notion',
+        limit: 25,
+        source: 'dynamic',
+      }),
+    )
+
+    expect(data).toEqual({ providers: [] })
+    expect(requests[0]?.url).toBe(
+      'https://broker.example/api/oauth/providers?search=notion&limit=25&source=dynamic',
+    )
+    expect(
+      hookfish.keys.providerSearch({ search: 'notion', limit: 25 }),
+    ).not.toEqual(hookfish.keys.providers())
+  })
+
   it('preserves slashes in connection ids handled by runtime routes', async () => {
     const requests: Request[] = []
     const hookfish = createHookfishHooks({

@@ -43,6 +43,7 @@ export {
   type HookfishClient,
   type HookfishClientOptions,
   type ProvidersResponse,
+  type ProvidersFilter,
   type StatsResponse,
 } from './client'
 export { HookfishApiError } from './errors'

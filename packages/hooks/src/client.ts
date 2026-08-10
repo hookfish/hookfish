@@ -37,6 +37,11 @@ type DisconnectEndpoint =
 
 export type StatsResponse = InferResponseType<StatsEndpoint, 200>
 export type ProvidersResponse = InferResponseType<ProvidersEndpoint, 200>
+export type ProvidersFilter = {
+  search?: string
+  limit?: number
+  source?: 'fixed' | 'dynamic'
+}
 export type ConnectionsResponse = InferResponseType<ConnectionsEndpoint, 200>
 export type ConnectionResponse = InferResponseType<ConnectionEndpoint, 200>
 export type AuthorizeConnectionResponse = InferResponseType<

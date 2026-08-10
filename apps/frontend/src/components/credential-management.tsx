@@ -628,9 +628,12 @@ export function OAuthConfigDialog({
   const managedProvidersQuery = useQuery({
     queryKey: ['management', 'providers', managementToken],
     queryFn: () => listManagedProviders(managementToken),
-    enabled: Boolean(managementToken),
+    enabled: false,
   })
-  const publicProvidersQuery = hookfish.useProviders()
+  const publicProvidersQuery = hookfish.useProviderSearch({
+    limit: 100,
+    source: 'fixed',
+  })
   const storeMutation = useMutation({
     async mutationFn(input: StoreProviderInput) {
       const providers = await listManagedProviders(managementToken)

@@ -1,4 +1,4 @@
-import type { ConnectionsFilter } from './client'
+import type { ConnectionsFilter, ProvidersFilter } from './client'
 
 export function createHookfishKeys(scope: string) {
   const root = ['hookfish', scope] as const
@@ -7,6 +7,16 @@ export function createHookfishKeys(scope: string) {
     all: root,
     stats: () => [...root, 'stats'] as const,
     providers: () => [...root, 'providers'] as const,
+    providerSearch: (filter: ProvidersFilter) =>
+      [
+        ...root,
+        'providers',
+        {
+          limit: filter.limit ?? null,
+          search: filter.search ?? null,
+          source: filter.source ?? null,
+        },
+      ] as const,
     connectionsRoot: () => [...root, 'connections'] as const,
     connections: (filter: ConnectionsFilter = {}) =>
       [

@@ -70,6 +70,17 @@ describe('OAuth broker integration', () => {
     })
   })
 
+  it('searches and bounds provider registry results', async () => {
+    const response = await h.fetch(
+      `/api/oauth/providers?search=${encodeURIComponent(h.providerId)}&limit=1&source=fixed`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      providers: [expect.objectContaining({ id: h.providerId })],
+    })
+  })
+
   it('serves public OAuth client metadata for MCP authorization servers', async () => {
     const response = await h.fetch(
       '/api/oauth/example-mcp/client-metadata.json',

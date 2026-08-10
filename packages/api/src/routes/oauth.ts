@@ -344,6 +344,13 @@ const listProvidersRoute = createRoute({
   description:
     "Each `callback_url` is the exact string this deployment will send as `redirect_uri`. Paste it into the provider's developer console verbatim -- providers match it byte for byte.",
   security: brokerAuth,
+  request: {
+    query: z.object({
+      search: z.string().trim().max(128).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+      source: z.enum(['fixed', 'dynamic']).optional(),
+    }),
+  },
   responses: {
     200: {
       description: 'Provider registry',
@@ -676,6 +683,7 @@ export function createOAuthRoutes<Bindings extends object>(
   const providersApi = clientMetadataApi.openapi(
     listProvidersRoute,
     async (c) => {
+      const filter = c.req.valid('query')
       const { organization } = c.get('databaseContext')
       if (organization) {
         assertConnectionPrefixAccess(c.get('accessGrant'), organization)
@@ -690,6 +698,7 @@ export function createOAuthRoutes<Bindings extends object>(
               config,
               providers,
               organization,
+              filter,
             )
           ).map(({ id: slug, label, configured, provider }) => {
             return {

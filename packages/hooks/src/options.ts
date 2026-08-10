@@ -10,6 +10,7 @@ import type {
   AuthorizeConnectionInput,
   ConnectionsFilter,
   HookfishClient,
+  ProvidersFilter,
 } from './client'
 import { type HookfishApiError, throwHookfishApiError } from './errors'
 import type { HookfishKeys } from './keys'
@@ -49,9 +50,23 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.providers(),
         queryFn: async ({ signal }) => {
-          const response = await client.oauth.providers.$get(undefined, {
-            init: { signal },
-          })
+          const response = await client.oauth.providers.$get(
+            { query: {} },
+            { init: { signal } },
+          )
+          if (!response.ok) return throwHookfishApiError(response)
+          return response.json()
+        },
+      }),
+
+    providerSearch: (filter: ProvidersFilter) =>
+      apiQueryOptions({
+        queryKey: keys.providerSearch(filter),
+        queryFn: async ({ signal }) => {
+          const response = await client.oauth.providers.$get(
+            { query: filter },
+            { init: { signal } },
+          )
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },

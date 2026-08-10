@@ -14,6 +14,7 @@ import type {
   ConnectionsFilter,
   ConnectionsResponse,
   DisconnectConnectionResponse,
+  ProvidersFilter,
   ProvidersResponse,
   StatsResponse,
 } from './client'
@@ -64,6 +65,22 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
     >,
   ) {
     const query = options.providers()
+    return useQuery({
+      ...overrides,
+      queryKey: query.queryKey,
+      queryFn: query.queryFn,
+    })
+  }
+
+  function useProviderSearch<TData = ProvidersResponse>(
+    filter: ProvidersFilter,
+    overrides?: QueryOverrides<
+      ProvidersResponse,
+      TData,
+      ReturnType<HookfishKeys['providerSearch']>
+    >,
+  ) {
+    const query = options.providerSearch(filter)
     return useQuery({
       ...overrides,
       queryKey: query.queryKey,
@@ -131,6 +148,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
   return {
     useStats,
     useProviders,
+    useProviderSearch,
     useConnections,
     useConnection,
     useAuthorizeConnection,

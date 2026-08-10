@@ -1,7 +1,4 @@
-import type {
-  AuthorizeConnectionInput,
-  ProvidersResponse,
-} from '@hookfish/hooks'
+import type { AuthorizeConnectionInput } from '@hookfish/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
@@ -14,7 +11,14 @@ import {
   PlusIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
-import { Fragment, type FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+  Fragment,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { OAuthConfigDialog } from '@/components/credential-management'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -47,6 +51,15 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 import {
   Dialog,
   DialogContent,
@@ -109,11 +122,11 @@ import {
 } from '@/lib/management-api'
 import { hookfish } from '@/lib/hookfish'
 
-type Provider = ProvidersResponse['providers'][number]
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 type ConnectionKind = 'oauth' | 'api-key'
 
 const ALL_PROVIDERS = '__all__'
+const PROVIDER_SEARCH_LIMIT = 50
 type ConnectionView = 'tree' | 'all'
 
 function directSecrets(secrets: SecretMetadata[], currentPath: string) {
@@ -408,10 +421,152 @@ function AddFolderDialog({
   )
 }
 
+function ProviderCombobox({
+  id,
+  value,
+  configuredOnly = false,
+  allowEmpty = false,
+  placeholder = 'Search providers…',
+  ariaLabel,
+  className,
+  onValueChange,
+}: {
+  id: string
+  value: string
+  configuredOnly?: boolean
+  allowEmpty?: boolean
+  placeholder?: string
+  ariaLabel?: string
+  className?: string
+  onValueChange: (providerId: string) => void
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+    null,
+  )
+  const providerLabels = useRef(new Map<string, string>())
+  const selectedProviderId = useRef(value)
+  selectedProviderId.current = value
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(search), 200)
+    return () => window.clearTimeout(timeout)
+  }, [search])
+  useEffect(() => {
+    setPortalContainer(
+      document.getElementById(id)?.closest<HTMLElement>('[role="dialog"]') ??
+        null,
+    )
+  }, [id])
+  const providersQuery = hookfish.useProviderSearch(
+    {
+      limit: PROVIDER_SEARCH_LIMIT,
+      ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+    },
+    { placeholderData: (previous) => previous },
+  )
+  const providers = providersQuery.data?.providers ?? []
+  for (const provider of providers) {
+    providerLabels.current.set(provider.id, provider.label)
+  }
+  const providersById = new Map(
+    providers.map((provider) => [provider.id, provider]),
+  )
+  const providerIds = providers.map((provider) => provider.id)
+
+  return (
+    <Combobox
+      items={providerIds}
+      defaultValue={value || null}
+      inputValue={inputValue}
+      filter={null}
+      itemToStringLabel={(providerId: string) =>
+        providerLabels.current.get(providerId) ?? providerId
+      }
+      itemToStringValue={(providerId: string) => providerId}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          setSearch('')
+        } else {
+          window.setTimeout(() => {
+            const selectedId = selectedProviderId.current
+            setInputValue(
+              selectedId
+                ? (providerLabels.current.get(selectedId) ?? selectedId)
+                : '',
+            )
+          })
+        }
+      }}
+      onInputValueChange={(nextInputValue) => {
+        setInputValue(nextInputValue)
+        setSearch(nextInputValue)
+      }}
+      onValueChange={(providerId: string | null) => {
+        if (providerId && !providersById.has(providerId)) return
+        selectedProviderId.current = providerId ?? ''
+        setInputValue(
+          providerId
+            ? (providerLabels.current.get(providerId) ?? providerId)
+            : '',
+        )
+        onValueChange(providerId ?? '')
+      }}
+    >
+      <ComboboxInput
+        id={id}
+        aria-label={ariaLabel}
+        className={className ?? 'w-full'}
+        placeholder={placeholder}
+        showClear={allowEmpty}
+      />
+      <ComboboxContent container={portalContainer ?? undefined}>
+        <ComboboxEmpty>
+          {providersQuery.isFetching
+            ? 'Loading providers…'
+            : providersQuery.isError
+              ? 'Could not load providers.'
+              : 'No providers found.'}
+        </ComboboxEmpty>
+        <ComboboxList>
+          <ComboboxCollection>
+            {(providerId: string, index) => {
+              const provider = providersById.get(providerId)
+              if (!provider) return null
+              return (
+                <ComboboxItem
+                  key={provider.id}
+                  value={provider.id}
+                  index={index}
+                  disabled={configuredOnly && !provider.configured}
+                >
+                  <span className="grid min-w-0">
+                    <span className="truncate">{provider.label}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {provider.id}
+                      {!provider.configured ? ' · Not configured' : ''}
+                    </span>
+                  </span>
+                </ComboboxItem>
+              )
+            }}
+          </ComboboxCollection>
+        </ComboboxList>
+        {providers.length === PROVIDER_SEARCH_LIMIT ? (
+          <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+            Showing the first {PROVIDER_SEARCH_LIMIT} matches. Type to narrow
+            the results.
+          </p>
+        ) : null}
+      </ComboboxContent>
+    </Combobox>
+  )
+}
+
 function AddConnectionDialog({
   open,
   currentPath,
-  providers,
   managementToken,
   authorizeMutation,
   secretMutation,
@@ -419,7 +574,6 @@ function AddConnectionDialog({
 }: {
   open: boolean
   currentPath: string
-  providers: Provider[]
   managementToken: string
   authorizeMutation: AuthorizeMutation
   secretMutation: ReturnType<
@@ -427,18 +581,10 @@ function AddConnectionDialog({
   >
   onOpenChange: (open: boolean) => void
 }) {
-  const configuredProviders = providers.filter(
-    (provider) => provider.configured,
-  )
-  const providerLabelCounts = configuredProviders.reduce(
-    (counts, provider) =>
-      counts.set(provider.label, (counts.get(provider.label) ?? 0) + 1),
-    new Map<string, number>(),
-  )
   const [kind, setKind] = useState<ConnectionKind>('oauth')
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
-  const [providerId, setProviderId] = useState(configuredProviders[0]?.id ?? '')
+  const [providerId, setProviderId] = useState('')
   const normalizedName = name.trim()
   const connectionId = joinConnectionPath(currentPath, normalizedName)
   const connectionIdPreview = normalizedName
@@ -546,25 +692,12 @@ function AddConnectionDialog({
             {kind === 'oauth' ? (
               <Field>
                 <FieldLabel htmlFor="connection-provider">Provider</FieldLabel>
-                <Select value={providerId} onValueChange={setProviderId}>
-                  <SelectTrigger id="connection-provider" className="w-full">
-                    <SelectValue placeholder="Select a provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {configuredProviders.map((provider) => (
-                      <SelectItem value={provider.id} key={provider.id}>
-                        {providerLabelCounts.get(provider.label) === 1
-                          ? provider.label
-                          : `${provider.label} (${provider.id})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {configuredProviders.length === 0 ? (
-                  <FieldError>
-                    Configure OAuth credentials before adding a connection.
-                  </FieldError>
-                ) : null}
+                <ProviderCombobox
+                  id="connection-provider"
+                  value={providerId}
+                  configuredOnly
+                  onValueChange={setProviderId}
+                />
               </Field>
             ) : (
               <Field data-invalid={Boolean(apiKeyError)}>
@@ -636,7 +769,6 @@ export function OAuthConnections({
   const [localFolders, setLocalFolders] = useState<string[]>(() =>
     typeof window === 'undefined' ? [] : readLocalFolders(window.localStorage),
   )
-  const providersQuery = hookfish.useProviders()
   const connectionsQuery = hookfish.useConnections({
     ...(view === 'tree' && currentPath
       ? { connection_id_prefix: currentPath }
@@ -771,19 +903,17 @@ export function OAuthConnections({
                 All
               </ToggleGroupItem>
             </ToggleGroup>
-            <Select value={providerFilter} onValueChange={setProviderFilter}>
-              <SelectTrigger size="sm" aria-label="Filter by provider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value={ALL_PROVIDERS}>All providers</SelectItem>
-                {providersQuery.data?.providers.map((provider) => (
-                  <SelectItem value={provider.id} key={provider.id}>
-                    {provider.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ProviderCombobox
+              id="provider-filter"
+              className="w-52"
+              value={providerFilter === ALL_PROVIDERS ? '' : providerFilter}
+              allowEmpty
+              placeholder="All providers"
+              ariaLabel="Filter by provider"
+              onValueChange={(providerId) =>
+                setProviderFilter(providerId || ALL_PROVIDERS)
+              }
+            />
           </CardAction>
         </CardHeader>
 
@@ -824,15 +954,6 @@ export function OAuthConnections({
               <AlertTitle>Could not load connections</AlertTitle>
               <AlertDescription>
                 {connectionsQuery.error.message}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          {providersQuery.isError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load providers</AlertTitle>
-              <AlertDescription>
-                {providersQuery.error.message}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -977,7 +1098,6 @@ export function OAuthConnections({
         key={`connection:${addDialogOpen ? 'open' : 'closed'}:${addConnectionPath}`}
         open={addDialogOpen}
         currentPath={addConnectionPath}
-        providers={providersQuery.data?.providers ?? []}
         managementToken={managementToken}
         authorizeMutation={authorizeMutation}
         secretMutation={secretMutation}
