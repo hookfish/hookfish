@@ -14,8 +14,8 @@ import {
   ShieldCheckIcon,
 } from 'lucide-react'
 import {
-  Fragment,
   type FormEvent,
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -45,14 +45,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import {
   Combobox,
   ComboboxCollection,
@@ -113,9 +106,10 @@ import {
   validateConnectionName,
   validateConnectionSlug,
 } from '@/lib/connection-tree'
+import { hookfish } from '@/lib/hookfish'
 import {
-  LOCAL_FOLDERS_KEY,
   addLocalFolder,
+  LOCAL_FOLDERS_KEY,
   readLocalFolders,
 } from '@/lib/local-folders'
 import {
@@ -124,7 +118,6 @@ import {
   type SecretMetadata,
   storeSecret,
 } from '@/lib/management-api'
-import { hookfish } from '@/lib/hookfish'
 
 type AuthorizeMutation = ReturnType<typeof hookfish.useAuthorizeConnection>
 type ConnectionKind = 'oauth' | 'api-key'
@@ -1031,82 +1024,74 @@ export function OAuthConnections({
   return (
     <section
       aria-labelledby="connections-heading"
-      className="grid h-full min-h-0 overflow-hidden"
+      className="grid h-full min-h-0 min-w-0 overflow-hidden"
     >
-      <Card className="h-full min-h-0 rounded-none border-x-0 border-b-0 border-t-2 border-t-primary">
-        <CardHeader className="gap-2 px-4 md:px-8">
-          <CardTitle
-            id="connections-heading"
-            className="text-2xl font-normal tracking-tight"
-          >
+      <Card className="h-full min-h-0 min-w-0 gap-0 rounded-none border-x-0 border-b-0 border-t-2 border-t-primary py-0">
+        <CardContent className="grid min-h-0 min-w-0 flex-1 content-start gap-8 overflow-x-hidden overflow-y-auto overscroll-y-contain px-4 pb-8 md:px-8">
+          <h2 id="connections-heading" className="sr-only">
             Connections
-          </CardTitle>
-          <CardDescription className="max-w-[60ch] leading-relaxed">
-            Organize OAuth accounts, remote MCP servers, and encrypted API keys
-            in browser-local folders.
-          </CardDescription>
-          <CardAction className="flex flex-wrap items-center justify-end gap-2">
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              spacing={0}
-              value={view}
-              onValueChange={(value) => {
-                if (value === 'tree' || value === 'all') setView(value)
-              }}
-              aria-label="Connection view"
-            >
-              <ToggleGroupItem value="tree" aria-label="Tree view">
-                <FolderIcon />
-                Tree
-              </ToggleGroupItem>
-              <ToggleGroupItem value="all" aria-label="View all connections">
-                <ListIcon />
-                All
-              </ToggleGroupItem>
-            </ToggleGroup>
-            <ProviderCombobox
-              id="provider-filter"
-              className="w-52"
-              value={providerFilter === ALL_PROVIDERS ? '' : providerFilter}
-              allowEmpty
-              placeholder="All providers"
-              ariaLabel="Filter by provider"
-              onValueChange={(providerId) =>
-                setProviderFilter(providerId || ALL_PROVIDERS)
-              }
-            />
-          </CardAction>
-        </CardHeader>
-
-        <CardContent className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto overscroll-contain px-4 md:px-8">
-          <div className="grid gap-4 border-y py-4 md:grid-cols-[1fr_auto] md:items-center">
-            {view === 'tree' ? (
-              <PathBreadcrumb
-                currentPath={currentPath}
-                onNavigate={onNavigate}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Every stored connection
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
+          </h2>
+          <div className="grid border-b">
+            <div className="grid min-w-0 gap-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
               {view === 'tree' ? (
-                <Button
-                  variant="outline"
-                  onClick={() => setFolderDialogOpen(true)}
-                >
-                  <FolderPlusIcon />
-                  Add folder
+                <PathBreadcrumb
+                  currentPath={currentPath}
+                  onNavigate={onNavigate}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Every stored connection
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {view === 'tree' ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => setFolderDialogOpen(true)}
+                  >
+                    <FolderPlusIcon />
+                    Add folder
+                  </Button>
+                ) : null}
+                <OAuthConfigDialog managementToken={managementToken} />
+                <Button onClick={() => setAddDialogOpen(true)}>
+                  <PlusIcon />
+                  Add connection
                 </Button>
-              ) : null}
-              <OAuthConfigDialog managementToken={managementToken} />
-              <Button onClick={() => setAddDialogOpen(true)}>
-                <PlusIcon />
-                Add connection
-              </Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t py-3">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                value={view}
+                onValueChange={(value) => {
+                  if (value === 'tree' || value === 'all') setView(value)
+                }}
+                aria-label="Connection view"
+              >
+                <ToggleGroupItem value="tree" aria-label="Tree view">
+                  <FolderIcon />
+                  Tree
+                </ToggleGroupItem>
+                <ToggleGroupItem value="all" aria-label="View all connections">
+                  <ListIcon />
+                  All
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <ProviderCombobox
+                id="provider-filter"
+                className="w-52"
+                value={providerFilter === ALL_PROVIDERS ? '' : providerFilter}
+                allowEmpty
+                placeholder="All providers"
+                ariaLabel="Filter by provider"
+                onValueChange={(providerId) =>
+                  setProviderFilter(providerId || ALL_PROVIDERS)
+                }
+              />
             </div>
           </div>
 

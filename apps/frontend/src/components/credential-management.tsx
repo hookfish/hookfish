@@ -5,8 +5,8 @@ import {
   CircleCheckIcon,
   CircleXIcon,
   CopyIcon,
-  NetworkIcon,
   KeyRoundIcon,
+  NetworkIcon,
   PlusIcon,
   Settings2Icon,
 } from 'lucide-react'
@@ -43,12 +43,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { hookfish } from '@/lib/hookfish'
 import {
   listManagedProviders,
-  storeManagedProvider,
   type StoreProviderInput,
+  storeManagedProvider,
 } from '@/lib/management-api'
-import { hookfish } from '@/lib/hookfish'
 import { defaultOAuthConfigId, oauthRedirectUri } from '@/lib/oauth-config'
 
 const PROVIDER_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -537,7 +537,7 @@ function AddProviderDialog({
                   <Button
                     type="button"
                     variant="ghost"
-                    className="w-full justify-between px-0 hover:bg-transparent"
+                    className="h-auto min-h-11 w-full justify-between gap-4 px-0 py-1 text-left whitespace-normal hover:bg-transparent aria-expanded:bg-transparent md:h-auto"
                   >
                     <span className="grid gap-1 text-left">
                       <span>Optional configuration</span>

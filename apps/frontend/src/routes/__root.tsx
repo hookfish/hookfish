@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Link, Outlet, createRootRoute } from '@tanstack/react-router'
+import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import { BrokerAccess } from '@/components/credential-management'
 import { Button } from '@/components/ui/button'
@@ -33,16 +33,13 @@ function AppShell() {
       >
         Skip to content
       </a>
-      <div className="min-h-svh bg-background">
-        <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur-sm motion-reduce:backdrop-blur-none">
-          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
-            <div className="flex shrink-0 items-baseline gap-4">
+      <div className="h-svh overflow-hidden bg-background">
+        <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur-sm motion-reduce:backdrop-blur-none">
+          <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
+            <div className="flex shrink-0 items-baseline">
               <strong className="text-sm font-medium tracking-widest uppercase">
                 Hookfish
               </strong>
-              <span className="hidden text-xs tracking-wide text-foreground/40 uppercase sm:inline">
-                Credential broker
-              </span>
             </div>
             <nav
               aria-label="Primary navigation"
@@ -70,7 +67,7 @@ function AppShell() {
         </header>
         <div
           id="main-content"
-          className="h-[calc(100svh-4rem)] w-full scroll-mt-16 overflow-hidden"
+          className="h-[calc(100svh-4rem)] min-h-0 w-full scroll-mt-16 overflow-hidden"
         >
           <Outlet />
         </div>
