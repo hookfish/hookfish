@@ -7,11 +7,18 @@ export type HookfishEvent = {
     | 'connection.disconnected'
     | 'broker_token.created'
     | 'broker_token.revoked'
+    | 'provider.created'
+    | 'provider.updated'
+    | 'provider.deleted'
+    | 'secret.stored'
+    | 'secret.retrieved'
+    | 'secret.deleted'
   occurredAt: Date
   organization?: string
   provider?: string
   connectionId?: string
   tokenName?: string
+  secretPath?: string
   errorCode?: string
   refreshed?: boolean
   replayed?: boolean

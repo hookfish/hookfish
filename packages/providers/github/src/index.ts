@@ -2,6 +2,7 @@ import {
   type CreateAuthorizationInput,
   type ExchangeCodeInput,
   type OAuthProvider,
+  type OAuthProviderTemplate,
   type ProviderCredentials,
   ProviderRequestError,
   type ProviderTokenResponse,
@@ -44,7 +45,7 @@ export type GitHubProviderOptions = ProviderCredentials & {
   createOAuthClient?: GitHubOAuthClientFactory
 }
 
-export class GitHubProvider implements OAuthProvider {
+export class GitHubProvider implements OAuthProviderTemplate {
   readonly label = 'GitHub'
   readonly defaultScopes: readonly string[] = []
   readonly availableScopes = [
@@ -92,6 +93,14 @@ export class GitHubProvider implements OAuthProvider {
     this.credentials = options
     this.createOAuthClient =
       options.createOAuthClient ?? createGitHubOAuthClient
+  }
+
+  createProvider(credentials?: Required<ProviderCredentials>): OAuthProvider {
+    return new GitHubProvider({
+      ...this.credentials,
+      createOAuthClient: this.createOAuthClient,
+      ...credentials,
+    })
   }
 
   isConfigured() {
@@ -157,4 +166,10 @@ export class GitHubProvider implements OAuthProvider {
       })
     }
   }
+}
+
+export function createGitHubProvider(
+  options: GitHubProviderOptions = {},
+): GitHubProvider {
+  return new GitHubProvider(options)
 }

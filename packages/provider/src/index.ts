@@ -17,6 +17,15 @@ export type ProviderCredentials = {
   clientSecret?: string
 }
 
+/**
+ * A configured provider can also act as the trusted template for database-
+ * backed provider instances. Passing no credentials recreates the provider
+ * with its fixed defaults; passing credentials replaces the pair atomically.
+ */
+export interface OAuthProviderTemplate extends OAuthProvider {
+  createProvider(credentials?: Required<ProviderCredentials>): OAuthProvider
+}
+
 export type CreateAuthorizationInput = {
   redirectUri: string
   state: string
@@ -72,6 +81,12 @@ export interface OAuthProvider {
   refreshToken?(input: RefreshTokenInput): Promise<ProviderTokenResponse>
   /** Revoke upstream credentials before the broker forgets them locally. */
   revokeToken?(input: RevokeTokenInput): Promise<void>
+}
+
+export function isOAuthProviderTemplate(
+  provider: OAuthProvider,
+): provider is OAuthProviderTemplate {
+  return typeof Reflect.get(provider, 'createProvider') === 'function'
 }
 
 const registryKey = Symbol.for('@hookfish/provider/registry')

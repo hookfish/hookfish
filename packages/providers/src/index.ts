@@ -1,3 +1,12 @@
-export { GitHubProvider } from '@hookfish/provider-github'
-export { LinearProvider } from '@hookfish/provider-linear'
-export { NotionProvider } from '@hookfish/provider-notion'
+export {
+  createGitHubProvider,
+  GitHubProvider,
+} from '@hookfish/provider-github'
+export {
+  createLinearProvider,
+  LinearProvider,
+} from '@hookfish/provider-linear'
+export {
+  createNotionProvider,
+  NotionProvider,
+} from '@hookfish/provider-notion'

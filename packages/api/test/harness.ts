@@ -4,7 +4,8 @@ import path from 'node:path'
 import { z } from '@hono/zod-openapi'
 import {
   createProviderRegistry,
-  type OAuthProvider,
+  type OAuthProviderTemplate,
+  type ProviderCredentials,
   type ProviderRegistry,
   ProviderRequestError,
 } from '@hookfish/provider'
@@ -97,102 +98,112 @@ function providerDefinition(
   stub: OAuthStub,
   label: string,
   options: StubProviderOptions = {},
-): OAuthProvider {
-  const credentials = {
+): OAuthProviderTemplate {
+  const defaultCredentials = {
     clientId: `${id}-client`,
     clientSecret: `${id}-secret`,
   }
-  const requestToken = async (params: Record<string, string>) => {
-    const headers = new Headers({ Accept: 'application/json' })
-    let body: string
+  const create = (
+    credentials: Required<ProviderCredentials>,
+  ): OAuthProviderTemplate => {
+    const requestToken = async (params: Record<string, string>) => {
+      const headers = new Headers({ Accept: 'application/json' })
+      let body: string
 
-    if (options.tokenRequest === 'json-basic') {
-      headers.set(
-        'Authorization',
-        basicAuthorization(credentials.clientId, credentials.clientSecret),
+      if (options.tokenRequest === 'json-basic') {
+        headers.set(
+          'Authorization',
+          basicAuthorization(credentials.clientId, credentials.clientSecret),
+        )
+        headers.set('Content-Type', 'application/json')
+        body = JSON.stringify(params)
+      } else {
+        headers.set('Content-Type', 'application/x-www-form-urlencoded')
+        body = new URLSearchParams({
+          ...params,
+          client_id: credentials.clientId,
+          client_secret: credentials.clientSecret,
+        }).toString()
+      }
+
+      const payload = await readTokenPayload(
+        await fetch(stub.tokenUrl, { method: 'POST', headers, body }),
+        label,
       )
-      headers.set('Content-Type', 'application/json')
-      body = JSON.stringify(params)
-    } else {
-      headers.set('Content-Type', 'application/x-www-form-urlencoded')
-      body = new URLSearchParams({
-        ...params,
-        client_id: credentials.clientId,
-        client_secret: credentials.clientSecret,
-      }).toString()
+
+      return {
+        payload,
+        account: {
+          id:
+            typeof payload.account_id === 'string'
+              ? payload.account_id
+              : undefined,
+          label:
+            typeof payload.account_label === 'string'
+              ? payload.account_label
+              : undefined,
+        },
+      }
     }
 
-    const payload = await readTokenPayload(
-      await fetch(stub.tokenUrl, { method: 'POST', headers, body }),
+    const provider: OAuthProviderTemplate = {
       label,
-    )
+      defaultScopes: options.defaultScopes ?? ['read', 'write'],
+      availableScopes: ['read', 'write'],
+      usesPkce: options.usesPkce ?? false,
 
-    return {
-      payload,
-      account: {
-        id:
-          typeof payload.account_id === 'string'
-            ? payload.account_id
-            : undefined,
-        label:
-          typeof payload.account_label === 'string'
-            ? payload.account_label
-            : undefined,
+      async createAuthorization({ redirectUri, state, scopes }) {
+        const url = new URL(stub.authorizeUrl)
+        url.searchParams.set('client_id', credentials.clientId)
+        url.searchParams.set('redirect_uri', redirectUri)
+        url.searchParams.set('response_type', 'code')
+        url.searchParams.set('state', state)
+        if (scopes.length > 0) {
+          url.searchParams.set(
+            'scope',
+            options.formatScopes?.(scopes) ?? scopes.join(' '),
+          )
+        }
+        for (const [key, value] of Object.entries(
+          options.authorizeParams ?? {},
+        )) {
+          url.searchParams.set(key, value)
+        }
+
+        if (!options.usesPkce) return { url: url.toString() }
+
+        const pkce = await createPkcePair()
+        url.searchParams.set('code_challenge', pkce.challenge)
+        url.searchParams.set('code_challenge_method', 'S256')
+        return { url: url.toString(), codeVerifier: pkce.verifier }
+      },
+
+      exchangeCode({ code, redirectUri, codeVerifier }) {
+        return requestToken({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: redirectUri,
+          ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
+        })
+      },
+
+      createProvider(override) {
+        return create(override ?? defaultCredentials)
       },
     }
+
+    if (options.supportsRefresh !== false) {
+      provider.refreshToken = ({ refreshToken }) =>
+        requestToken({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+        })
+    }
+
+    return provider
   }
 
-  const provider: OAuthProvider = {
-    label,
-    defaultScopes: options.defaultScopes ?? ['read', 'write'],
-    availableScopes: ['read', 'write'],
-    usesPkce: options.usesPkce ?? false,
-
-    async createAuthorization({ redirectUri, state, scopes }) {
-      const url = new URL(stub.authorizeUrl)
-      url.searchParams.set('client_id', credentials.clientId)
-      url.searchParams.set('redirect_uri', redirectUri)
-      url.searchParams.set('response_type', 'code')
-      url.searchParams.set('state', state)
-      if (scopes.length > 0) {
-        url.searchParams.set(
-          'scope',
-          options.formatScopes?.(scopes) ?? scopes.join(' '),
-        )
-      }
-      for (const [key, value] of Object.entries(
-        options.authorizeParams ?? {},
-      )) {
-        url.searchParams.set(key, value)
-      }
-
-      if (!options.usesPkce) return { url: url.toString() }
-
-      const pkce = await createPkcePair()
-      url.searchParams.set('code_challenge', pkce.challenge)
-      url.searchParams.set('code_challenge_method', 'S256')
-      return { url: url.toString(), codeVerifier: pkce.verifier }
-    },
-
-    exchangeCode({ code, redirectUri, codeVerifier }) {
-      return requestToken({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: redirectUri,
-        ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
-      })
-    },
-  }
-
-  if (options.supportsRefresh !== false) {
-    provider.refreshToken = ({ refreshToken }) =>
-      requestToken({
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      })
-  }
-
-  return provider
+  return create(defaultCredentials)
 }
 
 export async function createHarness(
@@ -200,6 +211,7 @@ export async function createHarness(
     returnTo?: string
     trustedOrigins?: readonly string[]
     organizationRouting?: boolean
+    providerManagement?: boolean
     onEvent?: (event: HookfishEvent) => void | Promise<void>
   } = {},
 ): Promise<TestHarness> {
@@ -273,6 +285,7 @@ export async function createHarness(
     returnTo: options.returnTo,
     trustedOrigins: options.trustedOrigins,
     organizationRouting: options.organizationRouting,
+    providerManagement: options.providerManagement,
     onEvent: options.onEvent,
   })
 

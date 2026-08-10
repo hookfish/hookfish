@@ -9,7 +9,9 @@ import { z } from 'zod'
 import {
   brokerAccessTokens,
   oauthConnections,
+  oauthProviders,
   oauthStates,
+  vaultSecrets,
 } from '../src/db/schema'
 import { type DatabaseContext, defineDatabase, Hookfish } from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
@@ -1890,5 +1892,277 @@ describe('OAuth broker integration', () => {
 
     expect(res.status).toBe(200)
     expect(resolvedBindings).toBe(bindings)
+  })
+
+  it('stores arbitrary secrets encrypted behind hierarchical broker scopes', async () => {
+    const secretPath = 'vault-test/team/browserbase/api-key'
+    const put = await h.fetch(`/api/secrets/${secretPath}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 'browserbase-secret' }),
+    })
+    expect(put.status).toBe(200)
+    expect(await put.json()).toMatchObject({
+      secret: { path: secretPath },
+    })
+
+    const list = await h.fetch('/api/secrets?path_prefix=vault-test/team')
+    const listText = await list.text()
+    expect(JSON.parse(listText)).toMatchObject({
+      secrets: [{ path: secretPath }],
+    })
+    expect(listText).not.toContain('browserbase-secret')
+
+    const get = await h.fetch(`/api/secrets/${secretPath}`)
+    expect(get.headers.get('cache-control')).toBe('no-store')
+    expect(await get.json()).toEqual({
+      path: secretPath,
+      value: 'browserbase-secret',
+    })
+
+    const mint = await h.fetch('/api/admin/tokens', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'vault-test-worker',
+        scopes: ['vault-test/team'],
+      }),
+    })
+    const scoped: { access_token: string } = await mint.json()
+    const scopedHeaders = {
+      Authorization: `Bearer ${scoped.access_token}`,
+    }
+    expect(
+      await h.fetch(`/api/secrets/${secretPath}`, { headers: scopedHeaders }),
+    ).toHaveProperty('status', 200)
+    expect(
+      await h.fetch('/api/secrets/vault-test/other/key', {
+        headers: scopedHeaders,
+      }),
+    ).toHaveProperty('status', 403)
+
+    const reserved = await h.fetch(
+      '/api/secrets/__hookfish/providers/nope/client-secret',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: 'nope' }),
+      },
+    )
+    expect(reserved.status).toBe(400)
+
+    expect(
+      await h.fetch(`/api/secrets/${secretPath}`, { method: 'DELETE' }),
+    ).toHaveProperty('status', 200)
+    await h.fetch('/api/admin/tokens/vault-test-worker', {
+      method: 'DELETE',
+    })
+  })
+
+  it('keeps provider management opt-in and resolves managed providers per request', async () => {
+    expect(await h.fetch('/api/admin/providers')).toHaveProperty('status', 404)
+    const defaultOpenApi = z
+      .object({ paths: z.record(z.string(), z.unknown()) })
+      .parse(await (await h.fetch('/api/openapi.json')).json())
+    expect(defaultOpenApi.paths).not.toHaveProperty(
+      '/admin/providers/{provider_id}',
+    )
+
+    const managed = await createHarness({ providerManagement: true })
+    try {
+      const fixedConflict = await managed.fetch(
+        `/api/admin/providers/${managed.providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(fixedConflict.status).toBe(409)
+
+      const providerId = 'customer-stub'
+      const created = await managed.fetch(
+        `/api/admin/providers/${providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            label: 'Customer Stub',
+            credentials: {
+              mode: 'custom',
+              client_id: 'customer-client',
+              client_secret: 'customer-secret',
+            },
+          }),
+        },
+      )
+      expect(created.status).toBe(200)
+      const createdText = await created.text()
+      expect(createdText).not.toContain('customer-secret')
+      expect(JSON.parse(createdText)).toMatchObject({
+        provider: {
+          id: providerId,
+          template: managed.providerId,
+          source: 'dynamic',
+          configured: true,
+          credentials: {
+            mode: 'custom',
+            client_id: 'customer-client',
+          },
+        },
+      })
+      const [storedProvider] = await managed.db
+        .select()
+        .from(oauthProviders)
+        .where(eq(oauthProviders.providerId, providerId))
+      const [storedSecret] = await managed.db
+        .select()
+        .from(vaultSecrets)
+        .where(eq(vaultSecrets.path, storedProvider.clientSecretPath!))
+      expect(storedSecret.value).not.toContain('customer-secret')
+
+      const publicProviders = await managed.fetch('/api/oauth/providers')
+      expect(await publicProviders.json()).toMatchObject({
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            id: providerId,
+            label: 'Customer Stub',
+            configured: true,
+          }),
+        ]),
+      })
+
+      const connectionId = 'managed/customer-stub'
+      const connected = await managed.authorizeAndCallback({
+        provider: providerId,
+        connectionId,
+      })
+      expect(connected.callback.status).toBe(200)
+      expect(managed.stub.tokenRequests.at(-1)?.body).toMatchObject({
+        client_id: 'customer-client',
+        client_secret: 'customer-secret',
+      })
+
+      const disabled = await managed.fetch(
+        `/api/admin/providers/${providerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: false }),
+        },
+      )
+      expect(disabled.status).toBe(200)
+      expect(
+        await managed.fetch(`/api/oauth/${providerId}/authorize`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: 'managed/disabled' }),
+        }),
+      ).toHaveProperty('status', 409)
+      expect(
+        await managed.fetch(`/api/oauth/tokens/${connectionId}`),
+      ).toHaveProperty('status', 200)
+
+      const inUse = await managed.fetch(`/api/admin/providers/${providerId}`, {
+        method: 'DELETE',
+      })
+      expect(inUse.status).toBe(409)
+      await managed.fetch(`/api/oauth/connections/${connectionId}`, {
+        method: 'DELETE',
+      })
+      expect(
+        await managed.fetch(`/api/admin/providers/${providerId}`, {
+          method: 'DELETE',
+        }),
+      ).toHaveProperty('status', 200)
+
+      const openApi = z
+        .object({ paths: z.record(z.string(), z.unknown()) })
+        .parse(await (await managed.fetch('/api/openapi.json')).json())
+      expect(openApi.paths).toHaveProperty('/admin/providers/{provider_id}')
+    } finally {
+      await managed.close()
+    }
+  })
+
+  it('isolates dynamic providers and secrets in organization routes', async () => {
+    const managed = await createHarness({
+      organizationRouting: true,
+      providerManagement: true,
+    })
+    try {
+      const providerId = 'acme-stub'
+      const provider = await managed.fetch(
+        `/api/organization/acme/admin/providers/${providerId}`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            template: managed.providerId,
+            credentials: { mode: 'inherit' },
+          }),
+        },
+      )
+      expect(provider.status).toBe(200)
+
+      const secretPath = 'acme/user-123/service/api-key'
+      expect(
+        await managed.fetch(`/api/organization/acme/secrets/${secretPath}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ value: 'organization-secret' }),
+        }),
+      ).toHaveProperty('status', 200)
+      expect(
+        await managed.fetch(
+          '/api/organization/acme/secrets/other/user/api-key',
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ value: 'outside' }),
+          },
+        ),
+      ).toHaveProperty('status', 403)
+
+      const authorize = await managed.fetch(
+        `/api/organization/acme/oauth/${providerId}/authorize`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: 'acme/user-123/stub' }),
+        },
+      )
+      expect(authorize.status).toBe(200)
+      const authorization = z
+        .object({ authorize_url: z.string() })
+        .parse(await authorize.json())
+      const consent = await fetch(authorization.authorize_url, {
+        redirect: 'manual',
+      })
+      const location = consent.headers.get('location')
+      if (!location) throw new Error('Stub authorization did not redirect.')
+      const callback = new URL(location)
+      expect(
+        await managed.fetch(`${callback.pathname}${callback.search}`),
+      ).toHaveProperty('status', 200)
+
+      await managed.fetch(
+        '/api/organization/acme/oauth/connections/acme/user-123/stub',
+        { method: 'DELETE' },
+      )
+      await managed.fetch(
+        `/api/organization/acme/admin/providers/${providerId}`,
+        { method: 'DELETE' },
+      )
+      await managed.fetch(`/api/organization/acme/secrets/${secretPath}`, {
+        method: 'DELETE',
+      })
+    } finally {
+      await managed.close()
+    }
   })
 })

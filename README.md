@@ -1,6 +1,6 @@
 # Hookfish
 
-A portable OAuth broker with a static React dashboard and Fetch-compatible
+A portable OAuth and encrypted-secret broker with a static React dashboard and Fetch-compatible
 backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
@@ -155,8 +155,9 @@ function RuntimeStats() {
 ```
 
 The facade only forwards stats, provider metadata, connection metadata,
-authorization starts, and disconnects. Token retrieval and administration
-remain server-only. More detail is in [packages/api/OAUTH.md](packages/api/OAUTH.md).
+authorization starts, and disconnects. OAuth token retrieval, secret-vault
+operations, and administration remain server-only. More detail is in
+[packages/api/OAUTH.md](packages/api/OAUTH.md).
 
 ## Commands
 

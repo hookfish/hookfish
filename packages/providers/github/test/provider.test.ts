@@ -1,9 +1,36 @@
 import { describe, expect, it, vi } from 'vitest'
-import { GitHubProvider } from '../src'
+import { createGitHubProvider, GitHubProvider } from '../src'
 
 const credentials = { clientId: 'github-client', clientSecret: 'secret' }
 
 describe('GitHubProvider', () => {
+  it('creates reusable fixed providers with atomic credential overrides', async () => {
+    const factory = vi.fn(() => ({
+      getWebFlowAuthorizationUrl: () => ({ url: 'https://github.example' }),
+      createToken: async () => ({ authentication: { token: 'token' } }),
+      deleteToken: async () => undefined,
+    }))
+    const template = createGitHubProvider({
+      ...credentials,
+      createOAuthClient: factory,
+    })
+    const configured = template.createProvider({
+      clientId: 'customer-client',
+      clientSecret: 'customer-secret',
+    })
+
+    await configured.createAuthorization({
+      redirectUri: 'https://broker.example/callback',
+      state: 'state',
+      scopes: [],
+    })
+
+    expect(factory).toHaveBeenCalledWith({
+      clientId: 'customer-client',
+      clientSecret: 'customer-secret',
+    })
+  })
+
   it('delegates authorization and token exchange to Octokit', async () => {
     const getWebFlowAuthorizationUrl = vi.fn(() => ({
       url: 'https://github.com/login/oauth/authorize?client_id=github-client',

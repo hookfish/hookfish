@@ -27,6 +27,8 @@ import type { BrokerContext } from './oauth/middleware'
 import { ORGANIZATION_PATTERN } from './oauth/organization'
 import { createAdminRoutes } from './routes/admin'
 import { createOAuthRoutes } from './routes/oauth'
+import { createProviderRoutes } from './routes/providers'
+import { createSecretRoutes } from './routes/secrets'
 import { statsRoutes } from './routes/stats'
 
 export type ProviderMap = Record<string, OAuthProvider>
@@ -59,6 +61,8 @@ export type HookfishConfig<
   trustedOrigins?: readonly string[]
   /** Prefix OAuth management routes with `/organization/:organization`. The provider callback remains global. @default false */
   organizationRouting?: boolean
+  /** Expose root-authenticated CRUD for database-backed provider instances. @default false */
+  providerManagement?: boolean
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
 }
@@ -112,7 +116,11 @@ function createApiRoutes<Bindings extends object>(
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
-    'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
+    | 'returnTo'
+    | 'trustedOrigins'
+    | 'organizationRouting'
+    | 'providerManagement'
+    | 'onEvent'
   >,
   includeSwagger = true,
 ) {
@@ -158,7 +166,9 @@ function createApiRoutes<Bindings extends object>(
               name: 'organization',
               in: 'path',
               required: true,
-              description: 'Organization namespace for OAuth connections.',
+              description: pathname.includes('/oauth/')
+                ? 'Organization namespace for OAuth connections.'
+                : 'Organization namespace for Hookfish resources.',
               schema: {
                 type: 'string',
                 pattern: ORGANIZATION_PATTERN.source,
@@ -167,6 +177,17 @@ function createApiRoutes<Bindings extends object>(
               },
             },
           ]
+        }
+      }
+    }
+
+    if (!options.providerManagement) {
+      for (const pathname of Object.keys(document.paths ?? {})) {
+        if (
+          pathname.startsWith('/admin/providers') ||
+          pathname.includes('/admin/providers')
+        ) {
+          delete document.paths?.[pathname]
         }
       }
     }
@@ -211,10 +232,27 @@ function createApiRoutes<Bindings extends object>(
       '/admin',
       createAdminRoutes(resolveConfig, database, options.onEvent),
     )
+    .route(
+      '/admin',
+      createProviderRoutes(providers, resolveConfig, database, {
+        ...options,
+        enabled: options.providerManagement ?? false,
+        routeMode: 'global',
+      }),
+    )
     .use('/oauth/*', cors())
     .route(
       '/oauth',
       createOAuthRoutes(providers, resolveConfig, database, {
+        ...options,
+        routeMode: 'global',
+      }),
+    )
+    .use('/secrets', cors())
+    .use('/secrets/*', cors())
+    .route(
+      '/',
+      createSecretRoutes(resolveConfig, database, {
         ...options,
         routeMode: 'global',
       }),
@@ -228,6 +266,30 @@ function createApiRoutes<Bindings extends object>(
         routeMode: 'organization',
       }),
     )
+    api
+      .use('/organization/:organization/secrets', cors())
+      .use('/organization/:organization/secrets/*', cors())
+      .route(
+        '/organization/:organization',
+        createSecretRoutes(resolveConfig, database, {
+          ...options,
+          routeMode: 'organization',
+        }),
+      )
+
+    if (options.providerManagement) {
+      api
+        .use('/organization/:organization/admin/providers', cors())
+        .use('/organization/:organization/admin/providers/*', cors())
+        .route(
+          '/organization/:organization/admin',
+          createProviderRoutes(providers, resolveConfig, database, {
+            ...options,
+            enabled: true,
+            routeMode: 'organization',
+          }),
+        )
+    }
   }
 
   return api
@@ -261,6 +323,7 @@ export class Hookfish<
   readonly db: DatabaseInput<Bindings>
   readonly includeClient: boolean
   readonly includeSwagger: boolean
+  readonly providerManagement: boolean
   readonly returnTo: string | undefined
   private readonly app: {
     fetch(
@@ -286,6 +349,7 @@ export class Hookfish<
     this.db = options.db
     this.includeClient = options.includeClient ?? false
     this.includeSwagger = options.includeSwagger ?? true
+    this.providerManagement = options.providerManagement ?? false
     this.returnTo = options.returnTo
     const api = createApiRoutes(
       providers,
@@ -356,5 +420,7 @@ export type {
   BrokerAccessToken,
   Database,
   OAuthConnection,
+  OAuthProviderRecord,
   OAuthState,
+  VaultSecret,
 } from './db/schema'

@@ -3,9 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { defineHookfishConfig, z } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import {
-  GitHubProvider,
-  LinearProvider,
-  NotionProvider,
+  createGitHubProvider,
+  createLinearProvider,
+  createNotionProvider,
 } from '@hookfish/providers'
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
@@ -45,17 +45,18 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
-  organizationRouting: true, // Use /api/organization/:organization/oauth management routes.
+  organizationRouting: false, // Use /api/organization/:organization/oauth management routes.
+  providerManagement: true,
   // onEvent: async (event) => auditLog.write(event),
   providers: (config) => ({
     // Providers can receive credentials explicitly from validated config.
-    github: new GitHubProvider({
+    github: createGitHubProvider({
       clientId: config.GITHUB_CLIENT_ID,
       clientSecret: config.GITHUB_CLIENT_SECRET,
     }),
     // Or retain their conventional <PROVIDER>_CLIENT_ID / _CLIENT_SECRET
     // environment lookup when constructor credentials are omitted.
-    linear: new LinearProvider(),
-    notion: new NotionProvider(),
+    linear: createLinearProvider(),
+    notion: createNotionProvider(),
   }),
 })

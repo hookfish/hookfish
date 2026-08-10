@@ -23,6 +23,7 @@ import {
   validateReturnTo,
 } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
+import { listProviderDescriptors } from '../oauth/dynamic-provider'
 import {
   type BrokerContext,
   requireApiKey,
@@ -624,7 +625,7 @@ export function createOAuthRoutes<Bindings extends object>(
   oauthRoutes.openAPIRegistry.registerPath(tokenRoute)
   oauthRoutes.openAPIRegistry.registerPath(disconnectRoute)
 
-  const providersApi = oauthRoutes.openapi(listProvidersRoute, (c) => {
+  const providersApi = oauthRoutes.openapi(listProvidersRoute, async (c) => {
     const { organization } = c.get('databaseContext')
     if (organization) {
       assertConnectionPrefixAccess(c.get('accessGrant'), organization)
@@ -632,19 +633,26 @@ export function createOAuthRoutes<Bindings extends object>(
     const config = resolveConfig()
     return c.json(
       {
-        providers: providers.listProviders().map(([slug, provider]) => {
+        providers: (
+          await listProviderDescriptors(
+            c.get('db'),
+            config,
+            providers,
+            organization,
+          )
+        ).map(({ id: slug, label, configured, provider }) => {
           return {
             id: slug,
-            label: provider.label ?? slug,
-            configured: providers.isProviderConfigured(slug),
+            label,
+            configured,
             // Derived from this request, so it stays correct across branches,
             // `pnpm dev` vs. `server dev`, and deployed environments.
             callback_url: resolveRedirectUri(config, c.req.url, slug),
-            scopes: [...(provider.defaultScopes ?? [])],
-            available_scopes: [...(provider.availableScopes ?? [])],
-            supports_refresh: provider.refreshToken !== undefined,
-            supports_revocation: provider.revokeToken !== undefined,
-            uses_pkce: provider.usesPkce ?? false,
+            scopes: [...(provider?.defaultScopes ?? [])],
+            available_scopes: [...(provider?.availableScopes ?? [])],
+            supports_refresh: provider?.refreshToken !== undefined,
+            supports_revocation: provider?.revokeToken !== undefined,
+            uses_pkce: provider?.usesPkce ?? false,
           }
         }),
       },
