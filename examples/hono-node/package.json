@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node --watch --env-file-if-exists=../../apps/frontend/.env --import tsx src/index.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b"
   },
