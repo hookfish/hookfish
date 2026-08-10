@@ -15,6 +15,7 @@ import {
   Link2Icon,
   ListIcon,
   PlusIcon,
+  Settings2Icon,
   ShieldCheckIcon,
 } from 'lucide-react'
 import {
@@ -117,8 +118,11 @@ import {
   readLocalFolders,
 } from '@/lib/local-folders'
 import {
+  deleteManagedProvider,
   deleteSecret,
+  listManagedProviders,
   listSecrets,
+  type ManagedProvider,
   type SecretMetadata,
   storeSecret,
 } from '@/lib/management-api'
@@ -139,6 +143,14 @@ function directSecrets(secrets: SecretMetadata[], currentPath: string) {
   return secrets.filter((secret) => {
     if (!secret.path.startsWith(prefix)) return false
     return !secret.path.slice(prefix.length).includes('/')
+  })
+}
+
+function directProviders(providers: ManagedProvider[], currentPath: string) {
+  const prefix = currentPath ? `${currentPath}/` : ''
+  return providers.filter((provider) => {
+    if (!provider.id.startsWith(prefix)) return false
+    return !provider.id.slice(prefix.length).includes('/')
   })
 }
 
@@ -305,6 +317,68 @@ function ApiKeyItem({
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction variant="destructive" onClick={onDelete}>
                 Delete key
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </ItemActions>
+    </Item>
+  )
+}
+
+function ProviderItem({
+  provider,
+  deleting,
+  onDelete,
+}: {
+  provider: ManagedProvider
+  deleting: boolean
+  onDelete: () => void
+}) {
+  const name = provider.id.split('/').at(-1) ?? provider.id
+
+  return (
+    <Item variant="outline">
+      <ItemMedia variant="icon">
+        <Settings2Icon />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>
+          {name}
+          <Badge variant="outline">Provider</Badge>
+          {!provider.enabled ? (
+            <Badge variant="secondary">Disabled</Badge>
+          ) : null}
+        </ItemTitle>
+        <ItemDescription>
+          {provider.label !== name ? `${provider.label} · ` : ''}
+          {provider.template ? `${provider.template} · ` : ''}
+          {provider.id}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="destructive" disabled={deleting}>
+              {deleting ? <Spinner /> : null}
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <ShieldCheckIcon />
+              </AlertDialogMedia>
+              <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes the provider configuration. Disconnect
+                any connections that use it first.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={onDelete}>
+                Delete provider
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -780,7 +854,7 @@ function AddConnectionDialog({
                   if (!slugEdited) {
                     setSlug(
                       value === 'oauth' && providerId
-                        ? providerId
+                        ? connectionSlug(providerLabel || providerId)
                         : suggestedName
                           ? connectionSlug(suggestedName)
                           : '',
@@ -1025,6 +1099,11 @@ export function OAuthConnections({
       ),
     enabled: Boolean(managementToken),
   })
+  const managedProvidersQuery = useQuery({
+    queryKey: ['management', 'providers', managementToken],
+    queryFn: () => listManagedProviders(managementToken),
+    enabled: Boolean(managementToken),
+  })
   const authorizeMutation = hookfish.useAuthorizeConnection({
     onSuccess(data, input) {
       setPendingAuthorizations((current) => [
@@ -1047,6 +1126,18 @@ export function OAuthConnections({
     mutationFn: (path: string) => deleteSecret(managementToken, path),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['management', 'secrets'] }),
+  })
+  const deleteProviderMutation = useMutation({
+    mutationFn: (providerId: string) =>
+      deleteManagedProvider(managementToken, providerId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['management', 'providers'],
+        }),
+        queryClient.invalidateQueries({ queryKey: hookfish.keys.providers() }),
+      ])
+    },
   })
 
   useEffect(() => {
@@ -1080,6 +1171,9 @@ export function OAuthConnections({
         void queryClient.invalidateQueries({
           queryKey: ['management', 'secrets'],
         })
+        void queryClient.invalidateQueries({
+          queryKey: ['management', 'providers'],
+        })
       }
     }
 
@@ -1093,24 +1187,41 @@ export function OAuthConnections({
   }, [managementToken, queryClient])
 
   const secretFolders = secretFolderPaths(secretsQuery.data ?? [])
+  const dynamicProviders = useMemo(
+    () =>
+      (managedProvidersQuery.data ?? [])
+        .filter((provider) => provider.source === 'dynamic')
+        .sort((left, right) => left.id.localeCompare(right.id)),
+    [managedProvidersQuery.data],
+  )
   const directory = useMemo(
     () =>
       connectionDirectory(
         connectionsQuery.data?.connections ?? [],
         currentPath,
         [...localFolders, ...secretFolders],
+        [
+          ...(secretsQuery.data ?? []).map((secret) => secret.path),
+          ...dynamicProviders.map((provider) => provider.id),
+        ],
       ),
     [
       connectionsQuery.data?.connections,
       currentPath,
       localFolders,
       secretFolders,
+      secretsQuery.data,
+      dynamicProviders,
     ],
   )
   const visibleSecrets =
     view === 'tree'
       ? directSecrets(secretsQuery.data ?? [], currentPath)
       : (secretsQuery.data ?? [])
+  const visibleProviders =
+    view === 'tree'
+      ? directProviders(dynamicProviders, currentPath)
+      : dynamicProviders
   const allConnections = useMemo(
     () =>
       [...(connectionsQuery.data?.connections ?? [])].sort((left, right) =>
@@ -1139,15 +1250,21 @@ export function OAuthConnections({
   )
   const isEmpty =
     !connectionsQuery.isPending &&
+    !secretsQuery.isPending &&
+    !managedProvidersQuery.isPending &&
     !connectionsQuery.isError &&
+    !secretsQuery.isError &&
+    !managedProvidersQuery.isError &&
     (view === 'all'
       ? allConnections.length === 0 &&
         visiblePendingAuthorizations.length === 0 &&
-        visibleSecrets.length === 0
+        visibleSecrets.length === 0 &&
+        visibleProviders.length === 0
       : directory.folders.length === 0 &&
         directory.connections.length === 0 &&
         visiblePendingAuthorizations.length === 0 &&
-        visibleSecrets.length === 0)
+        visibleSecrets.length === 0 &&
+        visibleProviders.length === 0)
   const addConnectionPath = view === 'tree' ? currentPath : ''
 
   function updateFolders(folders: string[]) {
@@ -1182,7 +1299,7 @@ export function OAuthConnections({
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Every stored connection
+                  Every stored resource
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
@@ -1195,7 +1312,10 @@ export function OAuthConnections({
                     Add folder
                   </Button>
                 ) : null}
-                <OAuthConfigDialog managementToken={managementToken} />
+                <OAuthConfigDialog
+                  managementToken={managementToken}
+                  currentPath={addConnectionPath}
+                />
                 <Button onClick={() => setAddDialogOpen(true)}>
                   <PlusIcon />
                   Add connection
@@ -1237,7 +1357,11 @@ export function OAuthConnections({
             </div>
           </div>
 
-          {connectionsQuery.isPending ? <LoadingItems /> : null}
+          {connectionsQuery.isPending ||
+          secretsQuery.isPending ||
+          managedProvidersQuery.isPending ? (
+            <LoadingItems />
+          ) : null}
 
           {connectionsQuery.isError ? (
             <Alert variant="destructive">
@@ -1255,6 +1379,15 @@ export function OAuthConnections({
             </Alert>
           ) : null}
 
+          {managedProvidersQuery.isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load providers</AlertTitle>
+              <AlertDescription>
+                {managedProvidersQuery.error.message}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {isEmpty ? (
             <Empty className="border py-16">
               <EmptyHeader>
@@ -1266,10 +1399,10 @@ export function OAuthConnections({
                 </EmptyTitle>
                 <EmptyDescription>
                   {view === 'tree' && currentPath
-                    ? 'This folder is stored only in this browser. It won’t appear in the Hookfish API until you add a connection.'
+                    ? 'This folder is stored only in this browser. It won’t appear in the Hookfish API until you add a resource.'
                     : view === 'tree'
-                      ? 'Add a folder or create a connection here.'
-                      : 'Create an OAuth, MCP, or API-key connection.'}
+                      ? 'Add a folder, provider, connection, or API key here.'
+                      : 'Create a provider, OAuth connection, MCP connection, or API key.'}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -1285,7 +1418,8 @@ export function OAuthConnections({
           (directory.folders.length ||
             directory.connections.length ||
             visiblePendingAuthorizations.length ||
-            visibleSecrets.length) ? (
+            visibleSecrets.length ||
+            visibleProviders.length) ? (
             <ItemGroup>
               {directory.folders.map((folder) => (
                 <Item asChild variant="outline" key={folder.path}>
@@ -1296,9 +1430,9 @@ export function OAuthConnections({
                     <ItemContent>
                       <ItemTitle>{folder.name}</ItemTitle>
                       <ItemDescription>
-                        {folder.connectionCount === 0
+                        {folder.itemCount === 0
                           ? 'Folder'
-                          : `${folder.connectionCount} connection${folder.connectionCount === 1 ? '' : 's'}`}
+                          : `${folder.itemCount} item${folder.itemCount === 1 ? '' : 's'}`}
                       </ItemDescription>
                     </ItemContent>
                     <ItemActions>
@@ -1341,13 +1475,25 @@ export function OAuthConnections({
                   onDelete={() => deleteSecretMutation.mutate(secret.path)}
                 />
               ))}
+              {visibleProviders.map((provider) => (
+                <ProviderItem
+                  key={provider.id}
+                  provider={provider}
+                  deleting={
+                    deleteProviderMutation.isPending &&
+                    deleteProviderMutation.variables === provider.id
+                  }
+                  onDelete={() => deleteProviderMutation.mutate(provider.id)}
+                />
+              ))}
             </ItemGroup>
           ) : null}
 
           {view === 'all' &&
           (allConnections.length ||
             visiblePendingAuthorizations.length ||
-            visibleSecrets.length) ? (
+            visibleSecrets.length ||
+            visibleProviders.length) ? (
             <ItemGroup>
               {allConnections.map((connection) => (
                 <ConnectionItem
@@ -1382,15 +1528,29 @@ export function OAuthConnections({
                   onDelete={() => deleteSecretMutation.mutate(secret.path)}
                 />
               ))}
+              {visibleProviders.map((provider) => (
+                <ProviderItem
+                  key={provider.id}
+                  provider={provider}
+                  deleting={
+                    deleteProviderMutation.isPending &&
+                    deleteProviderMutation.variables === provider.id
+                  }
+                  onDelete={() => deleteProviderMutation.mutate(provider.id)}
+                />
+              ))}
             </ItemGroup>
           ) : null}
 
-          {disconnectMutation.isError || deleteSecretMutation.isError ? (
+          {disconnectMutation.isError ||
+          deleteSecretMutation.isError ||
+          deleteProviderMutation.isError ? (
             <Alert variant="destructive">
-              <AlertTitle>Could not remove connection</AlertTitle>
+              <AlertTitle>Could not remove item</AlertTitle>
               <AlertDescription>
                 {disconnectMutation.error?.message ??
-                  deleteSecretMutation.error?.message}
+                  deleteSecretMutation.error?.message ??
+                  deleteProviderMutation.error?.message}
               </AlertDescription>
             </Alert>
           ) : null}

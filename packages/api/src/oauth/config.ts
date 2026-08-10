@@ -1,6 +1,7 @@
 import type { OAuthProvider, ProviderRegistry } from '@hookfish/provider'
 import { z } from 'zod'
 import { BrokerError } from './errors'
+import { encodeResourcePath } from './resource-path'
 
 /**
  * Conventional Hookfish environment fields. Runtime bindings may add
@@ -149,7 +150,7 @@ export function resolveRedirectUri(
 
   const base = configuredBase ?? new URL(requestUrl).origin
 
-  return `${base.replace(/\/$/, '')}/api/oauth/${providerId}/callback`
+  return `${base.replace(/\/$/, '')}/api/oauth/callback/${encodeResourcePath(providerId)}`
 }
 
 export function validateReturnTo(

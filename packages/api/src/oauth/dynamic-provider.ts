@@ -9,10 +9,11 @@ import { oauthProviders } from '../db/schema'
 import { getVaultSecret, organizationKey } from '../vault'
 import { type ProviderConfig, resolveProviderConfig } from './config'
 import { BrokerError } from './errors'
+import { normalizeResourcePath } from './resource-path'
 
 export const PROVIDER_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-export function normalizeProviderId(providerId: string): string {
+export function normalizeProviderTemplateId(providerId: string): string {
   const normalized = providerId.trim()
   if (!PROVIDER_ID_PATTERN.test(normalized) || normalized.length > 128) {
     throw new BrokerError(
@@ -22,6 +23,11 @@ export function normalizeProviderId(providerId: string): string {
     )
   }
   return normalized
+}
+
+/** Provider configurations live in the same slash-delimited namespace as connections. */
+export function normalizeProviderId(providerId: string): string {
+  return normalizeResourcePath(providerId, 'provider')
 }
 
 export function normalizeProviderLabel(label?: string): string | undefined {
@@ -138,6 +144,7 @@ export async function resolveRequestProviderConfig(
   organization?: string,
   options: { forNewAuthorization?: boolean } = {},
 ): Promise<ProviderConfig> {
+  normalizeProviderId(providerId)
   const fixed = providers.getProvider(providerId)
   if (fixed) return resolveProviderConfig(providerId, providers)
 
@@ -178,6 +185,7 @@ export type ProviderDescriptor = {
 }
 
 export type ProviderDescriptorFilter = {
+  configured?: boolean
   limit?: number
   search?: string
   source?: 'fixed' | 'dynamic'
@@ -228,9 +236,10 @@ export async function listProviderDescriptors(
       .from(oauthProviders)
       .where(and(...conditions))
       .orderBy(asc(oauthProviders.providerId))
-    dynamicRecords = filter.limit
-      ? await query.limit(filter.limit)
-      : await query
+    dynamicRecords =
+      filter.limit && filter.configured === undefined
+        ? await query.limit(filter.limit)
+        : await query
   }
   const dynamic = await Promise.all(
     dynamicRecords.map(async (record): Promise<ProviderDescriptor> => {
@@ -272,5 +281,13 @@ export async function listProviderDescriptors(
     (left, right) =>
       left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
   )
-  return filter.limit ? descriptors.slice(0, filter.limit) : descriptors
+  const filteredDescriptors =
+    filter.configured === undefined
+      ? descriptors
+      : descriptors.filter(
+          (descriptor) => descriptor.configured === filter.configured,
+        )
+  return filter.limit
+    ? filteredDescriptors.slice(0, filter.limit)
+    : filteredDescriptors
 }

@@ -140,11 +140,20 @@ function createApiRoutes<Bindings extends object>(
       for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
         const isGlobalManagementRoute =
           pathname.startsWith('/oauth/') &&
-          pathname !== '/oauth/{provider}/callback'
+          pathname !== '/oauth/callback/{provider_path}' &&
+          pathname !== '/oauth/client-metadata/{provider_path}'
         const isOrganizationCallback =
-          pathname === '/organization/{organization}/oauth/{provider}/callback'
+          pathname ===
+          '/organization/{organization}/oauth/callback/{provider_path}'
+        const isOrganizationClientMetadata =
+          pathname ===
+          '/organization/{organization}/oauth/client-metadata/{provider_path}'
 
-        if (isGlobalManagementRoute || isOrganizationCallback) {
+        if (
+          isGlobalManagementRoute ||
+          isOrganizationCallback ||
+          isOrganizationClientMetadata
+        ) {
           delete document.paths?.[pathname]
           continue
         }

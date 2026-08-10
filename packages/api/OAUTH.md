@@ -176,26 +176,27 @@ HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
 All routes require `Authorization: Bearer <credential>`, except the callback —
 that one is hit by the user's browser and is authenticated by its single-use
 `state` value instead. `BROKER_API_KEY` is the root credential and can access
-every connection. It can mint expiring credentials limited to one or more
-hierarchical connection folders. Outside production,
+every resource. It can mint expiring credentials limited to one or more
+hierarchical resource folders. Outside production,
 `BROKER_API_KEY` defaults to `test` when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/oauth/providers` | Which providers exist, which have credentials, their capabilities, and each `callback_url` to register |
-| `POST` | `/api/admin/tokens` | Mint a named, expiring broker credential for one or more connection scopes |
+| `GET` | `/api/oauth/providers` | Configured providers, their capabilities, and each `callback_url` to register (`?include_unconfigured=true` includes unavailable providers) |
+| `POST` | `/api/admin/tokens` | Mint a named, expiring broker credential for one or more resource scopes |
 | `GET` | `/api/admin/tokens` | List active broker credentials by name only (root access required) |
 | `DELETE` | `/api/admin/tokens/{name}` | Immediately revoke a named broker credential (root access required) |
 | `GET` | `/api/secrets` | List accessible secret metadata (`?path_prefix=` optional; never returns values) |
 | `PUT` | `/api/secrets/{path}` | Encrypt and store an arbitrary secret |
 | `GET` | `/api/secrets/{path}` | Retrieve a decrypted secret (server-only) |
 | `DELETE` | `/api/secrets/{path}` | Delete an arbitrary secret |
-| `GET` | `/api/admin/providers` | List fixed and dynamic provider configurations when management is enabled (root access required) |
-| `PUT` | `/api/admin/providers/{provider_id}` | Create or replace a dynamic provider (root access required) |
-| `PATCH` | `/api/admin/providers/{provider_id}` | Update, disable, or re-enable a dynamic provider (root access required) |
-| `DELETE` | `/api/admin/providers/{provider_id}` | Delete an unused dynamic provider (root access required) |
-| `POST` | `/api/oauth/{provider}/authorize` | Mint a consent URL (optional `connection_id` or `connection_id_prefix`) |
-| `GET` | `/api/oauth/{provider}/callback` | Provider redirect target |
+| `GET` | `/api/admin/providers` | List fixed templates and accessible dynamic provider configurations when management is enabled |
+| `PUT` | `/api/admin/providers/{provider_path}` | Create or replace an accessible dynamic provider |
+| `PATCH` | `/api/admin/providers/{provider_path}` | Update, disable, or re-enable an accessible dynamic provider |
+| `DELETE` | `/api/admin/providers/{provider_path}` | Delete an accessible, unused dynamic provider |
+| `POST` | `/api/oauth/authorize/{provider_path}` | Mint a consent URL (optional `connection_id` or `connection_id_prefix`) |
+| `GET` | `/api/oauth/callback/{provider_path}` | Provider redirect target |
+| `GET` | `/api/oauth/client-metadata/{provider_path}` | Public OAuth client metadata for compatible MCP authorization servers |
 | `GET` | `/api/oauth/connections` | List connections (`?provider=` and `?connection_id_prefix=` optional) |
 | `GET` | `/api/oauth/connections/{connection_id}` | Get one connection (never tokens) |
 | `GET` | `/api/oauth/tokens/{connection_id}` | A token valid *right now* |
@@ -208,21 +209,25 @@ explicit id is minted below `acme/`. Explicit ids and prefixes must also belong
 to `acme`.
 Stats and broker-token admin routes remain deployment-wide. Secret and dynamic
 provider routes are also available below `/api/organization/{organization}`.
-Provider callbacks deliberately
-remain global at `/api/oauth/{provider}/callback`, so a shared provider
-application needs only one registered redirect URI. Organization-scoped flows
+Provider callbacks deliberately remain global at
+`/api/oauth/callback/{provider_path}`. Organization-scoped flows
 carry an authenticated, encrypted storage-partition key in OAuth `state`; the
 corresponding hashed database record keeps callback completion single-use.
 Postgres persists the organization separately on both authorization state and
 connection rows; the connection-id prefix remains a defense-in-depth namespace
 boundary rather than the sole tenant identifier.
 
-Organization connection paths are opaque slash-delimited identifiers, not
-filesystem paths. They are limited to 512 characters and must use NFC Unicode
-with non-empty segments. Hookfish rejects dot segments, backslashes, control
-and bidirectional formatting characters, and encoded values that decode into
-path structure. This keeps the first segment an unambiguous organization
-boundary across clients, proxies, and URLs.
+Connection and provider paths share one opaque slash-delimited resource
+namespace; they are not filesystem paths. A credential scoped to
+`team/payments/**` can create, manage, and use provider configurations and
+connections below that path, but cannot reach a root or sibling provider.
+Fixed providers remain visible through the management API as templates; using
+their root paths still requires root scope. Because MCP provider creation may
+perform outbound discovery or client registration, only issue scoped
+credentials to principals trusted to configure providers within their subtree.
+Paths are limited to 512 characters and must use NFC Unicode with non-empty
+segments. Hookfish rejects dot segments, backslashes, control and bidirectional
+formatting characters, and encoded values that decode into path structure.
 
 Swagger UI always lives at `/api`, with its document at `/api/openapi.json`.
 With `includeSwagger: true`, the document includes the complete server API.
@@ -235,7 +240,7 @@ Start a connection. Omit `connection_id` to have the broker mint one as
 `word-word-number` (e.g. `swift-orchid-4821`):
 
 ```sh
-curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
+curl -X POST http://127.0.0.1:5173/api/oauth/authorize/notion \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
   -d '{}'
@@ -265,7 +270,7 @@ Connection ids may contain `/` and span multiple path segments, such as
 `a/b-c/d`. Use the same complete id in the connection and token URLs.
 
 ```sh
-curl -X POST http://127.0.0.1:5173/api/oauth/notion/authorize \
+curl -X POST http://127.0.0.1:5173/api/oauth/authorize/notion \
   -H "Authorization: Bearer $BROKER_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"connection_id":"team/swift-orchid-4821"}'

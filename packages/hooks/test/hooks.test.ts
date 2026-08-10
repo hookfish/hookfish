@@ -117,7 +117,7 @@ describe('createHookfishHooks', () => {
     expect(result.connection_id).toBe('swift-orchid-4821')
     expect(requests[0]?.method).toBe('POST')
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/oauth/github/authorize',
+      'https://broker.example/api/oauth/authorize/github',
     )
     await expect(requests[0]?.json()).resolves.toEqual({
       connection_id: 'swift-orchid-4821',
@@ -156,12 +156,13 @@ describe('createHookfishHooks', () => {
         search: 'notion',
         limit: 25,
         source: 'dynamic',
+        include_unconfigured: true,
       }),
     )
 
     expect(data).toEqual({ providers: [] })
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/oauth/providers?search=notion&limit=25&source=dynamic',
+      'https://broker.example/api/oauth/providers?search=notion&limit=25&source=dynamic&include_unconfigured=true',
     )
     expect(
       hookfish.keys.providerSearch({ search: 'notion', limit: 25 }),

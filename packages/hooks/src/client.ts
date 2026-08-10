@@ -1,7 +1,7 @@
 import type { AppType } from '@hookfish/api'
 import {
-  hc,
   type ClientRequestOptions,
+  hc,
   type InferRequestType,
   type InferResponseType,
 } from 'hono/client'
@@ -31,13 +31,14 @@ type ConnectionsEndpoint = HookfishClient['oauth']['connections']['$get']
 type ConnectionEndpoint =
   HookfishClient['oauth']['connections'][':connection_id{.+}']['$get']
 type AuthorizeEndpoint =
-  HookfishClient['oauth'][':provider']['authorize']['$post']
+  HookfishClient['oauth']['authorize'][':provider_path{.+}']['$post']
 type DisconnectEndpoint =
   HookfishClient['oauth']['connections'][':connection_id{.+}']['$delete']
 
 export type StatsResponse = InferResponseType<StatsEndpoint, 200>
 export type ProvidersResponse = InferResponseType<ProvidersEndpoint, 200>
 export type ProvidersFilter = {
+  include_unconfigured?: boolean
   search?: string
   limit?: number
   source?: 'fixed' | 'dynamic'
@@ -57,5 +58,5 @@ export type ConnectionsFilter = InferRequestType<ConnectionsEndpoint>['query']
 type AuthorizeRequest = InferRequestType<AuthorizeEndpoint>
 
 export type AuthorizeConnectionInput = AuthorizeRequest['json'] & {
-  provider: AuthorizeRequest['param']['provider']
+  provider: AuthorizeRequest['param']['provider_path']
 }
