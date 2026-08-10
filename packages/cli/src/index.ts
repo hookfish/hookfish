@@ -99,6 +99,7 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
 
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
+    FRONTEND_HOST: process.env.FRONTEND_HOST ?? frontendHostname,
     FRONTEND_PORT: String(frontendPort),
     PORT: String(backendPort),
     HOOKFISH_BACKEND_URL:
