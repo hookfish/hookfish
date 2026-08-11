@@ -14,23 +14,22 @@ For development, run:
 
 ```bash
 pnpm --filter @hookfish/inspector dev
-# https://inspector.localhost
+# http://localhost:3000
 ```
 
-This uses Portless with HTTPS and treats `PORTLESS_URL` as the canonical public
-origin for OAuth redirects and trusted return URLs. Portless requires Node.js
-24 or newer. Use `dev:direct` to run Vite directly without the HTTPS proxy.
+This runs Vite directly on loopback. Use `INSPECTOR_HOST` and `INSPECTOR_PORT`
+to override its bind address and port.
 
 ```bash
 npx hookfish inspect
 # alias: npx hookfish inspector
-# https://inspector.localhost
+# http://localhost:3000
 ```
 
-The packaged CLI starts Portless automatically. If another process owns
-`inspector.localhost`, it receives `SIGTERM` before the inspector takes over
-the route. Set `HOOKFISH_INSPECTOR_URL` only when intentionally running the
-packaged server behind a different proxy or direct origin.
+The packaged CLI starts the server directly on loopback. Set `INSPECTOR_PORT`
+to choose another port, or set `HOOKFISH_INSPECTOR_URL` when intentionally
+running it behind a proxy with a different public origin. In Conductor, the CLI
+uses the third allocated workspace port automatically.
 
 The published CLI bundles the production app, so it does not require a
 Hookfish checkout or pnpm workspace. It stores PGlite data in

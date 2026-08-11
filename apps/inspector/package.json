@@ -7,8 +7,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "portless --force inspector pnpm run dev:direct",
-    "dev:direct": "vite dev --host ${INSPECTOR_HOST:-${HOST:-127.0.0.1}} --port ${INSPECTOR_PORT:-${PORT:-3000}} --strictPort",
+    "dev": "vite dev --host ${INSPECTOR_HOST:-${HOST:-127.0.0.1}} --port ${INSPECTOR_PORT:-${PORT:-3000}} --strictPort",
     "generate-routes": "tsr generate",
     "build": "vite build && node scripts/copy-migrations.mjs dist/server/drizzle",
     "build:cli": "INSPECTOR_OUT_DIR=../../packages/cli/dist/inspector vite build && node scripts/copy-migrations.mjs ../../packages/cli/dist/inspector/server/drizzle",
@@ -32,7 +31,6 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "portless": "^0.15.5",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0"
