@@ -16,11 +16,13 @@ import {
   waitForElicitation,
 } from './elicitation.server'
 import { handleHookfishRequest } from './hookfish.server'
+import type { InspectorFeatures } from './inspector-features'
 
 type ConnectionInput = {
   url: string
   connectionId?: string
   actionId?: string
+  features: InspectorFeatures
 }
 
 type ConnectedClient = {
@@ -112,7 +114,8 @@ function clientOptions(accessToken?: string) {
   }
 }
 
-function createClient(actionId?: string) {
+function createClient(input: ConnectionInput) {
+  const actionId = input.features.elicitation ? input.actionId : undefined
   const client = new Client(
     { name: 'hookfish-mcp-inspector', version: '0.0.0' },
     {
@@ -188,7 +191,7 @@ async function connect(
 ): Promise<ConnectedClient> {
   const url = new URL(input.url)
   const token = await accessToken(origin, input.connectionId)
-  const streamableClient = createClient(input.actionId)
+  const streamableClient = createClient(input)
 
   try {
     await streamableClient.connect(
@@ -203,7 +206,7 @@ async function connect(
         `Authentication required. Use ${action} to authorize this Streamable HTTP server with Hookfish.`,
       )
     }
-    const sseClient = createClient(input.actionId)
+    const sseClient = createClient(input)
     try {
       await sseClient.connect(new SSEClientTransport(url, clientOptions(token)))
       return { client: sseClient, transport: 'HTTP + SSE' }
@@ -275,10 +278,16 @@ export async function inspectServer(input: ConnectionInput, origin: string) {
   return withClient(input, origin, async ({ client, transport }) => {
     const capabilities = client.getServerCapabilities() ?? {}
     const [tools, resources, resourceTemplates, prompts] = await Promise.all([
-      capabilities.tools ? listAllTools(client) : [],
-      capabilities.resources ? listAllResources(client) : [],
-      capabilities.resources ? listAllResourceTemplates(client) : [],
-      capabilities.prompts ? listAllPrompts(client) : [],
+      input.features.tools && capabilities.tools ? listAllTools(client) : [],
+      input.features.resources && capabilities.resources
+        ? listAllResources(client)
+        : [],
+      input.features.resources && capabilities.resources
+        ? listAllResourceTemplates(client)
+        : [],
+      input.features.prompts && capabilities.prompts
+        ? listAllPrompts(client)
+        : [],
     ])
 
     return {
@@ -304,30 +313,40 @@ export async function executeTool(
   },
   origin: string,
 ) {
-  return withElicitation(input.actionId, () =>
+  if (!input.features.tools) throw new Error('Tools are disabled.')
+  const operation = () =>
     withClient(input, origin, async ({ client }) => {
       await client.listTools()
-      return withUrlElicitation(input.actionId, () =>
+      const callTool = () =>
         client.callTool(
           { name: input.name, arguments: input.arguments },
           interactiveRequestOptions,
-        ),
-      )
-    }),
-  )
+        )
+      return input.features.elicitation
+        ? withUrlElicitation(input.actionId, callTool)
+        : callTool()
+    })
+  return input.features.elicitation
+    ? withElicitation(input.actionId, operation)
+    : operation()
 }
 
 export async function readResource(
   input: ConnectionInput & { actionId: string; uri: string },
   origin: string,
 ) {
-  return withElicitation(input.actionId, () =>
-    withClient(input, origin, ({ client }) =>
-      withUrlElicitation(input.actionId, () =>
-        client.readResource({ uri: input.uri }, interactiveRequestOptions),
-      ),
-    ),
-  )
+  if (!input.features.resources) throw new Error('Resources are disabled.')
+  const operation = () =>
+    withClient(input, origin, ({ client }) => {
+      const read = () =>
+        client.readResource({ uri: input.uri }, interactiveRequestOptions)
+      return input.features.elicitation
+        ? withUrlElicitation(input.actionId, read)
+        : read()
+    })
+  return input.features.elicitation
+    ? withElicitation(input.actionId, operation)
+    : operation()
 }
 
 export async function renderPrompt(
@@ -338,16 +357,21 @@ export async function renderPrompt(
   },
   origin: string,
 ) {
-  return withElicitation(input.actionId, () =>
-    withClient(input, origin, ({ client }) =>
-      withUrlElicitation(input.actionId, () =>
+  if (!input.features.prompts) throw new Error('Prompts are disabled.')
+  const operation = () =>
+    withClient(input, origin, ({ client }) => {
+      const getPrompt = () =>
         client.getPrompt(
           { name: input.name, arguments: input.arguments },
           interactiveRequestOptions,
-        ),
-      ),
-    ),
-  )
+        )
+      return input.features.elicitation
+        ? withUrlElicitation(input.actionId, getPrompt)
+        : getPrompt()
+    })
+  return input.features.elicitation
+    ? withElicitation(input.actionId, operation)
+    : operation()
 }
 
 export async function authorizeServer(

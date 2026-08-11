@@ -8,6 +8,10 @@ import {
   waitForElicitationUpdate,
 } from './elicitation.server'
 import {
+  defaultInspectorFeatures,
+  inspectorFeaturesSchema,
+} from './inspector-features'
+import {
   authorizeServer,
   executeTool,
   inspectServer,
@@ -24,6 +28,7 @@ const httpUrl = z.url().refine((value) => {
 const connectionInput = z.object({
   url: httpUrl,
   connectionId: z.string().min(1).optional(),
+  features: inspectorFeaturesSchema.default(defaultInspectorFeatures),
 })
 
 const interactiveConnectionInput = connectionInput.extend({
