@@ -32,8 +32,8 @@ jobs:
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
 
-      - name: Update npm for trusted publishing
-        run: npm install --global npm@latest
+      - name: Install npm for trusted publishing
+        run: npm install --global npm@11.19.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -79,8 +79,8 @@ jobs:
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
 
-      - name: Update npm for trusted publishing
-        run: npm install --global npm@latest
+      - name: Install npm for trusted publishing
+        run: npm install --global npm@11.19.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
