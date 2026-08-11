@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
+  defaultInspectorFeatures,
+  type InspectorFeatures,
+  inspectorFeaturesSchema,
+} from '../lib/inspector-features'
+import {
   authorizeMcpServer,
   beginMcpElicitation,
   executeMcpTool,
@@ -19,6 +24,7 @@ const serverSchema = z.object({
   name: z.string(),
   url: z.url(),
   connectionId: z.string().optional(),
+  features: inspectorFeaturesSchema.optional(),
 })
 const serversSchema = z.array(serverSchema)
 const jsonObjectSchema = z.record(z.string(), z.unknown())
@@ -36,6 +42,15 @@ const tabs: Array<{ id: InspectorTab; label: string }> = [
   { id: 'resources', label: 'Resources' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'server', label: 'Server' },
+]
+const featureControls: Array<{
+  id: keyof InspectorFeatures
+  label: string
+}> = [
+  { id: 'tools', label: 'Tools' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'prompts', label: 'Prompts' },
+  { id: 'elicitation', label: 'Elicitation' },
 ]
 
 function errorMessage(error: unknown) {
@@ -229,7 +244,15 @@ function defaultName(url: string) {
 }
 
 function serverInput(server: SavedServer) {
-  return { url: server.url, connectionId: server.connectionId }
+  return {
+    url: server.url,
+    connectionId: server.connectionId,
+    features: server.features ?? defaultInspectorFeatures,
+  }
+}
+
+function serverFeatures(server: SavedServer) {
+  return server.features ?? defaultInspectorFeatures
 }
 
 function Count({ children }: { children: number }) {
@@ -312,10 +335,17 @@ export function McpInspector() {
         ? query.serverId
         : hydrated[0]?.id) ||
       null
+    const selectedServer = hydrated.find((server) => server.id === nextId)
+    const nextTab =
+      query.tab !== 'server' &&
+      selectedServer &&
+      !serverFeatures(selectedServer)[query.tab]
+        ? 'server'
+        : query.tab
     setServers(hydrated)
     setSelectedId(nextId)
-    setTab(query.tab)
-    updateQuery(nextId, query.tab)
+    setTab(nextTab)
+    updateQuery(nextId, nextTab)
   }, [])
 
   useEffect(() => {
@@ -340,11 +370,36 @@ export function McpInspector() {
     }
   }
 
+  function setFeature(feature: keyof InspectorFeatures, enabled: boolean) {
+    if (!selected) return
+    const nextServer = {
+      ...selected,
+      features: { ...serverFeatures(selected), [feature]: enabled },
+    }
+    const nextServers = servers.map((server) =>
+      server.id === nextServer.id ? nextServer : server,
+    )
+    setServers(nextServers)
+    saveServers(nextServers)
+    if (!enabled && tab === feature) {
+      setTab('server')
+      updateQuery(selected.id, 'server')
+    }
+    setOutput(null)
+    void inspect(nextServer)
+  }
+
   function chooseServer(id: string) {
+    const server = servers.find((item) => item.id === id)
+    const nextTab =
+      tab !== 'server' && server && !serverFeatures(server)[tab]
+        ? 'server'
+        : tab
     setOauthCallbackError(null)
     setSelectedId(id)
+    setTab(nextTab)
     setOutput(null)
-    updateQuery(id, tab)
+    updateQuery(id, nextTab)
   }
 
   function chooseTab(nextTab: InspectorTab) {
@@ -417,6 +472,9 @@ export function McpInspector() {
     options: { errorPresentation?: 'global' | 'inline' } = {},
   ): Promise<ActionResult> {
     const actionId = crypto.randomUUID()
+    const elicitationEnabled = selected
+      ? serverFeatures(selected).elicitation
+      : false
     setBusy(true)
     setError(null)
     setOutput(null)
@@ -437,8 +495,10 @@ export function McpInspector() {
       }
     }
     try {
-      await beginMcpElicitation({ data: { actionId } })
-      watching = watch()
+      if (elicitationEnabled) {
+        await beginMcpElicitation({ data: { actionId } })
+        watching = watch()
+      }
       const value = await action(actionId)
       const toolError = toolResultErrorMessage(value)
       if (toolError) {
@@ -458,11 +518,13 @@ export function McpInspector() {
       }
       return { ok: false, message }
     } finally {
-      try {
-        await finishMcpElicitation({ data: { actionId } })
-        await watching
-      } catch {
-        // The action result is the primary error. Lifecycle cleanup is best-effort.
+      if (elicitationEnabled) {
+        try {
+          await finishMcpElicitation({ data: { actionId } })
+          await watching
+        } catch {
+          // The action result is the primary error. Lifecycle cleanup is best-effort.
+        }
       }
       setElicitation((current) =>
         current?.actionId === actionId ? null : current,
@@ -711,6 +773,45 @@ export function McpInspector() {
                     ))}
                   </dl>
                 ) : null}
+
+                <fieldset className="mt-8 border-t border-stone-300 pt-5 dark:border-stone-700">
+                  <legend className="font-mono text-[10px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">
+                    Feature controls
+                  </legend>
+                  <p className="mt-2 max-w-[70ch] text-xs leading-5 text-stone-500 dark:text-stone-400">
+                    Disabled server features are not discovered or called.
+                    Disabling elicitation also removes it from the client’s
+                    advertised capabilities. Changes reconnect immediately.
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-px border border-stone-300 bg-stone-300 sm:grid-cols-4 dark:border-stone-700 dark:bg-stone-700">
+                    {featureControls.map((feature) => {
+                      const enabled = serverFeatures(selected)[feature.id]
+                      return (
+                        <label
+                          key={feature.id}
+                          className="flex min-h-14 cursor-pointer items-center justify-between gap-3 bg-stone-50 px-3 dark:bg-stone-950"
+                        >
+                          <span className="text-xs font-semibold">
+                            {feature.label}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setFeature(feature.id, event.target.checked)
+                            }
+                            className="peer sr-only"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="relative h-5 w-9 shrink-0 border border-stone-400 bg-stone-200 after:absolute after:left-0.5 after:top-0.5 after:h-3.5 after:w-3.5 after:bg-stone-600 after:transition-transform peer-checked:border-[#C8102E] peer-checked:bg-[#C8102E]/15 peer-checked:after:translate-x-4 peer-checked:after:bg-[#C8102E] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#C8102E] peer-disabled:cursor-wait peer-disabled:opacity-50 dark:border-stone-600 dark:bg-stone-800"
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                </fieldset>
               </section>
 
               <div aria-live="polite" aria-atomic="true">
@@ -739,6 +840,8 @@ export function McpInspector() {
                   className="flex overflow-x-auto"
                 >
                   {tabs.map((item) => {
+                    const enabled =
+                      item.id === 'server' || serverFeatures(selected)[item.id]
                     const count = snapshot
                       ? item.id === 'tools'
                         ? snapshot.tools.length
@@ -753,8 +856,9 @@ export function McpInspector() {
                       <button
                         key={item.id}
                         type="button"
+                        disabled={!enabled}
                         onClick={() => chooseTab(item.id)}
-                        className={`flex min-h-14 shrink-0 items-center gap-3 border-b-2 px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#C8102E] ${
+                        className={`flex min-h-14 shrink-0 items-center gap-3 border-b-2 px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#C8102E] disabled:cursor-not-allowed disabled:opacity-40 ${
                           tab === item.id
                             ? 'border-[#C8102E] text-stone-950 dark:text-stone-50'
                             : 'border-transparent text-stone-500 hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-50'

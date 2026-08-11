@@ -42,6 +42,11 @@ URL completion notifications and manual retry. Hookfish handles OAuth discovery,
 PKCE, dynamic client registration, encrypted token persistence, refresh, and
 server-side token access.
 
+Each saved server also has client feature switches for tools, resources, prompts,
+and elicitation. Disabling a server feature stops the inspector from discovering
+or calling it; disabling elicitation removes it from the capabilities advertised
+by the MCP client.
+
 Build the production app with:
 
 ```bash
