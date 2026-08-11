@@ -1,6 +1,14 @@
 {
   "name": "@hookfish/provider-linear",
   "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamath/hookfish.git",
+    "directory": "packages/providers/linear"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "files": [
     "src"

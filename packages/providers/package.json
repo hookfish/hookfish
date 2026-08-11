@@ -1,6 +1,14 @@
 {
   "name": "@hookfish/providers",
   "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamath/hookfish.git",
+    "directory": "packages/providers"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "files": [
     "src"

@@ -540,7 +540,7 @@ providers you want in the root `hookfish.config.ts`:
 ```sh
 pnpm add @hookfish/api @hookfish/database @hookfish/provider \
   @hookfish/provider-github @hookfish/provider-notion @acme/provider-slack
-pnpm add --save-dev @hookfish/cli
+pnpm add --save-dev hookfish
 ```
 
 ```ts

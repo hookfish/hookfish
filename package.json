@@ -1,5 +1,5 @@
 {
-  "name": "hookfish",
+  "name": "hookfish-monorepo",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -19,13 +19,17 @@
     "cf-typecheck": "turbo cf-typecheck",
     "db:studio": "pnpm --filter @hookfish/api db:studio",
     "cli": "node ./packages/cli/bin/hookfish.mjs",
-    "migrate": "node ./packages/cli/bin/hookfish.mjs migrate"
+    "migrate": "node ./packages/cli/bin/hookfish.mjs migrate",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@changesets/cli": "^3.0.0",
     "@hookfish/api": "workspace:*",
     "@hookfish/backend": "workspace:*",
-    "@hookfish/cli": "workspace:*",
+    "hookfish": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/provider": "workspace:*",
     "@hookfish/providers": "workspace:*",
