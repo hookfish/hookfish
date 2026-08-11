@@ -16,6 +16,7 @@ export type ScaffoldOptions = {
   name: string
   backend: ScaffoldBackend
   parentDirectory?: string
+  dependencyTag?: string
 }
 
 export type ScaffoldResult = {
@@ -23,15 +24,25 @@ export type ScaffoldResult = {
   files: string[]
 }
 
-const commonDependencies = {
-  '@hookfish/api': 'latest',
-  '@hookfish/database': 'latest',
-  '@hookfish/providers': 'latest',
+function commonDependencies(dependencyTag: string): Record<string, string> {
+  return {
+    '@hookfish/api': dependencyTag,
+    '@hookfish/database': dependencyTag,
+    '@hookfish/providers': dependencyTag,
+  }
 }
 
-const commonDevDependencies = {
-  hookfish: 'latest',
-  typescript: '~5.9.3',
+function commonDevDependencies(dependencyTag: string): Record<string, string> {
+  return {
+    hookfish: dependencyTag,
+    typescript: '~5.9.3',
+  }
+}
+
+export function dependencyTagForVersion(version: string): string {
+  return (
+    version.match(/^\d+\.\d+\.\d+-([a-z][a-z\d]*)(?:[.-]|$)/i)?.[1] ?? 'latest'
+  )
 }
 
 const gitignore = `node_modules
@@ -283,13 +294,14 @@ export default {
 function packageJson(
   name: string,
   backend: ScaffoldBackend,
+  dependencyTag: string,
 ): Record<string, unknown> {
   const scripts: Record<string, string> = {
     dev: `concurrently --kill-others-on-fail "npm:dev:server" "hookfish serve --backend-url http://127.0.0.1:\${HOOKFISH_BACKEND_PORT:-$(( \${CONDUCTOR_PORT:-8786} + 1 ))}"`,
     typecheck: 'tsc --noEmit',
   }
-  const dependencies: Record<string, string> = { ...commonDependencies }
-  const devDependencies: Record<string, string> = { ...commonDevDependencies }
+  const dependencies = commonDependencies(dependencyTag)
+  const devDependencies = commonDevDependencies(dependencyTag)
   devDependencies.concurrently = '^9.2.1'
 
   const backendPort = `\${HOOKFISH_BACKEND_PORT:-$(( \${CONDUCTOR_PORT:-8786} + 1 ))}`
@@ -407,12 +419,16 @@ ${production}
 function backendFiles(
   name: string,
   backend: ScaffoldBackend,
+  dependencyTag: string,
 ): Record<string, string> {
   const files: Record<string, string> = {
     '.gitignore': gitignore,
     'README.md': readme(name, backend),
     'hookfish.project.json': projectManifest(backend),
-    'package.json': `${JSON.stringify(packageJson(name, backend), null, 2)}\n`,
+    'package.json': `${JSON.stringify(packageJson(name, backend, dependencyTag), null, 2)}\n`,
+    'pnpm-workspace.yaml': `allowBuilds:
+  esbuild: true
+`,
   }
 
   if (backend === 'cloudflare') {
@@ -529,7 +545,11 @@ export function scaffoldProject(options: ScaffoldOptions): ScaffoldResult {
     throw new Error(`Target directory is not empty: ${directory}`)
   }
 
-  const files = backendFiles(options.name, options.backend)
+  const files = backendFiles(
+    options.name,
+    options.backend,
+    options.dependencyTag ?? 'latest',
+  )
   mkdirSync(directory, { recursive: true })
   for (const [relativePath, contents] of Object.entries(files)) {
     const destination = path.join(directory, relativePath)

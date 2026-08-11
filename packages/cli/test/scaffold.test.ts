@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  dependencyTagForVersion,
+  type ScaffoldBackend,
   scaffoldBackends,
   scaffoldProject,
-  type ScaffoldBackend,
 } from '../src/scaffold'
 
 const directories: string[] = []
@@ -25,6 +26,7 @@ function temporaryDirectory(): string {
 function packageFile(directory: string): {
   scripts: Record<string, string>
   dependencies: Record<string, string>
+  devDependencies: Record<string, string>
 } {
   return JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'))
 }
@@ -36,6 +38,12 @@ afterEach(() => {
 })
 
 describe('scaffoldProject', () => {
+  it('uses the prerelease channel for prerelease CLI versions', () => {
+    expect(dependencyTagForVersion('0.8.0-canary-62cbef6')).toBe('canary')
+    expect(dependencyTagForVersion('0.8.0-beta.2')).toBe('beta')
+    expect(dependencyTagForVersion('0.8.0')).toBe('latest')
+  })
+
   it.each(
     scaffoldBackends,
   )('creates a %s project that runs hookfish serve', (backend) => {
@@ -60,6 +68,9 @@ describe('scaffoldProject', () => {
     expect(packageJson.scripts['dev:server']).not.toContain('hookfish serve')
     expect(packageJson.dependencies['@hookfish/api']).toBe('latest')
     expect(
+      readFileSync(path.join(result.directory, 'pnpm-workspace.yaml'), 'utf8'),
+    ).toContain('esbuild: true')
+    expect(
       readFileSync(path.join(result.directory, 'README.md'), 'utf8'),
     ).toContain(`**${backend}**`)
     if (backend === 'vercel') {
@@ -79,6 +90,22 @@ describe('scaffoldProject', () => {
     )
     expect(environment).toMatch(/OAUTH_ENCRYPTION_KEY=.+/)
     expect(environment).toContain('BROKER_API_KEY=test')
+  })
+
+  it('keeps all Hookfish dependencies on the requested release channel', () => {
+    const parentDirectory = temporaryDirectory()
+    const { directory } = scaffoldProject({
+      name: 'broker-canary',
+      backend: 'node',
+      dependencyTag: 'canary',
+      parentDirectory,
+    })
+    const packageJson = packageFile(directory)
+
+    expect(packageJson.dependencies['@hookfish/api']).toBe('canary')
+    expect(packageJson.dependencies['@hookfish/database']).toBe('canary')
+    expect(packageJson.dependencies['@hookfish/providers']).toBe('canary')
+    expect(packageJson.devDependencies.hookfish).toBe('canary')
   })
 
   it('loads the generated environment in the native Node server', () => {

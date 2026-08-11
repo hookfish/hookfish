@@ -16,12 +16,27 @@ import { Command, Option } from 'commander'
 import { serve } from 'srvx'
 import { serveStatic } from 'srvx/static'
 import {
+  dependencyTagForVersion,
   isScaffoldBackend,
+  type ScaffoldBackend,
   scaffoldBackends,
   scaffoldProject,
-  type ScaffoldBackend,
 } from './scaffold.js'
 import { proxyBackendRequest } from './serve.js'
+
+function packageVersion(): string {
+  const manifest: unknown = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  )
+  if (!manifest || typeof manifest !== 'object') {
+    throw new Error('The Hookfish package manifest must contain an object.')
+  }
+  const version = Reflect.get(manifest, 'version')
+  if (typeof version !== 'string') {
+    throw new Error('The Hookfish package manifest must contain a version.')
+  }
+  return version
+}
 
 /**
  * Resolve the project root from the caller's cwd first so `npx hookfish`
@@ -665,7 +680,11 @@ program
         )
       }
 
-      const result = scaffoldProject({ name, backend })
+      const result = scaffoldProject({
+        name,
+        backend,
+        dependencyTag: dependencyTagForVersion(packageVersion()),
+      })
       process.stdout.write(
         `Created ${name} with the ${backend} backend at ${result.directory}\n`,
       )
