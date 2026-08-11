@@ -412,9 +412,16 @@ export function McpInspector() {
             <span className="h-3 w-3 bg-[#C8102E]" aria-hidden="true" />
             <h1 className="text-xl font-light tracking-tight">MCP Inspector</h1>
           </div>
-          <p className="col-span-4 text-right font-mono text-[10px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400 lg:col-span-8">
-            Powered by Hookfish
-          </p>
+          <div className="col-span-4 text-right font-mono text-[10px] uppercase tracking-[0.18em] lg:col-span-8">
+            <a
+              href="https://github.com/kamath/hookfish"
+              target="_blank"
+              rel="noreferrer"
+              className="text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-950 dark:text-stone-400 dark:decoration-stone-700 dark:hover:text-stone-50"
+            >
+              Star on GitHub
+            </a>
+          </div>
         </div>
       </header>
 
@@ -623,7 +630,7 @@ export function McpInspector() {
                         onClick={() => void connectWithHookfish()}
                         className="min-h-11 shrink-0 bg-[#C8102E] px-4 text-sm font-semibold text-white hover:bg-[#a90d26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] disabled:cursor-wait disabled:opacity-50"
                       >
-                        Authorize with Hookfish
+                        Authorize
                       </button>
                     ) : null}
                   </div>
