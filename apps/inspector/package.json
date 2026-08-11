@@ -1,0 +1,38 @@
+{
+  "name": "@hookfish/inspector",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev --host ${INSPECTOR_HOST:-${HOST:-127.0.0.1}} --port ${INSPECTOR_PORT:-${PORT:-3000}} --strictPort",
+    "generate-routes": "tsr generate",
+    "build": "vite build && node scripts/copy-migrations.mjs dist/server/drizzle",
+    "build:cli": "INSPECTOR_OUT_DIR=../../packages/cli/dist/inspector vite build && node scripts/copy-migrations.mjs ../../packages/cli/dist/inspector/server/drizzle",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@hookfish/api": "workspace:*",
+    "@hookfish/database": "workspace:*",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0"
+  }
+}

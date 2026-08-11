@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { clearLine, cursorTo } from 'node:readline'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Command, Option } from 'commander'
+import { serve } from 'srvx'
+import { serveStatic } from 'srvx/static'
 
 /**
  * Resolve the project root from the caller's cwd first so `npx hookfish`
@@ -73,6 +76,72 @@ function parsePort(value: string | undefined): number | undefined {
 
 function followingPort(port: number | undefined): number | undefined {
   return port && port < 65_534 ? port + 1 : undefined
+}
+
+function offsetPort(
+  port: number | undefined,
+  offset: number,
+): number | undefined {
+  if (!port) return undefined
+  const offsetPort = port + offset
+  return offsetPort < 65_535 ? offsetPort : undefined
+}
+
+function browserHostname(hostname: string): string {
+  if (hostname === '0.0.0.0' || hostname === '::') return 'localhost'
+  return hostname.includes(':') ? `[${hostname}]` : hostname
+}
+
+type InspectorServerEntry = {
+  default: {
+    fetch: (request: Request) => Response | Promise<Response>
+  }
+}
+
+function isInspectorServerEntry(value: unknown): value is InspectorServerEntry {
+  if (!value || typeof value !== 'object') return false
+  const entry = Reflect.get(value, 'default')
+  return (
+    Boolean(entry) &&
+    typeof entry === 'object' &&
+    typeof Reflect.get(entry, 'fetch') === 'function'
+  )
+}
+
+async function startInspector(
+  hostname: string,
+  port: number,
+  origin: string,
+): Promise<void> {
+  const inspectorDirectory = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'inspector',
+  )
+  const serverEntry = path.join(inspectorDirectory, 'server', 'server.js')
+  if (!existsSync(serverEntry)) {
+    throw new Error(
+      'The packaged inspector is missing. Reinstall hookfish and try again.',
+    )
+  }
+
+  process.env.PGLITE_DATA_DIR ??= path.join(homedir(), '.hookfish', 'inspector')
+  process.env.HOOKFISH_FRONTEND_URL ??= origin
+  process.env.OAUTH_REDIRECT_BASE_URL ??= origin
+
+  const entry: unknown = await import(pathToFileURL(serverEntry).href)
+  if (!isInspectorServerEntry(entry)) {
+    throw new Error('The packaged inspector server entry is invalid.')
+  }
+  const server = serve({
+    manual: true,
+    silent: true,
+    hostname,
+    port,
+    middleware: [serveStatic({ dir: path.join(inspectorDirectory, 'client') })],
+    fetch: (request) => entry.default.fetch(request),
+  })
+  await server.serve()
+  process.stdout.write(`Hookfish MCP Inspector running at ${origin}\n`)
 }
 
 function loadDevelopmentEnvironment(): void {
@@ -201,6 +270,27 @@ program
         HOOKFISH_OPEN: options.open ? 'true' : 'false',
       }),
     )
+  })
+
+program
+  .command('inspect')
+  .alias('inspector')
+  .description('Run the inspector')
+  .action(async () => {
+    const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
+    const requestedPort = parsePort(process.env.PORT)
+    const inspectorHostname = allocatedPort ? 'localhost' : '127.0.0.1'
+    const inspectorHost = process.env.INSPECTOR_HOST ?? inspectorHostname
+    const inspectorPort =
+      parsePort(process.env.INSPECTOR_PORT) ??
+      offsetPort(allocatedPort, 2) ??
+      requestedPort ??
+      3000
+    const inspectorOrigin =
+      process.env.HOOKFISH_INSPECTOR_URL ??
+      `http://${browserHostname(inspectorHost)}:${inspectorPort}`
+
+    await startInspector(inspectorHost, inspectorPort, inspectorOrigin)
   })
 
 program
