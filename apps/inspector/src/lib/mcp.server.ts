@@ -262,7 +262,10 @@ export async function authorizeServer(
   input: { url: string; label: string },
   origin: string,
 ) {
-  const hash = createHash('sha256').update(input.url).digest('hex').slice(0, 16)
+  const hash = createHash('sha256')
+    .update(`${origin}\0${input.url}`)
+    .digest('hex')
+    .slice(0, 16)
   const providerId = `inspector-${hash}`
   const providerPath = `/api/admin/providers/${providerId}`
   const existing = await handleHookfishRequest(
