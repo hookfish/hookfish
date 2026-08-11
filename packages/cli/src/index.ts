@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { Command, Option } from 'commander'
 
 /**
- * Resolve the project root from the caller's cwd first so `npx @hookfish/cli`
+ * Resolve the project root from the caller's cwd first so `npx hookfish`
  * works when the package lives in the npm cache / node_modules. Fall back to
  * walking from this file for local monorepo checkouts.
  */

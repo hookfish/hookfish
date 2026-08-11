@@ -1,7 +1,15 @@
 {
-  "name": "@hookfish/cli",
-  "version": "0.0.0",
+  "name": "hookfish",
+  "version": "0.6.0",
   "description": "CLI for Hookfish",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamath/dynamic-scopes.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "hookfish": "./bin/hookfish.mjs"
