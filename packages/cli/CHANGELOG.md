@@ -1,5 +1,27 @@
 # hookfish
 
+## 0.8.0
+
+### Minor Changes
+
+- ecb9904: Add `hookfish init` scaffolds for Vercel, Cloudflare Durable Objects, Node.js,
+  Bun, and Docker, plus a standalone `hookfish serve` development dashboard that
+  accepts `--backend-url`. Generated `dev:server` scripts run their platform-native
+  development server, while `dev` composes that server with the Hookfish dashboard.
+  The dashboard proxy preserves OAuth callback redirects so the browser returns to
+  the frontend route after authorization. Dashboard authorization stays in the
+  same tab so its session-scoped broker credential survives the OAuth round trip.
+  Scaffolds generate a gitignored local environment with an encryption key, and
+  native Node development loads that file before starting the broker.
+  Publish the generic database contract and Durable Object adapter used by the
+  Cloudflare scaffold.
+- e62a4cc: Bundle the MCP inspector with the CLI so `npx hookfish inspect` and `npx hookfish inspector` start at `https://inspector.localhost` through Portless, fully stop an existing inspector before taking over its route and PGlite database, and use correct OAuth callbacks. Localhost OAuth clients now use dynamic registration so remote authorization servers can validate the inspector callback. The CLI now requires Node.js 24 or newer to match Portless.
+
+### Patch Changes
+
+- Updated dependencies [ecb9904]
+  - @hookfish/database@0.2.0
+
 ## 0.7.1
 
 ### Patch Changes
