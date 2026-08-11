@@ -4,6 +4,7 @@ A portable OAuth and encrypted-secret broker with a static React dashboard and F
 backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
+- `apps/inspector` — TanStack Start inspector for remote MCP servers
 - `packages/backend` — browser-safe facade plus raw Hookfish API composition
 - `packages/api` — shared Hono API and OAuth broker
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
@@ -33,6 +34,12 @@ pnpm dev
 pnpm dev --no-open
 pnpm dev --backend cloudflare-worker
 ```
+
+Start the standalone inspector with `npx hookfish inspect`. The `inspector`
+command is an alias. In this repository, `pnpm cli inspect` runs the same
+packaged server. It mounts the raw API at `/api` and the browser client facade
+at `/api/client`, backed by PGlite in `~/.hookfish/inspector` by default.
+`HOOKFISH_API_KEY` defaults to `test` when unset or empty.
 
 `hookfish dev` delegates to `turbo dev` filtered to the frontend and the selected
 backend. Choose `hono-node` (the default), `express`, `nextjs`, or

@@ -22,13 +22,20 @@
     ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter @hookfish/inspector build:cli",
     "typecheck": "tsc -b --noEmit",
     "start": "node ./bin/hookfish.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@hookfish/database": "workspace:*",
-    "commander": "^14.0.3"
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@tanstack/react-router": "^1.170.25",
+    "commander": "^14.0.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "srvx": "^0.11.22",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.12.3",

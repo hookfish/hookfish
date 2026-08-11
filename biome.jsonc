@@ -13,6 +13,7 @@
       "**",
       "!!**/dist",
       "!!apps/frontend/src/routeTree.gen.ts",
+      "!!apps/inspector/src/routeTree.gen.ts",
       "!!**/worker-configuration.d.ts"
     ]
   },
