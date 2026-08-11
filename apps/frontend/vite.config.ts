@@ -10,6 +10,10 @@ const backendUrl =
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    emptyOutDir: Boolean(process.env.FRONTEND_OUT_DIR),
+    outDir: process.env.FRONTEND_OUT_DIR ?? 'dist',
+  },
   plugins: [
     tanstackRouter({
       target: 'react',
