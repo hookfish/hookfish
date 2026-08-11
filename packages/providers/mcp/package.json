@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kamath/dynamic-scopes.git",
+    "url": "https://github.com/kamath/hookfish.git",
     "directory": "packages/providers/mcp"
   },
   "publishConfig": {

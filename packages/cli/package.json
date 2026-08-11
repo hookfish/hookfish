@@ -4,7 +4,7 @@
   "description": "CLI for Hookfish",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kamath/dynamic-scopes.git",
+    "url": "https://github.com/kamath/hookfish.git",
     "directory": "packages/cli"
   },
   "publishConfig": {
