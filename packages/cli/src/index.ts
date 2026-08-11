@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Command, Option } from 'commander'
 import { serve } from 'srvx'
 import { serveStatic } from 'srvx/static'
+import { inspectorServerConfig } from './inspector-server.js'
 import {
   dependencyTagForVersion,
   isScaffoldBackend,
@@ -115,43 +116,6 @@ async function exitWith(code: number): Promise<never> {
   process.exit(code)
 }
 
-function portlessCliEntry(): string {
-  const portlessModule = fileURLToPath(import.meta.resolve('portless'))
-  const entry = path.join(path.dirname(portlessModule), 'cli.js')
-  if (!existsSync(entry)) {
-    throw new Error('The bundled Portless CLI is missing. Reinstall hookfish.')
-  }
-  return entry
-}
-
-async function startInspectorWithPortless(): Promise<never> {
-  const nodeMajor = Number.parseInt(process.versions.node, 10)
-  if (nodeMajor < 24) {
-    throw new Error(
-      'The Hookfish inspector requires Node.js 24 or newer to run with Portless.',
-    )
-  }
-
-  const environment = {
-    ...process.env,
-    HOOKFISH_INSPECTOR_PORTLESS_CHILD: '1',
-  }
-  const code = await run(
-    process.execPath,
-    [
-      portlessCliEntry(),
-      '--force',
-      'inspector',
-      process.execPath,
-      fileURLToPath(import.meta.url),
-      'inspect',
-    ],
-    environment,
-    process.cwd(),
-  )
-  return exitWith(code)
-}
-
 function parsePort(value: string | undefined): number | undefined {
   if (!value) return undefined
   const port = Number(value)
@@ -160,15 +124,6 @@ function parsePort(value: string | undefined): number | undefined {
 
 function followingPort(port: number | undefined): number | undefined {
   return port && port < 65_534 ? port + 1 : undefined
-}
-
-function offsetPort(
-  port: number | undefined,
-  offset: number,
-): number | undefined {
-  if (!port) return undefined
-  const offsetPort = port + offset
-  return offsetPort < 65_535 ? offsetPort : undefined
 }
 
 function browserHostname(hostname: string): string {
@@ -417,7 +372,7 @@ async function stopLockedInspector(lock: InspectorProcessLock) {
     )
     accepted = response.status === 202
   } catch {
-    // The old Portless wrapper may already have stopped the process.
+    // A proxy wrapper may already have stopped the process.
   }
 
   if (await waitForProcessExit(lock.pid, accepted ? 2_000 : 500)) return
@@ -756,34 +711,8 @@ program
   .alias('inspector')
   .description('Run the inspector')
   .action(async () => {
-    const isPortlessChild =
-      process.env.HOOKFISH_INSPECTOR_PORTLESS_CHILD === '1'
-    const configuredOrigin = process.env.HOOKFISH_INSPECTOR_URL?.trim()
-    const portlessOrigin = process.env.PORTLESS_URL?.trim()
-    if (!isPortlessChild && !configuredOrigin && !portlessOrigin) {
-      return startInspectorWithPortless()
-    }
-
-    const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
-    const requestedPort = parsePort(process.env.PORT)
-    const inspectorHostname = portlessOrigin
-      ? (process.env.HOST ?? '127.0.0.1')
-      : allocatedPort
-        ? 'localhost'
-        : '127.0.0.1'
-    const inspectorHost = process.env.INSPECTOR_HOST ?? inspectorHostname
-    const inspectorPort =
-      parsePort(process.env.INSPECTOR_PORT) ??
-      (portlessOrigin
-        ? (requestedPort ?? offsetPort(allocatedPort, 2))
-        : (offsetPort(allocatedPort, 2) ?? requestedPort)) ??
-      3000
-    const inspectorOrigin =
-      configuredOrigin ??
-      portlessOrigin ??
-      `http://${browserHostname(inspectorHost)}:${inspectorPort}`
-
-    await startInspector(inspectorHost, inspectorPort, inspectorOrigin)
+    const inspector = inspectorServerConfig()
+    await startInspector(inspector.host, inspector.port, inspector.origin)
   })
 
 program
