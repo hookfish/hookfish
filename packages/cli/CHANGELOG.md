@@ -1,5 +1,11 @@
 # hookfish
 
+## 0.8.3
+
+### Patch Changes
+
+- 24c9d86: Fix Cloudflare scaffold dashboard requests by keeping the frontend origin consistent and removing stale compression headers from proxied Wrangler responses.
+
 ## 0.8.2
 
 ### Patch Changes
