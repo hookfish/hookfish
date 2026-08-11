@@ -22,7 +22,10 @@ describe('proxyBackendRequest', () => {
 
     const response = await proxyBackendRequest(request, target)
 
-    expect(response).toBe(redirect)
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:5173/connections',
+    )
     expect(fetchMock).toHaveBeenCalledOnce()
     const [proxiedRequest, init] = fetchMock.mock.calls[0]
     expect(proxiedRequest).toBeInstanceOf(Request)
@@ -31,5 +34,26 @@ describe('proxyBackendRequest', () => {
     }
     expect(proxiedRequest.url).toBe(target.toString())
     expect(init).toEqual({ redirect: 'manual' })
+  })
+
+  it('removes stale compression headers from decoded backend responses', async () => {
+    const backendResponse = new Response('{"connections":[]}', {
+      headers: {
+        'content-encoding': 'gzip',
+        'content-length': '38',
+        'content-type': 'application/json',
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(backendResponse)
+
+    const response = await proxyBackendRequest(
+      new Request('http://localhost:5173/api/client/oauth/connections'),
+      new URL('http://127.0.0.1:8787/api/client/oauth/connections'),
+    )
+
+    expect(response.headers.get('content-encoding')).toBeNull()
+    expect(response.headers.get('content-length')).toBeNull()
+    expect(response.headers.get('content-type')).toBe('application/json')
+    await expect(response.json()).resolves.toEqual({ connections: [] })
   })
 })

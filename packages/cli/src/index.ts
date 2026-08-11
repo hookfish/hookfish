@@ -23,7 +23,7 @@ import {
   scaffoldBackends,
   scaffoldProject,
 } from './scaffold.js'
-import { proxyBackendRequest } from './serve.js'
+import { defaultFrontendHostname, proxyBackendRequest } from './serve.js'
 
 function packageVersion(): string {
   const manifest: unknown = JSON.parse(
@@ -196,7 +196,7 @@ async function runScaffoldedProject(
 
   const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
   const requestedPort = parsePort(process.env.PORT)
-  const frontendHostname = allocatedPort ? 'localhost' : '127.0.0.1'
+  const frontendHostname = defaultFrontendHostname
   const frontendHost = process.env.FRONTEND_HOST ?? frontendHostname
   const frontendPort =
     parsePort(process.env.FRONTEND_PORT) ??

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { defaultFrontendHostname } from './serve.js'
 
 export const scaffoldBackends = [
   'vercel',
@@ -305,7 +306,7 @@ function packageJson(
   devDependencies.concurrently = '^9.2.1'
 
   const backendPort = `\${HOOKFISH_BACKEND_PORT:-$(( \${CONDUCTOR_PORT:-8786} + 1 ))}`
-  const frontendOrigin = `\${HOOKFISH_FRONTEND_URL:-http://localhost:\${FRONTEND_PORT:-\${CONDUCTOR_PORT:-5173}}}`
+  const frontendOrigin = `\${HOOKFISH_FRONTEND_URL:-http://${defaultFrontendHostname}:\${FRONTEND_PORT:-\${CONDUCTOR_PORT:-5173}}}`
   const serverEnvironment = `HOOKFISH_FRONTEND_URL=${frontendOrigin} OAUTH_REDIRECT_BASE_URL=\${OAUTH_REDIRECT_BASE_URL:-${frontendOrigin}}`
 
   switch (backend) {
