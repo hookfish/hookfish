@@ -3,9 +3,7 @@ import {
   type OAuthProvider,
   type ProviderRegistry,
 } from '@hookfish/provider'
-import { and, asc, eq, ilike, or } from 'drizzle-orm'
-import type { Database, OAuthProviderRecord } from '../db/schema'
-import { oauthProviders } from '../db/schema'
+import type { Database, OAuthProviderRecord } from '../db/types'
 import { getVaultSecret, organizationKey } from '../vault'
 import { type ProviderConfig, resolveProviderConfig } from './config'
 import { BrokerError } from './errors'
@@ -48,28 +46,16 @@ export async function findDynamicProvider(
   providerId: string,
   organization?: string,
 ): Promise<OAuthProviderRecord | undefined> {
-  const [record] = await db
-    .select()
-    .from(oauthProviders)
-    .where(
-      and(
-        eq(oauthProviders.organization, organizationKey(organization)),
-        eq(oauthProviders.providerId, providerId),
-      ),
-    )
-    .limit(1)
-  return record
+  return db.getOAuthProvider(organizationKey(organization), providerId)
 }
 
 export async function listDynamicProviders(
   db: Database,
   organization?: string,
 ): Promise<OAuthProviderRecord[]> {
-  return db
-    .select()
-    .from(oauthProviders)
-    .where(eq(oauthProviders.organization, organizationKey(organization)))
-    .orderBy(asc(oauthProviders.providerId))
+  return db.listOAuthProviders({
+    organization: organizationKey(organization),
+  })
 }
 
 async function instantiateDynamicProvider(
@@ -218,28 +204,14 @@ export async function listProviderDescriptors(
     }))
   let dynamicRecords: OAuthProviderRecord[] = []
   if (filter.source !== 'fixed') {
-    const conditions = [
-      eq(oauthProviders.organization, organizationKey(organization)),
-    ]
-    if (search) {
-      const pattern = `%${search}%`
-      conditions.push(
-        or(
-          ilike(oauthProviders.providerId, pattern),
-          ilike(oauthProviders.label, pattern),
-          ilike(oauthProviders.templateId, pattern),
-        )!,
-      )
-    }
-    const query = db
-      .select()
-      .from(oauthProviders)
-      .where(and(...conditions))
-      .orderBy(asc(oauthProviders.providerId))
-    dynamicRecords =
-      filter.limit && filter.configured === undefined
-        ? await query.limit(filter.limit)
-        : await query
+    dynamicRecords = await db.listOAuthProviders({
+      organization: organizationKey(organization),
+      search,
+      limit:
+        filter.limit && filter.configured === undefined
+          ? filter.limit
+          : undefined,
+    })
   }
   const dynamic = await Promise.all(
     dynamicRecords.map(async (record): Promise<ProviderDescriptor> => {

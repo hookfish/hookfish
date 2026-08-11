@@ -25,6 +25,10 @@
     "./postgres": {
       "types": "./src/postgres.ts",
       "default": "./src/postgres.ts"
+    },
+    "./durable-object": {
+      "types": "./src/durable-object.ts",
+      "default": "./src/durable-object.ts"
     }
   },
   "scripts": {
@@ -38,6 +42,7 @@
     "postgres": "^3.4.7"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260528.1",
     "@types/node": "^24.12.3",
     "typescript": "~5.9.3"
   }

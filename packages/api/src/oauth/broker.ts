@@ -6,15 +6,8 @@ import {
   ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import {
-  type Database,
-  type OAuthConnection,
-  type OAuthState,
-  oauthConnections,
-  oauthStates,
-} from '../db/schema'
+import type { Database, OAuthConnection, OAuthState } from '../db/types'
 import { generateConnectionId } from './connection-id'
 import {
   decryptSecret,
@@ -31,24 +24,6 @@ const STATE_TTL_MS = 10 * 60 * 1000
 
 /** Refresh a little early so a token can't expire mid-flight downstream. */
 const REFRESH_LEEWAY_MS = 60 * 1000
-
-function organizationFilter(organization: string | undefined) {
-  if (!organization) return isNull(oauthConnections.organization)
-
-  // Organization routing originally encoded tenancy only in connection_id.
-  // Continue recognizing those rows so enabling explicit storage context is a
-  // non-breaking migration; the next reconnect adopts the organization column.
-  return or(
-    eq(oauthConnections.organization, organization),
-    and(
-      isNull(oauthConnections.organization),
-      or(
-        eq(oauthConnections.connectionId, organization),
-        sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${organization}/`})`,
-      ),
-    ),
-  )
-}
 
 function storedErrorStatus(status: number | null): ContentfulStatusCode {
   switch (status) {
@@ -205,14 +180,14 @@ export async function startAuthorization(
     }),
   )
 
-  await db.insert(oauthStates).values({
+  await db.createOAuthState({
     id: stateHash,
     connectionId,
-    organization: input.organization,
+    organization: input.organization ?? null,
     provider: input.provider,
     codeVerifier: authorization.codeVerifier ?? null,
     redirectUri: input.redirectUri,
-    returnTo: input.returnTo,
+    returnTo: input.returnTo ?? null,
     scopes,
     expiresAt,
   })
@@ -313,30 +288,13 @@ export async function completeAuthorization(
   replayed: boolean
 }> {
   const stateHash = await hashToken(input.state)
-  const stateIds = or(
-    eq(oauthStates.id, stateHash),
-    // Accept an authorization started immediately before the state-hashing
-    // rollout. New states are never persisted in plaintext.
-    eq(oauthStates.id, input.state),
-  )
-  const [pending] = await db
-    .update(oauthStates)
-    .set({ status: 'processing' })
-    .where(
-      and(
-        stateIds,
-        eq(oauthStates.provider, input.provider),
-        eq(oauthStates.status, 'pending'),
-      ),
-    )
-    .returning()
+  // Accept an authorization started immediately before the state-hashing
+  // rollout. New states are never persisted in plaintext.
+  const stateIds = [stateHash, input.state]
+  const pending = await db.claimOAuthState(stateIds, input.provider)
 
   if (!pending) {
-    const [existing] = await db
-      .select()
-      .from(oauthStates)
-      .where(and(stateIds, eq(oauthStates.provider, input.provider)))
-      .limit(1)
+    const existing = await db.getOAuthState(stateIds, input.provider)
 
     if (!existing) {
       throw new BrokerError(
@@ -411,31 +369,12 @@ export async function completeAuthorization(
     )
     const fields = await toStoredFields(env, response, pending.scopes)
 
-    const [connection] = await db
-      .insert(oauthConnections)
-      .values({
-        organization: pending.organization,
-        connectionId: pending.connectionId,
-        provider: input.provider,
-        ...fields,
-      })
-      .onConflictDoUpdate({
-        target: oauthConnections.connectionId,
-        set: {
-          ...fields,
-          organization: pending.organization,
-          updatedAt: new Date(),
-        },
-        // Reconnecting the same link upserts; a different provider must not take
-        // the id over. Enforced in the statement itself, so two callbacks racing
-        // past the checks above can't rebind it either -- the loser updates no
-        // rows and returns nothing.
-        setWhere: and(
-          eq(oauthConnections.provider, input.provider),
-          organizationFilter(pending.organization ?? undefined),
-        ),
-      })
-      .returning()
+    const connection = await db.upsertOAuthConnection({
+      organization: pending.organization,
+      connectionId: pending.connectionId,
+      provider: input.provider,
+      ...fields,
+    })
 
     if (!connection) {
       throw new BrokerError(
@@ -445,11 +384,10 @@ export async function completeAuthorization(
       )
     }
 
-    const [completed] = await db
-      .update(oauthStates)
-      .set({ status: 'completed', completedAt: new Date() })
-      .where(eq(oauthStates.id, pending.id))
-      .returning()
+    const completed = await db.updateOAuthState(pending.id, {
+      status: 'completed',
+      completedAt: new Date(),
+    })
 
     return { connection, state: completed ?? pending, replayed: false }
   } catch (error) {
@@ -468,16 +406,13 @@ async function markAuthorizationFailed(
       ? error
       : new BrokerError(500, 'internal_error', 'Unexpected broker error.')
 
-  await db
-    .update(oauthStates)
-    .set({
-      status: 'failed',
-      errorStatus: brokerError.status,
-      errorCode: brokerError.code,
-      errorMessage: brokerError.message,
-      completedAt: new Date(),
-    })
-    .where(eq(oauthStates.id, stateId))
+  await db.updateOAuthState(stateId, {
+    status: 'failed',
+    errorStatus: brokerError.status,
+    errorCode: brokerError.code,
+    errorMessage: brokerError.message,
+    completedAt: new Date(),
+  })
 }
 
 export async function failAuthorization(
@@ -490,35 +425,21 @@ export async function failAuthorization(
   },
 ): Promise<{ state: OAuthState; replayed: boolean }> {
   const stateHash = await hashToken(input.state)
-  const stateIds = or(
-    eq(oauthStates.id, stateHash),
-    eq(oauthStates.id, input.state),
-  )
-  const [failed] = await db
-    .update(oauthStates)
-    .set({
-      status: 'failed',
-      errorStatus: 400,
-      errorCode: input.errorCode,
-      errorMessage: input.errorMessage,
-      completedAt: new Date(),
-    })
-    .where(
-      and(
-        stateIds,
-        eq(oauthStates.provider, input.provider),
-        eq(oauthStates.status, 'pending'),
-      ),
-    )
-    .returning()
+  const stateIds = [stateHash, input.state]
+  const pending = await db.claimOAuthState(stateIds, input.provider)
+  const failed = pending
+    ? await db.updateOAuthState(pending.id, {
+        status: 'failed',
+        errorStatus: 400,
+        errorCode: input.errorCode,
+        errorMessage: input.errorMessage,
+        completedAt: new Date(),
+      })
+    : undefined
 
   if (failed) return { state: failed, replayed: false }
 
-  const [existing] = await db
-    .select()
-    .from(oauthStates)
-    .where(and(stateIds, eq(oauthStates.provider, input.provider)))
-    .limit(1)
+  const existing = await db.getOAuthState(stateIds, input.provider)
 
   if (!existing) {
     throw new BrokerError(
@@ -545,18 +466,7 @@ export async function getAuthorizationState(
   state: string,
 ): Promise<OAuthState | undefined> {
   const stateHash = await hashToken(state)
-  const [authorization] = await db
-    .select()
-    .from(oauthStates)
-    .where(
-      and(
-        or(eq(oauthStates.id, stateHash), eq(oauthStates.id, state)),
-        eq(oauthStates.provider, provider),
-      ),
-    )
-    .limit(1)
-
-  return authorization
+  return db.getOAuthState([stateHash, state], provider)
 }
 
 // ---------------------------------------------------------------------------
@@ -606,13 +516,9 @@ async function refreshConnection(
     refreshToken,
   )
 
-  const [updated] = await db
-    .update(oauthConnections)
-    .set({ ...fields, updatedAt: new Date() })
-    .where(eq(oauthConnections.id, connection.id))
-    .returning()
+  const updated = await db.updateOAuthConnectionTokens(connection.id, fields)
 
-  return updated
+  return updated ?? connection
 }
 
 function isExpired(connection: OAuthConnection): boolean {
@@ -626,18 +532,7 @@ export async function findConnection(
   connectionId: string,
   organization?: string,
 ): Promise<OAuthConnection | undefined> {
-  const [connection] = await db
-    .select()
-    .from(oauthConnections)
-    .where(
-      and(
-        eq(oauthConnections.connectionId, connectionId),
-        organizationFilter(organization),
-      ),
-    )
-    .limit(1)
-
-  return connection
+  return db.getOAuthConnection(connectionId, organization)
 }
 
 export async function getConnection(
@@ -709,48 +604,7 @@ export async function listConnections(
     organization?: string
   } = {},
 ) {
-  const providerFilter = options.provider
-    ? eq(oauthConnections.provider, options.provider)
-    : undefined
-  const prefixFilter = options.connectionIdPrefix
-    ? options.connectionIdPrefix.endsWith('/')
-      ? sql<boolean>`starts_with(${oauthConnections.connectionId}, ${options.connectionIdPrefix})`
-      : or(
-          eq(oauthConnections.connectionId, options.connectionIdPrefix),
-          sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${options.connectionIdPrefix}/`})`,
-        )
-    : undefined
-  const scopeFilter = options.connectionScopes?.includes('**')
-    ? undefined
-    : options.connectionScopes?.length
-      ? or(
-          ...options.connectionScopes.map((scope) => {
-            const root = scope.endsWith('/**') ? scope.slice(0, -3) : scope
-            return or(
-              eq(oauthConnections.connectionId, root),
-              sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${root}/`})`,
-            )
-          }),
-        )
-      : options.connectionScopes
-        ? sql<boolean>`false`
-        : undefined
-  const tenantFilter = organizationFilter(options.organization)
-
-  return db
-    .select({
-      connectionId: oauthConnections.connectionId,
-      provider: oauthConnections.provider,
-      scopes: oauthConnections.scopes,
-      expiresAt: oauthConnections.expiresAt,
-      externalAccountId: oauthConnections.externalAccountId,
-      externalAccountLabel: oauthConnections.externalAccountLabel,
-      metadata: oauthConnections.metadata,
-      createdAt: oauthConnections.createdAt,
-      updatedAt: oauthConnections.updatedAt,
-    })
-    .from(oauthConnections)
-    .where(and(tenantFilter, providerFilter, prefixFilter, scopeFilter))
+  return db.listOAuthConnections(options)
 }
 
 export type DeleteConnectionResult = {
@@ -799,20 +653,12 @@ export async function deleteConnection(
     revocation = 'revoked'
   }
 
-  const deleted = await db
-    .delete(oauthConnections)
-    .where(eq(oauthConnections.id, connection.id))
-    .returning()
+  const deleted = await db.deleteOAuthConnection(connection.id)
 
-  return { deleted: deleted.length > 0, revocation }
+  return { deleted, revocation }
 }
 
 /** Housekeeping for abandoned flows. */
 export async function purgeExpiredStates(db: Database): Promise<number> {
-  const deleted = await db
-    .delete(oauthStates)
-    .where(lt(oauthStates.expiresAt, new Date()))
-    .returning()
-
-  return deleted.length
+  return db.purgeExpiredOAuthStates(new Date())
 }

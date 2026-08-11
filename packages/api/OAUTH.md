@@ -28,9 +28,10 @@ pnpm exec hookfish dev --backend hono-node
 The CLI runs `turbo dev` with exactly the static Vite frontend and selected
 backend. Available backends are `hono-node`, `express`, `nextjs`, and
 `cloudflare-worker`.
-The backend exposes raw Hookfish routes at `/api`, the browser facade at
-`/api/client`, and persists PGlite to `pgdata`. Node examples and local Wrangler
-read `apps/frontend/.env`; the frontend only receives `VITE_` variables.
+The backend exposes raw Hookfish routes at `/api` and the browser facade at
+`/api/client`. Node examples persist PGlite to `pgdata`; the Worker uses local
+Durable Object storage. Both read `apps/frontend/.env`; the frontend only
+receives `VITE_` variables.
 
 Then register the redirect URI in each provider's developer console. Ask the
 running broker for the exact string rather than guessing it—the host depends on
@@ -51,19 +52,19 @@ Each host initializes Hookfish and mounts its Fetch-compatible handler directly:
 | `pnpm exec hookfish dev --backend hono-node` | Vite SPA + Hono Node backend | `pgdata` |
 | `pnpm exec hookfish dev --backend express` | Vite SPA + Express backend | `pgdata` |
 | `pnpm exec hookfish dev --backend nextjs` | Vite SPA + Next.js backend | `pgdata` |
-| `pnpm exec hookfish dev --backend cloudflare-worker` | Vite SPA + Cloudflare Worker | Hyperdrive/Postgres |
+| `pnpm exec hookfish dev --backend cloudflare-worker` | Vite SPA + Cloudflare Worker | SQLite Durable Objects |
 | `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono backend | `pgdata` |
-| `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker backend | Hyperdrive/Postgres |
+| `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker backend | SQLite Durable Objects |
 
 Set `PGLITE_DATA_DIR` to move the embedded Node database. Providers, browser
 policy, and documentation visibility live in the root `hookfish.config.ts`.
 Node examples use its default database unchanged; the Worker replaces `db`
-with its Hyperdrive/Postgres binding.
+with its tenant-aware Durable Object binding.
 
 ### Configuring Hookfish
 
 The root config owns the default database, providers, and browser policy. A
-database may be a ready Drizzle database, a promise, or a request-aware binding:
+database may be a Hookfish `Database`, a promise, or a request-aware binding:
 
 ```ts
 // hookfish.config.ts
@@ -136,40 +137,33 @@ Hosts can replace the configured database without changing anything else:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
-import { postgres } from '@hookfish/database/postgres'
 import config from '../../../hookfish.config'
+import { durableObjects } from '@hookfish/database/durable-object'
 
-const db = postgres((env) => env.HYPERDRIVE.connectionString)
-const hookfish = await Hookfish.init({
+const db = durableObjects((env: Env, context) =>
+  env.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
+)
+const hookfish = await Hookfish.init<Env>({
   ...config,
   db,
 })
-
-export default {
-  fetch: (request, env, ctx) => hookfish.fetch(request, env, ctx),
-}
 ```
 
 `pglite()` initializes lazily and applies the bundled migrations once.
 `postgres()` accepts either a URL or a resolver called with the bindings passed
-to `Hookfish.fetch(request, bindings)`.
+to `Hookfish.fetch(request, bindings)`. `durableObjects()` resolves a typed RPC
+stub for the current request. On organization-scoped routes,
+`context.organization` is the validated organization path parameter, allowing
+one named object per organization and a reserved object for global routes.
 
-The Hyperdrive config resolves `env.HYPERDRIVE.connectionString` from the
-Wrangler-generated bindings. It disables client caching so each request
-gets its own Postgres.js client while Hyperdrive maintains the underlying pool.
-For another runtime, implement the same small binding contract with
-`defineDatabase((bindings, context) => database)`. On organization-scoped
-routes, `context.organization` is the validated organization path parameter.
-Shared Postgres adapters use it as row-level connection context; a partitioned
-adapter can use the same value to select an isolated store.
+The Durable Object adapter applies its SQLite schema lazily when each object
+starts. `pnpm migrate` continues to migrate the Node/PGlite database;
+`pnpm migrate --backend cloudflare-worker` reports that no eager migration is
+required.
 
-`pnpm migrate` runs migrations against the Node/PGlite database by default.
-Pass `--backend cloudflare-worker` to use a direct Postgres administrative URL.
-
-```sh
-HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@127.0.0.1:5432/postgres \
-  pnpm migrate --backend cloudflare-worker
-```
+Custom databases implement the exported `Database` persistence contract. Use
+`defineDatabase((bindings, context) => database)` when the implementation must
+resolve a request-time host binding or storage partition.
 
 ## Endpoints
 

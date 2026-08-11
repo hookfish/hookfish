@@ -1,4 +1,4 @@
-import type { Database } from './schema'
+import type { Database } from './types'
 
 export type MaybePromise<T> = T | Promise<T>
 
@@ -28,7 +28,7 @@ export interface DatabaseBinding<Bindings extends object = object> {
   migrate?(bindings: Bindings): MaybePromise<void>
 }
 
-/** A ready Drizzle database is also accepted for simple and embedded hosts. */
+/** A ready Hookfish database is also accepted for simple and embedded hosts. */
 export type DatabaseInput<Bindings extends object = object> =
   | Database
   | Promise<Database>

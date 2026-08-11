@@ -4,7 +4,7 @@ import {
   type DatabaseInput,
   resolveDatabase,
 } from '../db/binding'
-import type { Database } from '../db/schema'
+import type { Database } from '../db/types'
 import { type AccessGrant, authenticateAccessToken } from './access-token'
 import { requireBrokerApiKey, resolveBrokerConfig } from './config'
 import { safeEqual } from './crypto'
@@ -14,6 +14,7 @@ export type BrokerContext<Bindings extends object = object> = {
   Bindings: Bindings
   Variables: {
     db: Database
+    getAuthDatabase: () => Promise<Database>
     databaseContext: DatabaseContext
     accessGrant: AccessGrant
   }
@@ -33,7 +34,7 @@ type ResolveDatabaseContext<Bindings extends object> = (
  * Resolves the database for the request.
  *
  * The binding is supplied when Hookfish is constructed. It may be a ready
- * Drizzle database or a runtime-aware binding that resolves from `c.env`.
+ * Hookfish database or a runtime-aware binding that resolves from `c.env`.
  */
 export function withDatabase<Bindings extends object>(
   database: DatabaseInput<Bindings>,
@@ -42,7 +43,14 @@ export function withDatabase<Bindings extends object>(
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
     const context = await resolveContext(c.req, c.env)
     c.set('databaseContext', context)
-    c.set('db', await resolveDatabase(database, c.env, context))
+    const db = await resolveDatabase(database, c.env, context)
+    c.set('db', db)
+    c.set(
+      'getAuthDatabase',
+      context.organization
+        ? () => resolveDatabase(database, c.env, {})
+        : () => Promise.resolve(db),
+    )
     await next()
   })
 }
@@ -68,7 +76,11 @@ export function requireApiKey<Bindings extends object>() {
 
     const accessGrant: AccessGrant = safeEqual(presented, expected)
       ? { kind: 'root', scopes: ['**'] }
-      : await authenticateAccessToken(c.get('db'), expected, presented)
+      : await authenticateAccessToken(
+          await c.get('getAuthDatabase')(),
+          expected,
+          presented,
+        )
 
     c.set('accessGrant', accessGrant)
 

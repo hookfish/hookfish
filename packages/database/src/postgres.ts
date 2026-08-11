@@ -1,7 +1,9 @@
 import {
   brokerAccessTokens,
+  type Database,
   type DatabaseBinding,
   defineDatabase,
+  drizzleDatabase,
   oauthConnections,
   oauthProviders,
   oauthStates,
@@ -9,7 +11,6 @@ import {
 } from '@hookfish/api/database'
 import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgresClient from 'postgres'
 
@@ -20,8 +21,6 @@ const schema = {
   oauthStates,
   vaultSecrets,
 }
-type Schema = typeof schema
-
 export type PostgresConnection<Bindings extends object> =
   | string
   | ((bindings: Bindings) => string)
@@ -46,7 +45,7 @@ export function postgres<Bindings extends object = object>(
   connection: PostgresConnection<Bindings>,
   options: PostgresDatabaseOptions = {},
 ): DatabaseBinding<Bindings> {
-  const databases = new Map<string, PostgresJsDatabase<Schema>>()
+  const databases = new Map<string, Database>()
 
   const getConnectionString = (bindings: Bindings) => {
     const connectionString =
@@ -77,7 +76,8 @@ export function postgres<Bindings extends object = object>(
       if (existing) return existing
     }
 
-    const { database } = createDatabase(connectionString)
+    const { database: drizzleClient } = createDatabase(connectionString)
+    const database = drizzleDatabase(drizzleClient)
     if (options.cache !== false) databases.set(connectionString, database)
     return database
   }
