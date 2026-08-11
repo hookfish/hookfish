@@ -1,5 +1,11 @@
 # @hookfish/provider-notion
 
+## 0.1.1
+
+### Patch Changes
+
+- Republish packages with resolved workspace dependency versions.
+
 ## 0.1.0
 
 ### Minor Changes

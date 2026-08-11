@@ -1,5 +1,13 @@
 # hookfish
 
+## 0.7.1
+
+### Patch Changes
+
+- Republish packages with resolved workspace dependency versions.
+- Updated dependencies
+  - @hookfish/database@0.1.1
+
 ## 0.7.0
 
 ### Minor Changes
