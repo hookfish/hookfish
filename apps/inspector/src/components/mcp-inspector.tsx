@@ -2,11 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
   authorizeMcpServer,
+  beginMcpElicitation,
   executeMcpTool,
+  finishMcpElicitation,
+  type InspectorElicitation,
   type InspectorSnapshot,
   inspectMcpServer,
   readMcpResource,
   renderMcpPrompt,
+  respondToMcpElicitation,
+  waitForMcpElicitation,
 } from '../lib/inspector-functions'
 
 const serverSchema = z.object({
@@ -54,6 +59,22 @@ const omitSchemaValue = Symbol('omit-schema-value')
 function schemaRecord(value: unknown) {
   const parsed = jsonObjectSchema.safeParse(value)
   return parsed.success ? parsed.data : null
+}
+
+function toolResultErrorMessage(value: unknown) {
+  const result = schemaRecord(value)
+  if (result?.isError !== true) return null
+  const messages = Array.isArray(result.content)
+    ? result.content.flatMap((item) => {
+        const content = schemaRecord(item)
+        return content?.type === 'text' && typeof content.text === 'string'
+          ? [content.text]
+          : []
+      })
+    : []
+  return messages.length > 0
+    ? messages.join('\n')
+    : 'The tool returned an error.'
 }
 
 function localSchemaReference(root: unknown, reference: unknown) {
@@ -243,7 +264,12 @@ export function McpInspector() {
   )
   const [output, setOutput] = useState<{
     title: string
+    status: 'success' | 'error'
     value: unknown
+  } | null>(null)
+  const [elicitation, setElicitation] = useState<{
+    actionId: string
+    request: InspectorElicitation
   } | null>(null)
 
   const selected = useMemo(
@@ -385,15 +411,85 @@ export function McpInspector() {
     }
   }
 
-  async function runAction(title: string, action: () => Promise<unknown>) {
+  async function runAction(
+    title: string,
+    action: (actionId: string) => Promise<unknown>,
+    options: { errorPresentation?: 'global' | 'inline' } = {},
+  ): Promise<ActionResult> {
+    const actionId = crypto.randomUUID()
     setBusy(true)
     setError(null)
+    setOutput(null)
+    let watching: Promise<void> | null = null
+    const watch = async () => {
+      let lastRequestId: string | undefined
+      while (true) {
+        try {
+          const update = await waitForMcpElicitation({
+            data: { actionId, lastRequestId },
+          })
+          if (update.state === 'finished') return
+          lastRequestId = update.request.id
+          setElicitation({ actionId, request: update.request })
+        } catch {
+          return
+        }
+      }
+    }
     try {
-      setOutput({ title, value: await action() })
+      await beginMcpElicitation({ data: { actionId } })
+      watching = watch()
+      const value = await action(actionId)
+      const toolError = toolResultErrorMessage(value)
+      if (toolError) {
+        if (options.errorPresentation !== 'inline') {
+          setError('The tool returned an error. See the response.')
+          setOutput({ title, status: 'error', value })
+        }
+        return { ok: false, message: toolError }
+      }
+      setOutput({ title, status: 'success', value })
+      return { ok: true }
+    } catch (cause) {
+      const message = errorMessage(cause)
+      if (options.errorPresentation !== 'inline') {
+        setError(message)
+        setOutput({ title, status: 'error', value: { error: message } })
+      }
+      return { ok: false, message }
+    } finally {
+      try {
+        await finishMcpElicitation({ data: { actionId } })
+        await watching
+      } catch {
+        // The action result is the primary error. Lifecycle cleanup is best-effort.
+      }
+      setElicitation((current) =>
+        current?.actionId === actionId ? null : current,
+      )
+      setBusy(false)
+    }
+  }
+
+  async function respondToElicitation(result: {
+    action: 'accept' | 'decline' | 'cancel'
+    content?: Record<string, string | number | boolean | string[]>
+  }) {
+    if (!elicitation) return
+    try {
+      const response = await respondToMcpElicitation({
+        data: {
+          actionId: elicitation.actionId,
+          requestId: elicitation.request.id,
+          result,
+        },
+      })
+      if (!response.accepted) {
+        throw new Error('This elicitation is no longer pending.')
+      }
+      setElicitation(null)
     } catch (cause) {
       setError(errorMessage(cause))
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -709,10 +805,16 @@ export function McpInspector() {
       {output ? (
         <section
           aria-label="MCP response"
-          className="fixed inset-x-0 bottom-0 z-40 max-h-[55vh] overflow-auto border-t-2 border-[#C8102E] bg-stone-950 text-stone-100 shadow-[0_-16px_40px_rgba(0,0,0,0.18)]"
+          role={output.status === 'error' ? 'alert' : undefined}
+          className={`fixed inset-x-0 bottom-0 z-40 max-h-[55vh] overflow-auto border-t-2 bg-stone-950 text-stone-100 shadow-[0_-16px_40px_rgba(0,0,0,0.18)] ${
+            output.status === 'error' ? 'border-red-500' : 'border-[#C8102E]'
+          }`}
         >
           <div className="sticky top-0 flex min-h-14 items-center justify-between border-b border-stone-700 bg-stone-950 px-4 sm:px-6 lg:px-8">
-            <h2 className="text-sm font-semibold">{output.title}</h2>
+            <h2 className="text-sm font-semibold">
+              {output.title}
+              {output.status === 'error' ? ' · Error' : ''}
+            </h2>
             <button
               type="button"
               onClick={() => setOutput(null)}
@@ -728,6 +830,13 @@ export function McpInspector() {
           </pre>
         </section>
       ) : null}
+
+      {elicitation ? (
+        <ElicitationDialog
+          request={elicitation.request}
+          onRespond={respondToElicitation}
+        />
+      ) : null}
     </div>
   )
 }
@@ -735,7 +844,401 @@ export function McpInspector() {
 type ActionProps = {
   server: SavedServer
   busy: boolean
-  runAction: (title: string, action: () => Promise<unknown>) => Promise<void>
+  runAction: (
+    title: string,
+    action: (actionId: string) => Promise<unknown>,
+    options?: { errorPresentation?: 'global' | 'inline' },
+  ) => Promise<ActionResult>
+}
+
+type ActionResult = { ok: true } | { ok: false; message: string }
+
+type ElicitationValue = string | number | boolean | string[]
+
+function initialElicitationContent(request: InspectorElicitation) {
+  if (request.mode !== 'form') return {}
+  const schema = schemaRecord(request.requestedSchema)
+  const properties = schemaRecord(schema?.properties) ?? {}
+  const required = new Set(
+    Array.isArray(schema?.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === 'string',
+        )
+      : [],
+  )
+  const content: Record<string, ElicitationValue> = {}
+  for (const [name, value] of Object.entries(properties)) {
+    const property = schemaRecord(value)
+    if (!property) continue
+    if (
+      typeof property.default === 'string' ||
+      typeof property.default === 'number' ||
+      typeof property.default === 'boolean' ||
+      (Array.isArray(property.default) &&
+        property.default.every((item) => typeof item === 'string'))
+    ) {
+      content[name] = property.default
+    } else if (required.has(name) && property.type === 'boolean') {
+      content[name] = false
+    }
+  }
+  return content
+}
+
+function enumOptions(schema: Record<string, unknown>) {
+  if (Array.isArray(schema.enum)) {
+    const labels = Array.isArray(schema.enumNames) ? schema.enumNames : []
+    return schema.enum.flatMap((value, index) =>
+      typeof value === 'string'
+        ? [
+            {
+              value,
+              label: typeof labels[index] === 'string' ? labels[index] : value,
+            },
+          ]
+        : [],
+    )
+  }
+  if (Array.isArray(schema.oneOf)) {
+    return schema.oneOf.flatMap((value) => {
+      const option = schemaRecord(value)
+      return typeof option?.const === 'string'
+        ? [
+            {
+              value: option.const,
+              label:
+                typeof option.title === 'string' ? option.title : option.const,
+            },
+          ]
+        : []
+    })
+  }
+  return []
+}
+
+function arrayOptions(schema: Record<string, unknown>) {
+  const items = schemaRecord(schema.items)
+  if (!items) return []
+  if (Array.isArray(items.enum)) {
+    return items.enum.flatMap((value) =>
+      typeof value === 'string' ? [{ value, label: value }] : [],
+    )
+  }
+  if (Array.isArray(items.anyOf)) {
+    return items.anyOf.flatMap((value) => {
+      const option = schemaRecord(value)
+      return typeof option?.const === 'string'
+        ? [
+            {
+              value: option.const,
+              label:
+                typeof option.title === 'string' ? option.title : option.const,
+            },
+          ]
+        : []
+    })
+  }
+  return []
+}
+
+function ElicitationField({
+  name,
+  schema,
+  required,
+  value,
+  onChange,
+}: {
+  name: string
+  schema: Record<string, unknown>
+  required: boolean
+  value: ElicitationValue | undefined
+  onChange: (value: ElicitationValue | undefined) => void
+}) {
+  const label = typeof schema.title === 'string' ? schema.title : name
+  const description =
+    typeof schema.description === 'string' ? schema.description : null
+  const options = enumOptions(schema)
+  const choices = arrayOptions(schema)
+  const inputClass =
+    'mt-2 min-h-11 w-full border border-stone-500 bg-stone-50 px-3 text-sm text-stone-950 outline-none focus-visible:border-[#C8102E] focus-visible:ring-2 focus-visible:ring-[#C8102E]/30 dark:bg-stone-900 dark:text-stone-50'
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold" htmlFor={`elicit-${name}`}>
+        {label}
+        {required ? <span className="text-[#C8102E]"> *</span> : null}
+      </label>
+      {description ? (
+        <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">
+          {description}
+        </p>
+      ) : null}
+      {schema.type === 'boolean' ? (
+        <label className="mt-3 flex min-h-11 items-center gap-3 text-sm">
+          <input
+            id={`elicit-${name}`}
+            type="checkbox"
+            checked={value === true}
+            onChange={(event) => onChange(event.target.checked)}
+            className="h-4 w-4 accent-[#C8102E]"
+          />
+          Confirm
+        </label>
+      ) : schema.type === 'array' ? (
+        <select
+          id={`elicit-${name}`}
+          multiple
+          required={required}
+          value={Array.isArray(value) ? value : []}
+          onChange={(event) =>
+            onChange(
+              Array.from(
+                event.target.selectedOptions,
+                (option) => option.value,
+              ),
+            )
+          }
+          className={`${inputClass} min-h-28 py-2`}
+        >
+          {choices.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : options.length > 0 ? (
+        <select
+          id={`elicit-${name}`}
+          required={required}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(event) =>
+            onChange(event.target.value || (required ? '' : undefined))
+          }
+          className={inputClass}
+        >
+          <option value="">Select an option</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : schema.type === 'number' || schema.type === 'integer' ? (
+        <input
+          id={`elicit-${name}`}
+          type="number"
+          required={required}
+          min={typeof schema.minimum === 'number' ? schema.minimum : undefined}
+          max={typeof schema.maximum === 'number' ? schema.maximum : undefined}
+          step={schema.type === 'integer' ? 1 : 'any'}
+          value={typeof value === 'number' ? value : ''}
+          onChange={(event) =>
+            onChange(
+              event.target.value === ''
+                ? undefined
+                : Number(event.target.value),
+            )
+          }
+          className={inputClass}
+        />
+      ) : (
+        <input
+          id={`elicit-${name}`}
+          type={
+            schema.format === 'email'
+              ? 'email'
+              : schema.format === 'uri'
+                ? 'url'
+                : schema.format === 'date'
+                  ? 'date'
+                  : schema.format === 'date-time'
+                    ? 'datetime-local'
+                    : 'text'
+          }
+          required={required}
+          minLength={
+            typeof schema.minLength === 'number' ? schema.minLength : undefined
+          }
+          maxLength={
+            typeof schema.maxLength === 'number' ? schema.maxLength : undefined
+          }
+          value={typeof value === 'string' ? value : ''}
+          onChange={(event) =>
+            onChange(event.target.value || (required ? '' : undefined))
+          }
+          className={inputClass}
+        />
+      )}
+    </div>
+  )
+}
+
+function ElicitationDialog({
+  request,
+  onRespond,
+}: {
+  request: InspectorElicitation
+  onRespond: (result: {
+    action: 'accept' | 'decline' | 'cancel'
+    content?: Record<string, ElicitationValue>
+  }) => Promise<void>
+}) {
+  const [content, setContent] = useState<Record<string, ElicitationValue>>(() =>
+    initialElicitationContent(request),
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const schema =
+    request.mode === 'form' ? schemaRecord(request.requestedSchema) : null
+  const properties = schemaRecord(schema?.properties) ?? {}
+  const required = new Set(
+    Array.isArray(schema?.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === 'string',
+        )
+      : [],
+  )
+
+  useEffect(() => {
+    setContent(initialElicitationContent(request))
+    setSubmitting(false)
+  }, [request.id])
+
+  async function respond(result: {
+    action: 'accept' | 'decline' | 'cancel'
+    content?: Record<string, ElicitationValue>
+  }) {
+    setSubmitting(true)
+    try {
+      await onRespond(result)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto bg-stone-950/70 p-4">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="elicitation-title"
+        className="my-8 w-full max-w-xl border border-stone-400 bg-stone-50 text-stone-950 shadow-2xl dark:border-stone-700 dark:bg-stone-950 dark:text-stone-50"
+      >
+        <header className="flex items-start justify-between gap-6 border-b border-stone-300 px-5 py-5 sm:px-7 dark:border-stone-700">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#C8102E]">
+              MCP elicitation · {request.mode}
+            </p>
+            <h2
+              id="elicitation-title"
+              className="mt-2 text-xl font-light tracking-tight"
+            >
+              Input required
+            </h2>
+          </div>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => void respond({ action: 'cancel' })}
+            className="min-h-11 min-w-11 text-xl text-stone-500 hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-[#C8102E] disabled:opacity-50"
+            aria-label="Cancel elicitation"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="px-5 py-6 sm:px-7">
+          <p className="text-sm leading-6 text-stone-700 dark:text-stone-200">
+            {request.message}
+          </p>
+
+          {request.mode === 'url' ? (
+            <div className="mt-6">
+              <p className="break-all border-l-2 border-stone-300 pl-4 font-mono text-xs leading-5 text-stone-500 dark:border-stone-700 dark:text-stone-400">
+                {request.url}
+              </p>
+              <p className="mt-4 text-xs leading-5 text-stone-500 dark:text-stone-400">
+                Open the page in a new tab, complete the requested action, then
+                return here. The Inspector also continues automatically if the
+                server sends a completion notification.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <a
+                  href={request.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 items-center bg-[#C8102E] px-5 text-sm font-semibold text-white hover:bg-[#a90d26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E]"
+                >
+                  Open secure page ↗
+                </a>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void respond({ action: 'accept' })}
+                  className="min-h-11 border border-stone-400 px-5 text-sm font-semibold hover:border-[#C8102E] hover:text-[#C8102E] disabled:opacity-50 dark:border-stone-600"
+                >
+                  I’ve finished
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void respond({ action: 'decline' })}
+                  className="min-h-11 px-3 text-sm text-stone-500 hover:text-[#C8102E] disabled:opacity-50"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form
+              className="mt-6 space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void respond({ action: 'accept', content })
+              }}
+            >
+              {Object.entries(properties).map(([name, value]) => {
+                const property = schemaRecord(value)
+                return property ? (
+                  <ElicitationField
+                    key={name}
+                    name={name}
+                    schema={property}
+                    required={required.has(name)}
+                    value={content[name]}
+                    onChange={(nextValue) =>
+                      setContent((current) => {
+                        const next = { ...current }
+                        if (nextValue === undefined) delete next[name]
+                        else next[name] = nextValue
+                        return next
+                      })
+                    }
+                  />
+                ) : null
+              })}
+              <div className="flex flex-wrap gap-3 border-t border-stone-300 pt-5 dark:border-stone-700">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="min-h-11 bg-[#C8102E] px-5 text-sm font-semibold text-white hover:bg-[#a90d26] disabled:opacity-50"
+                >
+                  Submit
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void respond({ action: 'decline' })}
+                  className="min-h-11 border border-stone-400 px-5 text-sm font-semibold hover:border-[#C8102E] hover:text-[#C8102E] disabled:opacity-50 dark:border-stone-600"
+                >
+                  Decline
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+    </div>
+  )
 }
 
 function ToolsPanel({
@@ -773,6 +1276,7 @@ function ToolCard({
     initialArgumentsJson(tool.inputSchema),
   )
   const [parseError, setParseError] = useState<string | null>(null)
+  const [executionError, setExecutionError] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [executionOpen, setExecutionOpen] = useState(false)
   const detailsButtonRef = useRef<HTMLButtonElement>(null)
@@ -782,11 +1286,21 @@ function ToolCard({
     try {
       const args = parseObject(argumentsJson)
       setParseError(null)
-      await runAction(`Tool · ${tool.name}`, () =>
-        executeMcpTool({
-          data: { ...serverInput(server), name: tool.name, arguments: args },
-        }),
+      setExecutionError(null)
+      const result = await runAction(
+        `Tool · ${tool.name}`,
+        (actionId) =>
+          executeMcpTool({
+            data: {
+              ...serverInput(server),
+              actionId,
+              name: tool.name,
+              arguments: args,
+            },
+          }),
+        { errorPresentation: 'inline' },
       )
+      if (!result.ok) setExecutionError(result.message)
     } catch (cause) {
       setParseError(`Arguments must be a JSON object. ${errorMessage(cause)}`)
     }
@@ -873,13 +1387,29 @@ function ToolCard({
               id={`tool-${index}`}
               name={`tool-${tool.name}-arguments`}
               value={argumentsJson}
-              onChange={(event) => setArgumentsJson(event.target.value)}
+              onChange={(event) => {
+                setArgumentsJson(event.target.value)
+                setExecutionError(null)
+              }}
               spellCheck={false}
               rows={7}
               className="w-full resize-y border border-stone-400 bg-stone-50 p-3 font-mono text-xs leading-5 outline-none focus-visible:border-[#C8102E] focus-visible:ring-2 focus-visible:ring-[#C8102E]/30 dark:border-stone-600 dark:bg-stone-950"
             />
             {parseError ? (
               <p className="mt-2 text-xs text-[#C8102E]">{parseError}</p>
+            ) : null}
+            {executionError ? (
+              <div
+                role="alert"
+                className="mt-3 border-l-2 border-[#C8102E] bg-[#C8102E]/8 px-3 py-2"
+              >
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#C8102E]">
+                  Tool call failed
+                </p>
+                <p className="mt-1 break-words text-xs leading-5 text-[#9f0c24] dark:text-red-300">
+                  {executionError}
+                </p>
+              </div>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-3">
               <button
@@ -895,6 +1425,7 @@ function ToolCard({
                 onClick={() => {
                   setExecutionOpen(false)
                   setParseError(null)
+                  setExecutionError(null)
                 }}
                 className="min-h-11 border border-stone-400 px-5 text-sm font-semibold text-stone-700 hover:border-[#C8102E] hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] dark:border-stone-600 dark:text-stone-200"
               >
@@ -1166,10 +1697,16 @@ function ResourcesPanel({
                     type="button"
                     disabled={busy}
                     onClick={() =>
-                      void runAction(`Resource · ${resource.name}`, () =>
-                        readMcpResource({
-                          data: { ...serverInput(server), uri: resource.uri },
-                        }),
+                      void runAction(
+                        `Resource · ${resource.name}`,
+                        (actionId) =>
+                          readMcpResource({
+                            data: {
+                              ...serverInput(server),
+                              actionId,
+                              uri: resource.uri,
+                            },
+                          }),
                       )
                     }
                     className="min-h-11 border border-stone-400 px-4 text-sm font-semibold hover:border-[#C8102E] hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] disabled:opacity-50 dark:border-stone-600"
@@ -1224,8 +1761,10 @@ function ResourcesPanel({
                 type="button"
                 disabled={busy || !uri}
                 onClick={() =>
-                  void runAction('Resource', () =>
-                    readMcpResource({ data: { ...serverInput(server), uri } }),
+                  void runAction('Resource', (actionId) =>
+                    readMcpResource({
+                      data: { ...serverInput(server), actionId, uri },
+                    }),
                   )
                 }
                 className="mt-3 min-h-11 bg-[#C8102E] px-5 text-sm font-semibold text-white hover:bg-[#a90d26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] disabled:opacity-50"
@@ -1277,9 +1816,14 @@ function PromptCard({
     try {
       const args = parseStringObject(argumentsJson)
       setParseError(null)
-      await runAction(`Prompt · ${prompt.name}`, () =>
+      await runAction(`Prompt · ${prompt.name}`, (actionId) =>
         renderMcpPrompt({
-          data: { ...serverInput(server), name: prompt.name, arguments: args },
+          data: {
+            ...serverInput(server),
+            actionId,
+            name: prompt.name,
+            arguments: args,
+          },
         }),
       )
     } catch (cause) {
