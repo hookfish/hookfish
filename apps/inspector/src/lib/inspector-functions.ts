@@ -42,12 +42,19 @@ const serverInfo = z
   })
   .nullable()
 
-const tool = z.object({
-  name: z.string(),
-  title: z.string().optional(),
-  description: z.string().optional(),
-  inputSchema: jsonValue,
-})
+const tool = z
+  .object({
+    name: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    inputSchema: jsonValue,
+    outputSchema: jsonValue.optional(),
+    annotations: jsonValue.optional(),
+    execution: jsonValue.optional(),
+    icons: jsonValue.optional(),
+    _meta: jsonValue.optional(),
+  })
+  .catchall(jsonValue)
 
 const resource = z.object({
   uri: z.string(),

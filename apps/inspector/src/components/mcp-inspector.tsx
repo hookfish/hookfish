@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
   authorizeMcpServer,
@@ -773,10 +773,11 @@ function ToolCard({
     initialArgumentsJson(tool.inputSchema),
   )
   const [parseError, setParseError] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [executionOpen, setExecutionOpen] = useState(false)
-  const detailsId = `tool-details-${index}`
+  const detailsButtonRef = useRef<HTMLButtonElement>(null)
   const executionId = `tool-execution-${index}`
+  const closeDetails = useCallback(() => setDetailsOpen(false), [])
   async function execute() {
     try {
       const args = parseObject(argumentsJson)
@@ -807,25 +808,22 @@ function ToolCard({
               </span>
             ) : null}
           </div>
-          <p
-            className={`mt-1 max-w-[70ch] text-sm leading-5 text-stone-500 dark:text-stone-400 ${
-              expanded ? '' : 'truncate'
-            }`}
-          >
+          <p className="mt-1 max-w-[70ch] truncate text-sm leading-5 text-stone-500 dark:text-stone-400">
             {tool.description ?? 'No description provided.'}
           </p>
         </div>
         <div className="flex items-center gap-1">
           <button
+            ref={detailsButtonRef}
             type="button"
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${tool.title ?? tool.name}`}
-            title={`${expanded ? 'Collapse' : 'Expand'} tool details`}
-            onClick={() => setExpanded((value) => !value)}
-            className="min-h-11 whitespace-nowrap px-3 text-xs font-semibold text-stone-500 hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#C8102E] dark:text-stone-400"
+            aria-expanded={detailsOpen}
+            aria-haspopup="dialog"
+            aria-label={`View details for ${tool.title ?? tool.name}`}
+            title="View tool details"
+            onClick={() => setDetailsOpen(true)}
+            className="grid min-h-11 min-w-11 place-items-center border border-transparent text-stone-500 hover:border-stone-300 hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] dark:text-stone-400 dark:hover:border-stone-700"
           >
-            {expanded ? 'Hide details ↑' : 'Show details ↓'}
+            <EyeIcon />
           </button>
           <button
             type="button"
@@ -845,18 +843,12 @@ function ToolCard({
         </div>
       </div>
 
-      {expanded ? (
-        <div
-          id={detailsId}
-          className="border-t border-stone-200 px-3 py-5 sm:px-4 dark:border-stone-800"
-        >
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-stone-500 dark:text-stone-400">
-            Input schema
-          </p>
-          <pre className="mt-4 overflow-auto border-l-2 border-stone-300 pl-4 font-mono text-[11px] leading-5 dark:border-stone-700">
-            {pretty(tool.inputSchema)}
-          </pre>
-        </div>
+      {detailsOpen ? (
+        <ToolDetailsSheet
+          tool={tool}
+          onClose={closeDetails}
+          returnFocusRef={detailsButtonRef}
+        />
       ) : null}
 
       {executionOpen ? (
@@ -913,6 +905,214 @@ function ToolCard({
         </div>
       ) : null}
     </article>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <path d="M2.75 12s3.5-6 9.25-6 9.25 6 9.25 6-3.5 6-9.25 6S2.75 12 2.75 12Z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  )
+}
+
+function ToolDetailSection({
+  label,
+  value,
+  open = false,
+}: {
+  label: string
+  value: unknown
+  open?: boolean
+}) {
+  return (
+    <details
+      open={open}
+      className="group border-b border-stone-200 dark:border-stone-800"
+    >
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#C8102E] [&::-webkit-details-marker]:hidden">
+        <span>{label}</span>
+        <span
+          aria-hidden="true"
+          className="font-mono text-base font-normal text-stone-900/40 group-open:hidden dark:text-stone-50/40"
+        >
+          +
+        </span>
+        <span
+          aria-hidden="true"
+          className="hidden font-mono text-base font-normal text-stone-900/40 group-open:inline dark:text-stone-50/40"
+        >
+          −
+        </span>
+      </summary>
+      <pre className="mb-6 overflow-auto border-l-2 border-stone-300 pl-4 font-mono text-[11px] leading-5 text-stone-900/70 dark:border-stone-700 dark:text-stone-50/70">
+        {pretty(value)}
+      </pre>
+    </details>
+  )
+}
+
+function ToolDetailsSheet({
+  tool,
+  onClose,
+  returnFocusRef,
+}: {
+  tool: Snapshot['tools'][number]
+  onClose: () => void
+  returnFocusRef: React.RefObject<HTMLButtonElement | null>
+}) {
+  const sheetRef = useRef<HTMLElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const titleId = `tool-sheet-${tool.name.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    closeButtonRef.current?.focus()
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = Array.from(
+        sheetRef.current?.querySelectorAll<HTMLElement>(
+          'button, summary, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => !element.hasAttribute('disabled'))
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+      returnFocusRef.current?.focus()
+    }
+  }, [onClose, returnFocusRef])
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close tool details"
+        onClick={onClose}
+        className="absolute inset-0 h-full w-full cursor-default bg-stone-950/50"
+      />
+      <aside
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-stone-300 bg-stone-50 text-stone-950 shadow-[-24px_0_64px_rgba(0,0,0,0.18)] sm:max-w-xl lg:max-w-2xl dark:border-stone-700 dark:bg-stone-950 dark:text-stone-50"
+      >
+        <header className="flex min-h-20 shrink-0 items-center justify-between gap-8 border-b border-stone-300 px-4 sm:px-8 dark:border-stone-700">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#C8102E]">
+              Tool details
+            </p>
+            <h2
+              id={titleId}
+              className="mt-1 truncate text-xl font-light tracking-tight"
+            >
+              {tool.title ?? tool.name}
+            </h2>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            className="min-h-11 min-w-11 border border-stone-300 text-xl text-stone-900/70 hover:border-[#C8102E] hover:text-[#C8102E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] dark:border-stone-700 dark:text-stone-50/70"
+            aria-label="Close tool details"
+            title="Close tool details"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-8 sm:py-12">
+          <div className="grid grid-cols-12 gap-x-4 gap-y-8">
+            <div className="col-span-12 sm:col-span-8">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-stone-900/40 dark:text-stone-50/40">
+                Description
+              </p>
+              <p className="mt-3 max-w-[60ch] text-sm leading-relaxed text-stone-900/70 dark:text-stone-50/70">
+                {tool.description ?? 'No description provided.'}
+              </p>
+            </div>
+            <dl className="col-span-12 grid grid-cols-2 gap-4 border-t border-stone-300 pt-6 sm:col-span-4 sm:block sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 dark:border-stone-700">
+              <div>
+                <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-stone-900/40 dark:text-stone-50/40">
+                  Name
+                </dt>
+                <dd className="mt-2 break-all font-mono text-xs">
+                  {tool.name}
+                </dd>
+              </div>
+              <div className="sm:mt-6">
+                <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-stone-900/40 dark:text-stone-50/40">
+                  Output schema
+                </dt>
+                <dd className="mt-2 text-xs font-semibold">
+                  {tool.outputSchema === undefined
+                    ? 'Not provided'
+                    : 'Provided'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="mt-12 border-t border-stone-300 dark:border-stone-700">
+            <ToolDetailSection
+              label="Input schema"
+              value={tool.inputSchema}
+              open
+            />
+            {tool.outputSchema !== undefined ? (
+              <ToolDetailSection
+                label="Output schema"
+                value={tool.outputSchema}
+                open
+              />
+            ) : null}
+            {tool.annotations !== undefined ? (
+              <ToolDetailSection label="Annotations" value={tool.annotations} />
+            ) : null}
+            {tool.execution !== undefined ? (
+              <ToolDetailSection label="Execution" value={tool.execution} />
+            ) : null}
+            {tool.icons !== undefined ? (
+              <ToolDetailSection label="Icons" value={tool.icons} />
+            ) : null}
+            {tool._meta !== undefined ? (
+              <ToolDetailSection label="Metadata" value={tool._meta} />
+            ) : null}
+            <ToolDetailSection label="Raw tool descriptor" value={tool} />
+          </div>
+        </div>
+      </aside>
+    </div>
   )
 }
 
