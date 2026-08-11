@@ -11,6 +11,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  canary:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: Install npm for trusted publishing
+        run: npm install --global npm@11.19.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect pending releases
+        id: release-plan
+        run: |
+          pnpm changeset status --output=.changeset/status.json
+          node -e "const fs = require('node:fs'); const { releases } = JSON.parse(fs.readFileSync('.changeset/status.json')); console.log('publish=' + (releases.length > 0))" >> "$GITHUB_OUTPUT"
+
+      - name: Apply canary versions
+        if: steps.release-plan.outputs.publish == 'true'
+        run: pnpm changeset version --snapshot canary
+
+      - name: Build canary packages
+        if: steps.release-plan.outputs.publish == 'true'
+        run: pnpm build
+
+      - name: Publish canary packages
+        if: steps.release-plan.outputs.publish == 'true'
+        run: pnpm changeset publish --tag canary --no-git-tag
+        env:
+          NPM_CONFIG_PROVENANCE: true
+
   release:
     runs-on: ubuntu-latest
     permissions:
@@ -32,8 +79,8 @@ jobs:
           registry-url: https://registry.npmjs.org/
           package-manager-cache: false
 
-      - name: Update npm for trusted publishing
-        run: npm install --global npm@latest
+      - name: Install npm for trusted publishing
+        run: npm install --global npm@11.19.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
