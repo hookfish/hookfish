@@ -178,14 +178,6 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
       `http://${frontendHostname}:${frontendPort}`,
   }
 
-  const hyperdriveLocalConnectionString =
-    process.env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE ??
-    process.env.DATABASE_URL
-  if (hyperdriveLocalConnectionString) {
-    environment.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE =
-      hyperdriveLocalConnectionString
-  }
-
   return environment
 }
 
@@ -305,19 +297,9 @@ program
     loadDevelopmentEnvironment()
 
     if (options.backend === 'cloudflare-worker') {
-      const connectionString =
-        process.env.HOOKFISH_MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL
-      if (!connectionString) {
-        program.error(
-          'Set HOOKFISH_MIGRATION_DATABASE_URL or DATABASE_URL to migrate the Worker Postgres database.',
-        )
-        return
-      }
-      const { postgres } = await import('@hookfish/database/postgres')
-      const database = postgres(connectionString)
-      await withMigrationProgress(async () => {
-        await database.migrate?.({})
-      })
+      process.stdout.write(
+        'Cloudflare Durable Object databases migrate lazily when each object starts.\n',
+      )
       return
     }
 

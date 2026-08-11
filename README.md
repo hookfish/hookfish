@@ -8,11 +8,11 @@ backend runtimes:
 - `packages/backend` — browser-safe facade plus raw Hookfish API composition
 - `packages/api` — shared Hono API and OAuth broker
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
-- `packages/database` — local PGlite and request-aware Postgres bindings
+- `packages/database` — PGlite, Postgres, and Durable Object adapters
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
 - `examples/hono-node` — default Node backend using PGlite
 - `examples/express` and `examples/nextjs` — alternative Node hosts
-- `examples/cloudflare-worker` — Worker backend using Hyperdrive/Postgres
+- `examples/cloudflare-worker` — Worker backend using SQLite Durable Objects
 
 The frontend contains no server functions or database code. Every host exposes:
 
@@ -80,44 +80,32 @@ pnpm --filter @hookfish/example-hono-node dev
 pnpm --filter @hookfish/example-express dev
 pnpm --filter @hookfish/example-nextjs dev
 
-# Hyperdrive/Postgres on http://127.0.0.1:8787
+# SQLite Durable Objects on http://127.0.0.1:8787
 pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
 The root `hookfish.config.ts` owns the default PGlite database, providers,
 browser policy, and documentation visibility. Node examples use it unchanged;
-the Worker replaces only `db` with its Hyperdrive/Postgres binding. Provider
-factories receive the bindings passed to `Hookfish.fetch`, so the same config
-reads Node environment variables and Worker secrets without a config schema.
+the Worker spreads the same config and replaces only `db` with its Durable
+Object binding.
 
 ## Cloudflare Worker backend
 
-Create a Hyperdrive configuration and replace `<YOUR_HYPERDRIVE_ID>` in
-`examples/cloudflare-worker/wrangler.jsonc`:
+The example already declares a SQLite-backed `HookfishDurableObject` namespace
+in `examples/cloudflare-worker/wrangler.jsonc`. Log in and generate its runtime
+types:
 
 ```sh
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler login
-pnpm --filter @hookfish/example-cloudflare-worker exec wrangler hyperdrive create hookfish-db \
-  --connection-string="postgres://user:pass@host:5432/dbname"
 pnpm cf-typegen
 pnpm cf-typecheck
 ```
 
-For local Wrangler development, set `DATABASE_URL` in `apps/frontend/.env` to a
-direct Postgres connection. `hookfish dev` maps it to Wrangler's local
-Hyperdrive binding. Standalone Wrangler development can instead use its native
-variable name:
-
-```sh
-CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://user:pass@127.0.0.1:5432/dbname
-```
-
-Apply the Worker database migrations through a direct administrative URL:
-
-```sh
-HOOKFISH_MIGRATION_DATABASE_URL=postgres://user:pass@host:5432/dbname \
-  pnpm migrate --backend cloudflare-worker
-```
+Wrangler persists local Durable Object state automatically. Each object applies
+the bundled SQLite schema lazily when it first starts, so there is no separate
+database URL or migration command for the Worker backend. Organization routing
+uses one named object per organization; global routes use a reserved global
+object.
 
 Store production credentials as Worker secrets and deploy:
 

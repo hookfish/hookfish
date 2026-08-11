@@ -1,7 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import { asc, eq, lte } from 'drizzle-orm'
 import type { DatabaseInput } from '../db/binding'
-import { brokerAccessTokens } from '../db/schema'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertCanDelegate,
@@ -167,9 +165,7 @@ async function purgeExpiredTokenNames(
   db: BrokerContext['Variables']['db'],
   now: Date,
 ): Promise<void> {
-  await db
-    .delete(brokerAccessTokens)
-    .where(lte(brokerAccessTokens.expiresAt, now))
+  await db.purgeExpiredBrokerAccessTokens(now)
 }
 
 export function createAdminRoutes<Bindings extends object>(
@@ -203,19 +199,14 @@ export function createAdminRoutes<Bindings extends object>(
     )
 
     await purgeExpiredTokenNames(c.get('db'), now)
-    const inserted = await c
-      .get('db')
-      .insert(brokerAccessTokens)
-      .values({
-        name: minted.name,
-        tokenIdHash: minted.tokenIdHash,
-        scopes: minted.scopes,
-        expiresAt: new Date(minted.expiresAt * 1000),
-      })
-      .onConflictDoNothing({ target: brokerAccessTokens.name })
-      .returning()
+    const inserted = await c.get('db').createBrokerAccessToken({
+      name: minted.name,
+      tokenIdHash: minted.tokenIdHash,
+      scopes: minted.scopes,
+      expiresAt: new Date(minted.expiresAt * 1000),
+    })
 
-    if (inserted.length === 0) {
+    if (!inserted) {
       throw new BrokerError(
         409,
         'token_name_in_use',
@@ -245,26 +236,18 @@ export function createAdminRoutes<Bindings extends object>(
   const routes = mintApi.openapi(listTokensRoute, async (c) => {
     assertRootAccess(c.get('accessGrant'))
     await purgeExpiredTokenNames(c.get('db'), new Date())
-    const tokens = await c
-      .get('db')
-      .select({ name: brokerAccessTokens.name })
-      .from(brokerAccessTokens)
-      .orderBy(asc(brokerAccessTokens.name))
+    const tokens = await c.get('db').listBrokerAccessTokenNames()
 
     c.header('Cache-Control', 'no-store')
-    return c.json({ tokens: tokens.map(({ name }) => name) }, 200)
+    return c.json({ tokens }, 200)
   })
 
   const revokeApi = routes.openapi(revokeTokenRoute, async (c) => {
     assertRootAccess(c.get('accessGrant'))
     const name = normalizeTokenName(c.req.valid('param').name)
-    const deleted = await c
-      .get('db')
-      .delete(brokerAccessTokens)
-      .where(eq(brokerAccessTokens.name, name))
-      .returning()
+    const deleted = await c.get('db').deleteBrokerAccessToken(name)
 
-    if (deleted.length > 0) {
+    if (deleted) {
       await emitHookfishEvent(onEvent, {
         type: 'broker_token.revoked',
         occurredAt: new Date(),
@@ -273,7 +256,7 @@ export function createAdminRoutes<Bindings extends object>(
     }
 
     c.header('Cache-Control', 'no-store')
-    return c.json({ name, revoked: deleted.length > 0 }, 200)
+    return c.json({ name, revoked: deleted }, 200)
   })
 
   revokeApi.onError((error, c) => {

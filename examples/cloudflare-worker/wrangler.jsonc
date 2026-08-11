@@ -7,11 +7,18 @@
   "observability": {
     "enabled": true
   },
-  "hyperdrive": [
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HOOKFISH_DB",
+        "class_name": "HookfishDurableObject"
+      }
+    ]
+  },
+  "migrations": [
     {
-      "binding": "HYPERDRIVE",
-      // Replace this with the id returned by `wrangler hyperdrive create`.
-      "id": "<YOUR_HYPERDRIVE_ID>"
+      "tag": "v1",
+      "new_sqlite_classes": ["HookfishDurableObject"]
     }
   ]
 }

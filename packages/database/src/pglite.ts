@@ -3,7 +3,9 @@ import {
   brokerAccessTokens,
   type Database,
   type DatabaseBinding,
+  type DrizzleDatabase,
   defineDatabase,
+  drizzleDatabase,
   oauthConnections,
   oauthProviders,
   oauthStates,
@@ -26,6 +28,12 @@ export type PgliteDatabaseOptions = {
   migrationsFolder?: string | false
 }
 
+export interface PgliteDatabaseBinding<Bindings extends object = object>
+  extends DatabaseBinding<Bindings> {
+  /** The underlying Drizzle client, primarily for migrations and test tooling. */
+  getDrizzleDatabase(bindings: Bindings): Promise<DrizzleDatabase>
+}
+
 /**
  * Creates a lazy, process-local PGlite database binding.
  *
@@ -35,8 +43,13 @@ export type PgliteDatabaseOptions = {
 export function pglite<Bindings extends object = object>(
   dataDir: string,
   options: PgliteDatabaseOptions = {},
-): DatabaseBinding<Bindings> {
-  let pending: Promise<Database> | undefined
+): PgliteDatabaseBinding<Bindings> {
+  let pending:
+    | Promise<{
+        database: Database
+        drizzle: DrizzleDatabase
+      }>
+    | undefined
   const resolveMigrationsFolder = () =>
     options.migrationsFolder ?? bundledMigrations()
 
@@ -52,24 +65,36 @@ export function pglite<Bindings extends object = object>(
       const client = new PGlite(dataDir)
       await client.waitReady
       await migrateClient(client)
-      return drizzle(client, { schema })
+      const drizzleClient = drizzle(client, { schema })
+      return {
+        database: drizzleDatabase(drizzleClient),
+        drizzle: drizzleClient,
+      }
     })()
 
     return pending
   }
 
-  return defineDatabase(getDatabase, async () => {
-    if (pending) {
-      await pending
-      return
-    }
+  const binding = defineDatabase(
+    async () => (await getDatabase()).database,
+    async () => {
+      if (pending) {
+        await pending
+        return
+      }
 
-    const client = new PGlite(dataDir)
-    try {
-      await client.waitReady
-      await migrateClient(client)
-    } finally {
-      await client.close()
-    }
-  })
+      const client = new PGlite(dataDir)
+      try {
+        await client.waitReady
+        await migrateClient(client)
+      } finally {
+        await client.close()
+      }
+    },
+  )
+
+  return {
+    ...binding,
+    getDrizzleDatabase: async () => (await getDatabase()).drizzle,
+  }
 }

@@ -1,6 +1,4 @@
-import { and, eq, gt } from 'drizzle-orm'
-import type { Database } from '../db/schema'
-import { brokerAccessTokens } from '../db/schema'
+import type { Database } from '../db/types'
 import { BrokerError } from './errors'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
@@ -419,21 +417,11 @@ export async function authenticateAccessToken(
   now = Date.now(),
 ): Promise<ScopedAccessGrant> {
   const verified = await verifyAccessToken(rootApiKey, token, now)
-  const [stored] = await db
-    .select({
-      name: brokerAccessTokens.name,
-      scopes: brokerAccessTokens.scopes,
-      expiresAt: brokerAccessTokens.expiresAt,
-    })
-    .from(brokerAccessTokens)
-    .where(
-      and(
-        eq(brokerAccessTokens.name, verified.name),
-        eq(brokerAccessTokens.tokenIdHash, verified.tokenIdHash),
-        gt(brokerAccessTokens.expiresAt, new Date(now)),
-      ),
-    )
-    .limit(1)
+  const stored = await db.getValidBrokerAccessToken(
+    verified.name,
+    verified.tokenIdHash,
+    new Date(now),
+  )
 
   if (!stored) throw invalidToken()
 

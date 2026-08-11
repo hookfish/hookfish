@@ -11,22 +11,26 @@ import {
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
+const configDirectory =
+  typeof import.meta.url === 'string'
+    ? path.dirname(fileURLToPath(import.meta.url))
+    : process.cwd()
 const db = pglite(
-  process.env.PGLITE_DATA_DIR ??
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'pgdata'),
+  process.env.PGLITE_DATA_DIR ?? path.join(configDirectory, 'pgdata'),
 )
 
 // To use Postgres instead:
 // import { postgres } from '@hookfish/database/postgres'
 // const db = postgres(process.env.DATABASE_URL ?? '')
 
-// On Cloudflare Workers, override the default with Hyperdrive instead:
+// On Cloudflare Workers, Postgres must be accessed through Hyperdrive:
 // import { postgres } from '@hookfish/database/postgres'
 // const cloudflareDb = postgres<{ HYPERDRIVE: { connectionString: string } }>(
 //   (bindings) => bindings.HYPERDRIVE.connectionString,
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
 // const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
+// For SQLite-backed Durable Objects instead, see examples/cloudflare-worker.
 
 export default defineHookfishConfig({
   db,

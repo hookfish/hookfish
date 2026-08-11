@@ -12,6 +12,14 @@ import {
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
+export type {
+  BrokerAccessToken,
+  OAuthConnection,
+  OAuthProviderRecord,
+  OAuthState,
+  VaultSecret,
+} from './types'
+
 /**
  * One row per connection. A connection_id is a single provider link -- multiple
  * accounts on the same provider are multiple connection ids. Tokens are stored
@@ -173,12 +181,6 @@ export const vaultSecrets = pgTable(
   ],
 )
 
-export type OAuthConnection = typeof oauthConnections.$inferSelect
-export type OAuthState = typeof oauthStates.$inferSelect
-export type BrokerAccessToken = typeof brokerAccessTokens.$inferSelect
-export type OAuthProviderRecord = typeof oauthProviders.$inferSelect
-export type VaultSecret = typeof vaultSecrets.$inferSelect
-
 type Schema = {
   brokerAccessTokens: typeof brokerAccessTokens
   oauthConnections: typeof oauthConnections
@@ -187,8 +189,7 @@ type Schema = {
   vaultSecrets: typeof vaultSecrets
 }
 
-/**
- * The broker only uses the subset of Drizzle implemented by both supported
- * adapters, so route code is independent of how the database was constructed.
- */
-export type Database = PostgresJsDatabase<Schema> | PgliteDatabase<Schema>
+/** Drizzle client type used internally by the Postgres and PGlite adapters. */
+export type DrizzleDatabase =
+  | PostgresJsDatabase<Schema>
+  | PgliteDatabase<Schema>

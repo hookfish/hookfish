@@ -1,14 +1,16 @@
 import { Hookfish } from '@hookfish/api'
-import { postgres } from '@hookfish/database/postgres'
+import {
+  durableObjects,
+  HookfishDurableObject,
+} from '@hookfish/database/durable-object'
 import config from '../../../hookfish.config'
 
-const db = postgres<Env>((bindings) => bindings.HYPERDRIVE.connectionString, {
-  cache: false,
-  fetchTypes: false,
-  max: 5,
-  prepare: true,
-})
-const hookfish = await Hookfish.init({
+export { HookfishDurableObject }
+
+const db = durableObjects<Env>((bindings, context) =>
+  bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
+)
+const hookfish = await Hookfish.init<Env>({
   ...config,
   db,
 })

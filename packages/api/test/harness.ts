@@ -15,7 +15,8 @@ import {
   NotionProvider,
 } from '@hookfish/providers'
 import { pglite } from '../../database/src/pglite'
-import type { Database } from '../src/db/schema'
+import type { DrizzleDatabase } from '../src/db/schema'
+import type { Database } from '../src/db/types'
 import { Hookfish, type HookfishEvent } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { createPkcePair } from '../src/oauth/crypto'
@@ -41,6 +42,7 @@ export type TestHarness = {
   /** Empty default scopes (no `scope` query param). */
   noscopeProviderId: string
   db: Database
+  rawDb: DrizzleDatabase
   providers: ProviderRegistry
   fetch: (path: string, init?: RequestInit) => Promise<Response>
   authorizeAndCallback: (options?: {
@@ -261,6 +263,7 @@ export async function createHarness(
   })
   const database = pglite(dataDir)
   const db = await database.getDatabase({})
+  const rawDb = await database.getDrizzleDatabase({})
 
   const env: BrokerEnv = {
     ...process.env,
@@ -355,6 +358,7 @@ export async function createHarness(
     dialectProviderId,
     noscopeProviderId,
     db,
+    rawDb,
     providers,
     fetch: apiFetch,
     authorizeAndCallback,

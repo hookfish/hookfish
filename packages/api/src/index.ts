@@ -414,8 +414,21 @@ export {
 export type {
   BrokerAccessToken,
   Database,
+  DatabaseResult,
+  NewBrokerAccessToken,
+  NewOAuthConnection,
+  NewOAuthProviderRecord,
+  NewOAuthState,
+  NewVaultSecret,
   OAuthConnection,
+  OAuthConnectionFilter,
+  OAuthConnectionSummary,
+  OAuthConnectionTokenUpdate,
   OAuthProviderRecord,
+  OAuthProviderUpdate,
   OAuthState,
+  OAuthStateUpdate,
   VaultSecret,
-} from './db/schema'
+  VaultSecretFilter,
+  VaultSecretMetadata,
+} from './db/types'

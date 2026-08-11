@@ -730,7 +730,7 @@ describe('OAuth broker integration', () => {
       error: { code: 'root_access_required' },
     })
 
-    await h.db
+    await h.rawDb
       .update(brokerAccessTokens)
       .set({ scopes: ['shared/**'] })
       .where(eq(brokerAccessTokens.name, 'team-worker'))
@@ -746,7 +746,7 @@ describe('OAuth broker integration', () => {
       }),
     ).toHaveProperty('status', 403)
 
-    await h.db
+    await h.rawDb
       .update(brokerAccessTokens)
       .set({ expiresAt: new Date(Date.now() - 1_000) })
       .where(eq(brokerAccessTokens.name, 'team-worker.nested-worker'))
@@ -930,7 +930,7 @@ describe('OAuth broker integration', () => {
     })
     expect(callback.status).toBe(200)
 
-    await h.db
+    await h.rawDb
       .update(oauthConnections)
       .set({ expiresAt: new Date(Date.now() - 120_000) })
       .where(eq(oauthConnections.connectionId, connectionId))
@@ -1185,7 +1185,7 @@ describe('OAuth broker integration', () => {
       )
       expect(callback.status).toBe(200)
 
-      const [storedConnection] = await configured.db
+      const [storedConnection] = await configured.rawDb
         .select({ organization: oauthConnections.organization })
         .from(oauthConnections)
         .where(eq(oauthConnections.connectionId, authorization.connection_id))
@@ -1634,12 +1634,12 @@ describe('OAuth broker integration', () => {
       'state',
     )!
 
-    await h.db
+    await h.rawDb
       .update(oauthStates)
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where(eq(oauthStates.connectionId, 'expired-state'))
 
-    const [storedState] = await h.db
+    const [storedState] = await h.rawDb
       .select({ id: oauthStates.id })
       .from(oauthStates)
       .where(eq(oauthStates.connectionId, 'expired-state'))
@@ -1670,7 +1670,7 @@ describe('OAuth broker integration', () => {
     })
     expect(callback.status).toBe(200)
 
-    await h.db
+    await h.rawDb
       .update(oauthConnections)
       .set({
         expiresAt: new Date(Date.now() - 120_000),
@@ -1865,7 +1865,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('purges expired oauth states', async () => {
-    await h.db.insert(oauthStates).values({
+    await h.rawDb.insert(oauthStates).values({
       id: 'expired-housekeeping',
       connectionId: 'housekeeping',
       provider: h.providerId,
@@ -2096,11 +2096,11 @@ describe('OAuth broker integration', () => {
           },
         },
       })
-      const [storedProvider] = await managed.db
+      const [storedProvider] = await managed.rawDb
         .select()
         .from(oauthProviders)
         .where(eq(oauthProviders.providerId, providerId))
-      const [storedSecret] = await managed.db
+      const [storedSecret] = await managed.rawDb
         .select()
         .from(vaultSecrets)
         .where(eq(vaultSecrets.path, storedProvider.clientSecretPath!))
@@ -2243,7 +2243,7 @@ describe('OAuth broker integration', () => {
         },
       })
 
-      const [stored] = await managed.db
+      const [stored] = await managed.rawDb
         .select()
         .from(oauthProviders)
         .where(eq(oauthProviders.providerId, providerId))

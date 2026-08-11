@@ -1,6 +1,4 @@
-import { and, asc, eq, or, sql } from 'drizzle-orm'
-import type { Database } from './db/schema'
-import { vaultSecrets } from './db/schema'
+import type { Database } from './db/types'
 import {
   decryptSecret,
   encryptSecret,
@@ -116,18 +114,11 @@ export async function putVaultSecret(
     )
   }
   const encrypted = await encryptSecret(requireEncryptionKey(env), value)
-  const [stored] = await db
-    .insert(vaultSecrets)
-    .values({
-      organization: organizationKey(organization),
-      path: normalized,
-      value: encrypted,
-    })
-    .onConflictDoUpdate({
-      target: [vaultSecrets.organization, vaultSecrets.path],
-      set: { value: encrypted, updatedAt: new Date() },
-    })
-    .returning()
+  const stored = await db.putVaultSecret({
+    organization: organizationKey(organization),
+    path: normalized,
+    value: encrypted,
+  })
   return stored
 }
 
@@ -140,16 +131,10 @@ export async function getVaultSecret(
 ): Promise<{ path: string; value: string }> {
   const normalized = normalizeSecretPath(path, internal)
   if (!internal) assertOrganizationSecretPath(organization, normalized)
-  const [stored] = await db
-    .select()
-    .from(vaultSecrets)
-    .where(
-      and(
-        eq(vaultSecrets.organization, organizationKey(organization)),
-        eq(vaultSecrets.path, normalized),
-      ),
-    )
-    .limit(1)
+  const stored = await db.getVaultSecret(
+    organizationKey(organization),
+    normalized,
+  )
   if (!stored) {
     throw new BrokerError(
       404,
@@ -175,44 +160,12 @@ export async function listVaultSecrets(
     ? normalizeSecretPath(options.prefix)
     : undefined
   if (prefix) assertOrganizationSecretPath(options.organization, prefix)
-  const prefixFilter = prefix
-    ? or(
-        eq(vaultSecrets.path, prefix),
-        sql<boolean>`starts_with(${vaultSecrets.path}, ${`${prefix}/`})`,
-      )
-    : undefined
-  const scopeFilter = options.scopes?.includes('**')
-    ? undefined
-    : options.scopes?.length
-      ? or(
-          ...options.scopes.map((scope) => {
-            const root = scope.endsWith('/**') ? scope.slice(0, -3) : scope
-            return or(
-              eq(vaultSecrets.path, root),
-              sql<boolean>`starts_with(${vaultSecrets.path}, ${`${root}/`})`,
-            )
-          }),
-        )
-      : options.scopes
-        ? sql<boolean>`false`
-        : undefined
-
-  return db
-    .select({
-      path: vaultSecrets.path,
-      createdAt: vaultSecrets.createdAt,
-      updatedAt: vaultSecrets.updatedAt,
-    })
-    .from(vaultSecrets)
-    .where(
-      and(
-        eq(vaultSecrets.organization, organizationKey(options.organization)),
-        prefixFilter,
-        scopeFilter,
-        sql<boolean>`not starts_with(${vaultSecrets.path}, ${INTERNAL_PREFIX})`,
-      ),
-    )
-    .orderBy(asc(vaultSecrets.path))
+  return db.listVaultSecrets({
+    organization: organizationKey(options.organization),
+    prefix,
+    scopes: options.scopes,
+    excludeInternalPrefix: INTERNAL_PREFIX,
+  })
 }
 
 export async function deleteVaultSecret(
@@ -223,14 +176,5 @@ export async function deleteVaultSecret(
 ): Promise<boolean> {
   const normalized = normalizeSecretPath(path, internal)
   if (!internal) assertOrganizationSecretPath(organization, normalized)
-  const deleted = await db
-    .delete(vaultSecrets)
-    .where(
-      and(
-        eq(vaultSecrets.organization, organizationKey(organization)),
-        eq(vaultSecrets.path, normalized),
-      ),
-    )
-    .returning()
-  return deleted.length > 0
+  return db.deleteVaultSecret(organizationKey(organization), normalized)
 }

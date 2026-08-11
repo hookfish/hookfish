@@ -7,10 +7,8 @@ import {
   type ProviderConfiguration,
   type ProviderRegistry,
 } from '@hookfish/provider'
-import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import { createMiddleware } from 'hono/factory'
 import type { DatabaseInput } from '../db/binding'
-import { oauthConnections, oauthProviders } from '../db/schema'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertProviderAccess,
@@ -619,30 +617,15 @@ export function createProviderRoutes<Bindings extends object>(
         true,
       )
     }
-    const [record] = await c
-      .get('db')
-      .insert(oauthProviders)
-      .values({
-        organization: organizationKey(organization),
-        providerId,
-        templateId,
-        label: normalizeProviderLabel(body.label),
-        ...credentialFields,
-        configuration,
-        enabled: body.enabled,
-      })
-      .onConflictDoUpdate({
-        target: [oauthProviders.organization, oauthProviders.providerId],
-        set: {
-          templateId,
-          label: normalizeProviderLabel(body.label) ?? null,
-          ...credentialFields,
-          configuration,
-          enabled: body.enabled,
-          updatedAt: new Date(),
-        },
-      })
-      .returning()
+    const record = await c.get('db').putOAuthProvider({
+      organization: organizationKey(organization),
+      providerId,
+      templateId,
+      label: normalizeProviderLabel(body.label) ?? null,
+      ...credentialFields,
+      configuration,
+      enabled: body.enabled,
+    })
     if (
       existing?.clientSecretPath &&
       (resolvedCredentials.mode === 'inherit' ||
@@ -745,19 +728,20 @@ export function createProviderRoutes<Bindings extends object>(
     if (body.label !== undefined) {
       label = normalizeProviderLabel(body.label ?? undefined) ?? null
     }
-    const [record] = await c
-      .get('db')
-      .update(oauthProviders)
-      .set({
-        templateId,
-        label,
-        ...credentialFields,
-        configuration,
-        enabled: body.enabled ?? existing.enabled,
-        updatedAt: new Date(),
-      })
-      .where(eq(oauthProviders.id, existing.id))
-      .returning()
+    const record = await c.get('db').updateOAuthProvider(existing.id, {
+      templateId,
+      label,
+      ...credentialFields,
+      configuration,
+      enabled: body.enabled ?? existing.enabled,
+    })
+    if (!record) {
+      throw new BrokerError(
+        404,
+        'unknown_provider',
+        `Unknown dynamic provider "${providerId}".`,
+      )
+    }
     if (
       existing.clientSecretPath &&
       resolvedCredentials &&
@@ -809,36 +793,16 @@ export function createProviderRoutes<Bindings extends object>(
     if (!existing) {
       return c.json({ id: providerId, deleted: false }, 200)
     }
-    const tenantFilter = organization
-      ? or(
-          eq(oauthConnections.organization, organization),
-          and(
-            isNull(oauthConnections.organization),
-            or(
-              eq(oauthConnections.connectionId, organization),
-              sql<boolean>`starts_with(${oauthConnections.connectionId}, ${`${organization}/`})`,
-            ),
-          ),
-        )
-      : isNull(oauthConnections.organization)
-    const connection = await c
+    const deletion = await c
       .get('db')
-      .select({ id: oauthConnections.id })
-      .from(oauthConnections)
-      .where(and(eq(oauthConnections.provider, providerId), tenantFilter))
-      .limit(1)
-    if (connection.length > 0) {
+      .deleteOAuthProviderIfUnused(existing.id, providerId, organization)
+    if (deletion === 'in_use') {
       throw new BrokerError(
         409,
         'provider_in_use',
         `Provider "${providerId}" cannot be deleted while OAuth connections reference it.`,
       )
     }
-    const deleted = await c
-      .get('db')
-      .delete(oauthProviders)
-      .where(eq(oauthProviders.id, existing.id))
-      .returning()
     if (existing.clientSecretPath) {
       await deleteVaultSecret(
         c.get('db'),
@@ -847,7 +811,7 @@ export function createProviderRoutes<Bindings extends object>(
         true,
       )
     }
-    if (deleted.length > 0) {
+    if (deletion === 'deleted') {
       await emitHookfishEvent(options.onEvent, {
         type: 'provider.deleted',
         occurredAt: new Date(),
@@ -855,7 +819,7 @@ export function createProviderRoutes<Bindings extends object>(
         provider: providerId,
       })
     }
-    return c.json({ id: providerId, deleted: deleted.length > 0 }, 200)
+    return c.json({ id: providerId, deleted: deletion === 'deleted' }, 200)
   })
 
   deleteApi.onError((error, c) => {
