@@ -29,6 +29,14 @@ const authorizeSchema = z.object({
   connection_id: z.string(),
   authorize_url: z.url(),
 })
+const providerSchema = z.object({
+  provider: z.object({
+    credentials: z
+      .object({ client_id: z.string().min(1) })
+      .nullable()
+      .optional(),
+  }),
+})
 
 function apiKey() {
   return process.env.HOOKFISH_API_KEY || 'test'
@@ -274,7 +282,16 @@ export async function authorizeServer(
     }),
   )
 
-  if (existing.status === 404) {
+  let registerClient = existing.status === 404
+  if (existing.ok) {
+    const current = providerSchema.parse(await existing.json())
+    registerClient =
+      current.provider.credentials?.client_id.startsWith(
+        `${origin}/api/oauth/client-metadata/`,
+      ) ?? false
+  }
+
+  if (registerClient) {
     await hookfishRequest(origin, providerPath, {
       method: 'PUT',
       body: JSON.stringify({
