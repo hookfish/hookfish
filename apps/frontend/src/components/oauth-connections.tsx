@@ -7,7 +7,6 @@ import {
   ChevronRightIcon,
   CircleCheckIcon,
   CircleXIcon,
-  ExternalLinkIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
@@ -253,13 +252,9 @@ function AuthRequiredConnectionItem({
       </ItemContent>
       <ItemActions>
         <Button asChild size="sm">
-          <a
-            href={connection.authorize_url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a href={connection.authorize_url}>
             Authorize
-            <ExternalLinkIcon />
+            <ChevronRightIcon />
           </a>
         </Button>
         <Button size="sm" variant="outline" onClick={onDismiss}>

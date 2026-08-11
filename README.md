@@ -35,6 +35,30 @@ pnpm dev --no-open
 pnpm dev --backend cloudflare-worker
 ```
 
+## Create a standalone project
+
+Scaffold a deployable Hookfish backend with the dashboard development server:
+
+```sh
+pnpm dlx hookfish init my-broker --backend node
+# Backends: vercel, cloudflare, node, bun, docker
+
+cd my-broker
+pnpm dev
+# Run only the generated backend:
+pnpm dev:server
+```
+
+The generated `dev:server` script runs the platform-native development server
+(`vercel dev`, `wrangler dev`, Node, Bun, or Docker). The `dev` script runs it in
+parallel with `hookfish serve --backend-url <backend-url>`, which serves the
+packaged frontend and proxies `/api` to that backend. Use `--no-install` during
+initialization to skip dependency installation. The Cloudflare scaffold uses a
+SQLite-backed Durable Object; the Vercel scaffold expects Postgres through
+`DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
+Each scaffold generates a gitignored local environment file with a unique
+encryption key and `BROKER_API_KEY=test`.
+
 Start the standalone inspector with `npx hookfish inspect`. The `inspector`
 command is an alias. In this repository, `pnpm cli inspect` runs the same
 packaged server. It mounts the raw API at `/api` and the browser client facade
