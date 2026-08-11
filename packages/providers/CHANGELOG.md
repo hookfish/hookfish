@@ -1,5 +1,16 @@
 # @hookfish/providers
 
+## 0.1.1
+
+### Patch Changes
+
+- Republish packages with resolved workspace dependency versions.
+- Updated dependencies
+  - @hookfish/provider-github@0.1.1
+  - @hookfish/provider-linear@0.1.1
+  - @hookfish/provider-mcp@0.1.1
+  - @hookfish/provider-notion@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

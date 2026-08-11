@@ -1,5 +1,13 @@
 # @hookfish/hooks
 
+## 0.1.1
+
+### Patch Changes
+
+- Republish packages with resolved workspace dependency versions.
+- Updated dependencies
+  - @hookfish/api@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
