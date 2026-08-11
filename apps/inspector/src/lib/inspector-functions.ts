@@ -1,5 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
+import { getRequest } from '@tanstack/react-start/server'
 import { z } from 'zod'
+import {
+  authorizeServer,
+  executeTool,
+  inspectServer,
+  readResource,
+  renderPrompt,
+} from './mcp.server'
+import { inspectorPublicOrigin } from './public-origin.server'
 
 const httpUrl = z.url().refine((value) => {
   const protocol = new URL(value).protocol
@@ -106,50 +115,38 @@ function serializableJson(value: unknown) {
   return jsonValue.parse(JSON.parse(JSON.stringify(value)))
 }
 
-async function requestOrigin() {
-  const { getRequest } = await import('@tanstack/react-start/server')
-  return new URL(getRequest().url).origin
+function requestOrigin() {
+  return inspectorPublicOrigin(getRequest().url)
 }
 
 export const inspectMcpServer = createServerFn({ method: 'POST' })
   .validator((input) => connectionInput.parse(input))
   .handler(async ({ data }) => {
-    const inspector = await import('./mcp.server')
     return inspectorSnapshotSchema.parse(
-      await inspector.inspectServer(data, await requestOrigin()),
+      await inspectServer(data, requestOrigin()),
     )
   })
 
 export const executeMcpTool = createServerFn({ method: 'POST' })
   .validator((input) => toolInput.parse(input))
   .handler(async ({ data }) => {
-    const inspector = await import('./mcp.server')
-    return serializableJson(
-      await inspector.executeTool(data, await requestOrigin()),
-    )
+    return serializableJson(await executeTool(data, requestOrigin()))
   })
 
 export const readMcpResource = createServerFn({ method: 'POST' })
   .validator((input) => resourceInput.parse(input))
   .handler(async ({ data }) => {
-    const inspector = await import('./mcp.server')
-    return serializableJson(
-      await inspector.readResource(data, await requestOrigin()),
-    )
+    return serializableJson(await readResource(data, requestOrigin()))
   })
 
 export const renderMcpPrompt = createServerFn({ method: 'POST' })
   .validator((input) => promptInput.parse(input))
   .handler(async ({ data }) => {
-    const inspector = await import('./mcp.server')
-    return serializableJson(
-      await inspector.renderPrompt(data, await requestOrigin()),
-    )
+    return serializableJson(await renderPrompt(data, requestOrigin()))
   })
 
 export const authorizeMcpServer = createServerFn({ method: 'POST' })
   .validator((input) => authorizeInput.parse(input))
   .handler(async ({ data }) => {
-    const inspector = await import('./mcp.server')
-    return inspector.authorizeServer(data, await requestOrigin())
+    return authorizeServer(data, requestOrigin())
   })

@@ -5,6 +5,7 @@ import { Hookfish } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import '@tanstack/react-start/server-only'
 import config from '../../../../hookfish.config'
+import { inspectorPublicOrigin } from './public-origin.server'
 
 const inspectorDataDir =
   process.env.PGLITE_DATA_DIR ?? path.resolve(process.cwd(), 'pgdata')
@@ -80,7 +81,7 @@ function hookfishForOrigin(origin: string) {
 }
 
 export async function handleHookfishRequest(request: Request) {
-  const origin = new URL(request.url).origin
+  const origin = inspectorPublicOrigin(request.url)
   const hookfish = await hookfishForOrigin(origin)
 
   return hookfish.fetch(request, inspectorEnvironment(origin))

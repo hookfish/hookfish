@@ -36,10 +36,11 @@ function run(
   command: string,
   args: string[],
   env: NodeJS.ProcessEnv = process.env,
+  cwd = findWorkspaceRoot(),
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      cwd: findWorkspaceRoot(),
+      cwd,
       env,
       stdio: 'inherit',
       shell: process.platform === 'win32',
@@ -66,6 +67,43 @@ function run(
 
 async function exitWith(code: number): Promise<never> {
   process.exit(code)
+}
+
+function portlessCliEntry(): string {
+  const portlessModule = fileURLToPath(import.meta.resolve('portless'))
+  const entry = path.join(path.dirname(portlessModule), 'cli.js')
+  if (!existsSync(entry)) {
+    throw new Error('The bundled Portless CLI is missing. Reinstall hookfish.')
+  }
+  return entry
+}
+
+async function startInspectorWithPortless(): Promise<never> {
+  const nodeMajor = Number.parseInt(process.versions.node, 10)
+  if (nodeMajor < 24) {
+    throw new Error(
+      'The Hookfish inspector requires Node.js 24 or newer to run with Portless.',
+    )
+  }
+
+  const environment = {
+    ...process.env,
+    HOOKFISH_INSPECTOR_PORTLESS_CHILD: '1',
+  }
+  const code = await run(
+    process.execPath,
+    [
+      portlessCliEntry(),
+      '--force',
+      'inspector',
+      process.execPath,
+      fileURLToPath(import.meta.url),
+      'inspect',
+    ],
+    environment,
+    process.cwd(),
+  )
+  return exitWith(code)
 }
 
 function parsePort(value: string | undefined): number | undefined {
@@ -277,17 +315,31 @@ program
   .alias('inspector')
   .description('Run the inspector')
   .action(async () => {
+    const isPortlessChild =
+      process.env.HOOKFISH_INSPECTOR_PORTLESS_CHILD === '1'
+    const configuredOrigin = process.env.HOOKFISH_INSPECTOR_URL?.trim()
+    const portlessOrigin = process.env.PORTLESS_URL?.trim()
+    if (!isPortlessChild && !configuredOrigin && !portlessOrigin) {
+      return startInspectorWithPortless()
+    }
+
     const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
     const requestedPort = parsePort(process.env.PORT)
-    const inspectorHostname = allocatedPort ? 'localhost' : '127.0.0.1'
+    const inspectorHostname = portlessOrigin
+      ? (process.env.HOST ?? '127.0.0.1')
+      : allocatedPort
+        ? 'localhost'
+        : '127.0.0.1'
     const inspectorHost = process.env.INSPECTOR_HOST ?? inspectorHostname
     const inspectorPort =
       parsePort(process.env.INSPECTOR_PORT) ??
-      offsetPort(allocatedPort, 2) ??
-      requestedPort ??
+      (portlessOrigin
+        ? (requestedPort ?? offsetPort(allocatedPort, 2))
+        : (offsetPort(allocatedPort, 2) ?? requestedPort)) ??
       3000
     const inspectorOrigin =
-      process.env.HOOKFISH_INSPECTOR_URL ??
+      configuredOrigin ??
+      portlessOrigin ??
       `http://${browserHostname(inspectorHost)}:${inspectorPort}`
 
     await startInspector(inspectorHost, inspectorPort, inspectorOrigin)
