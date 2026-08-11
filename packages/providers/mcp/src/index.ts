@@ -78,6 +78,11 @@ type Discovery = {
   tokenEndpointAuthMethods: string[]
 }
 
+function isLoopbackMetadataUrl(url: URL) {
+  const hostname = url.hostname.toLowerCase()
+  return hostname === 'localhost' || hostname.endsWith('.localhost')
+}
+
 function normalizeHttpUrl(value: string, name: string): string {
   let url: URL
   try {
@@ -324,7 +329,8 @@ export class McpProvider implements OAuthProviderTemplate {
     const metadataUrl = new URL(input.redirectUri)
     if (
       discovery.clientIdMetadataDocumentSupported &&
-      metadataUrl.protocol === 'https:'
+      metadataUrl.protocol === 'https:' &&
+      !isLoopbackMetadataUrl(metadataUrl)
     ) {
       metadataUrl.pathname = metadataUrl.pathname.replace(
         '/oauth/callback/',
