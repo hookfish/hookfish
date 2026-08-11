@@ -1,5 +1,12 @@
 # @hookfish/providers
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [e62a4cc]
+  - @hookfish/provider-mcp@0.1.2
+
 ## 0.1.1
 
 ### Patch Changes
