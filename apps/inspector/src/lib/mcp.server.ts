@@ -5,14 +5,22 @@ import {
   SSEClientTransport,
   StreamableHTTPClientTransport,
   UnauthorizedError,
+  UrlElicitationRequiredError,
 } from '@modelcontextprotocol/client'
 import '@tanstack/react-start/server-only'
 import { z } from 'zod'
+import {
+  beginElicitationOperation,
+  completeUrlElicitation,
+  finishElicitationOperation,
+  waitForElicitation,
+} from './elicitation.server'
 import { handleHookfishRequest } from './hookfish.server'
 
 type ConnectionInput = {
   url: string
   connectionId?: string
+  actionId?: string
 }
 
 type ConnectedClient = {
@@ -104,11 +112,26 @@ function clientOptions(accessToken?: string) {
   }
 }
 
-function createClient() {
-  return new Client(
+function createClient(actionId?: string) {
+  const client = new Client(
     { name: 'hookfish-mcp-inspector', version: '0.0.0' },
-    { versionNegotiation: { mode: 'auto' } },
+    {
+      capabilities: actionId
+        ? { elicitation: { form: {}, url: {} } }
+        : undefined,
+      versionNegotiation: { mode: 'auto' },
+    },
   )
+  if (actionId) {
+    client.setRequestHandler('elicitation/create', ({ params }) =>
+      waitForElicitation(actionId, params),
+    )
+    client.setNotificationHandler(
+      'notifications/elicitation/complete',
+      ({ params }) => completeUrlElicitation(actionId, params.elicitationId),
+    )
+  }
+  return client
 }
 
 async function listAllTools(client: Client) {
@@ -165,7 +188,7 @@ async function connect(
 ): Promise<ConnectedClient> {
   const url = new URL(input.url)
   const token = await accessToken(origin, input.connectionId)
-  const streamableClient = createClient()
+  const streamableClient = createClient(input.actionId)
 
   try {
     await streamableClient.connect(
@@ -180,7 +203,7 @@ async function connect(
         `Authentication required. Use ${action} to authorize this Streamable HTTP server with Hookfish.`,
       )
     }
-    const sseClient = createClient()
+    const sseClient = createClient(input.actionId)
     try {
       await sseClient.connect(new SSEClientTransport(url, clientOptions(token)))
       return { client: sseClient, transport: 'HTTP + SSE' }
@@ -205,6 +228,47 @@ async function withClient<T>(
   } finally {
     await connection.client.close().catch(() => undefined)
   }
+}
+
+const interactiveRequestOptions = {
+  timeout: 15 * 60 * 1000,
+  maxTotalTimeout: 15 * 60 * 1000,
+}
+
+async function withElicitation<T>(
+  actionId: string,
+  operation: () => Promise<T>,
+) {
+  beginElicitationOperation(actionId)
+  try {
+    return await operation()
+  } finally {
+    finishElicitationOperation(actionId)
+  }
+}
+
+async function withUrlElicitation<T>(
+  actionId: string,
+  operation: () => Promise<T>,
+) {
+  for (let round = 0; round < 10; round += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      if (!(error instanceof UrlElicitationRequiredError)) throw error
+      for (const elicitation of error.elicitations) {
+        const result = await waitForElicitation(actionId, elicitation)
+        if (result.action !== 'accept') {
+          throw new Error(
+            result.action === 'decline'
+              ? 'URL elicitation was declined.'
+              : 'URL elicitation was cancelled.',
+          )
+        }
+      }
+    }
+  }
+  throw new Error('The server requested too many URL elicitation rounds.')
 }
 
 export async function inspectServer(input: ConnectionInput, origin: string) {
@@ -234,35 +298,55 @@ export async function inspectServer(input: ConnectionInput, origin: string) {
 
 export async function executeTool(
   input: ConnectionInput & {
+    actionId: string
     name: string
     arguments: Record<string, unknown>
   },
   origin: string,
 ) {
-  return withClient(input, origin, async ({ client }) => {
-    await client.listTools()
-    return client.callTool({ name: input.name, arguments: input.arguments })
-  })
+  return withElicitation(input.actionId, () =>
+    withClient(input, origin, async ({ client }) => {
+      await client.listTools()
+      return withUrlElicitation(input.actionId, () =>
+        client.callTool(
+          { name: input.name, arguments: input.arguments },
+          interactiveRequestOptions,
+        ),
+      )
+    }),
+  )
 }
 
 export async function readResource(
-  input: ConnectionInput & { uri: string },
+  input: ConnectionInput & { actionId: string; uri: string },
   origin: string,
 ) {
-  return withClient(input, origin, ({ client }) =>
-    client.readResource({ uri: input.uri }),
+  return withElicitation(input.actionId, () =>
+    withClient(input, origin, ({ client }) =>
+      withUrlElicitation(input.actionId, () =>
+        client.readResource({ uri: input.uri }, interactiveRequestOptions),
+      ),
+    ),
   )
 }
 
 export async function renderPrompt(
   input: ConnectionInput & {
+    actionId: string
     name: string
     arguments: Record<string, string>
   },
   origin: string,
 ) {
-  return withClient(input, origin, ({ client }) =>
-    client.getPrompt({ name: input.name, arguments: input.arguments }),
+  return withElicitation(input.actionId, () =>
+    withClient(input, origin, ({ client }) =>
+      withUrlElicitation(input.actionId, () =>
+        client.getPrompt(
+          { name: input.name, arguments: input.arguments },
+          interactiveRequestOptions,
+        ),
+      ),
+    ),
   )
 }
 

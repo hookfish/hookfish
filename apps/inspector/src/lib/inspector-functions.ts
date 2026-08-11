@@ -2,6 +2,12 @@ import { createServerFn } from '@tanstack/react-start'
 import { getRequest } from '@tanstack/react-start/server'
 import { z } from 'zod'
 import {
+  beginElicitationOperation,
+  finishElicitationOperation,
+  respondToElicitation,
+  waitForElicitationUpdate,
+} from './elicitation.server'
+import {
   authorizeServer,
   executeTool,
   inspectServer,
@@ -20,16 +26,20 @@ const connectionInput = z.object({
   connectionId: z.string().min(1).optional(),
 })
 
-const toolInput = connectionInput.extend({
+const interactiveConnectionInput = connectionInput.extend({
+  actionId: z.uuid(),
+})
+
+const toolInput = interactiveConnectionInput.extend({
   name: z.string().min(1),
   arguments: z.record(z.string(), z.unknown()),
 })
 
-const resourceInput = connectionInput.extend({
+const resourceInput = interactiveConnectionInput.extend({
   uri: z.string().min(1),
 })
 
-const promptInput = connectionInput.extend({
+const promptInput = interactiveConnectionInput.extend({
   name: z.string().min(1),
   arguments: z.record(z.string(), z.string()),
 })
@@ -40,6 +50,43 @@ const authorizeInput = z.object({
 })
 
 const jsonValue = z.json()
+
+const elicitationRequest = z.discriminatedUnion('mode', [
+  z.object({
+    id: z.uuid(),
+    mode: z.literal('form'),
+    message: z.string(),
+    requestedSchema: jsonValue,
+  }),
+  z.object({
+    id: z.uuid(),
+    mode: z.literal('url'),
+    message: z.string(),
+    elicitationId: z.string().optional(),
+    url: z.url(),
+  }),
+])
+
+const elicitationResult = z.object({
+  action: z.enum(['accept', 'decline', 'cancel']),
+  content: z
+    .record(
+      z.string(),
+      z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]),
+    )
+    .optional(),
+})
+
+const elicitationActionInput = z.object({ actionId: z.uuid() })
+const elicitationWaitInput = elicitationActionInput.extend({
+  lastRequestId: z.uuid().optional(),
+})
+const elicitationResponseInput = elicitationActionInput.extend({
+  requestId: z.uuid(),
+  result: elicitationResult,
+})
+
+export type InspectorElicitation = z.infer<typeof elicitationRequest>
 
 const serverInfo = z
   .object({
@@ -149,4 +196,47 @@ export const authorizeMcpServer = createServerFn({ method: 'POST' })
   .validator((input) => authorizeInput.parse(input))
   .handler(async ({ data }) => {
     return authorizeServer(data, requestOrigin())
+  })
+
+export const beginMcpElicitation = createServerFn({ method: 'POST' })
+  .validator((input) => elicitationActionInput.parse(input))
+  .handler(({ data }) => {
+    beginElicitationOperation(data.actionId)
+  })
+
+export const waitForMcpElicitation = createServerFn({ method: 'POST' })
+  .validator((input) => elicitationWaitInput.parse(input))
+  .handler(async ({ data }) => {
+    const update = await waitForElicitationUpdate(
+      data.actionId,
+      data.lastRequestId,
+    )
+    if (update.state === 'finished') return update
+    try {
+      return {
+        state: update.state,
+        request: elicitationRequest.parse(update.request),
+      }
+    } catch (error) {
+      finishElicitationOperation(data.actionId)
+      throw error
+    }
+  })
+
+export const finishMcpElicitation = createServerFn({ method: 'POST' })
+  .validator((input) => elicitationActionInput.parse(input))
+  .handler(({ data }) => {
+    finishElicitationOperation(data.actionId)
+  })
+
+export const respondToMcpElicitation = createServerFn({ method: 'POST' })
+  .validator((input) => elicitationResponseInput.parse(input))
+  .handler(({ data }) => {
+    return {
+      accepted: respondToElicitation(
+        data.actionId,
+        data.requestId,
+        data.result,
+      ),
+    }
   })

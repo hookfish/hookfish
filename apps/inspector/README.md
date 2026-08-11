@@ -38,8 +38,10 @@ Hookfish checkout or pnpm workspace. It stores PGlite data in
 
 The inspector supports Streamable HTTP with HTTP + SSE fallback, and displays
 tools, resources, resource templates, prompts, server metadata, and raw results.
-Hookfish handles OAuth discovery, PKCE, dynamic client registration, encrypted
-token persistence, refresh, and server-side token access.
+Tool, resource, and prompt execution supports form and URL elicitation, including
+URL completion notifications and manual retry. Hookfish handles OAuth discovery,
+PKCE, dynamic client registration, encrypted token persistence, refresh, and
+server-side token access.
 
 Build the production app with:
 
