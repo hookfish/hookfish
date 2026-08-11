@@ -159,4 +159,38 @@ describe('McpProvider', () => {
       expect.anything(),
     )
   })
+
+  it('uses dynamic registration when client metadata would be on localhost', async () => {
+    const fetcher = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        if (url === authorizationMetadataUrl) {
+          return Response.json({
+            issuer,
+            authorization_endpoint: `${issuer}/authorize`,
+            token_endpoint: `${issuer}/token`,
+            registration_endpoint: `${issuer}/register`,
+            client_id_metadata_document_supported: true,
+            code_challenge_methods_supported: ['S256'],
+          })
+        }
+        if (url === `${issuer}/register`) {
+          expect(JSON.parse(String(init?.body))).toMatchObject({
+            redirect_uris: [
+              'https://inspector.localhost/api/oauth/callback/acme',
+            ],
+          })
+          return Response.json({ client_id: 'localhost-registered-client' })
+        }
+        return discoveryResponse(input)
+      },
+    )
+    const provider = new McpProvider({ fetch: fetcher })
+    const credentials = await provider.registerClient({
+      configuration: { resource_url: resourceUrl },
+      redirectUri: 'https://inspector.localhost/api/oauth/callback/acme',
+    })
+
+    expect(credentials).toEqual({ clientId: 'localhost-registered-client' })
+  })
 })

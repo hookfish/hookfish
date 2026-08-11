@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { clearLine, cursorTo } from 'node:readline'
@@ -91,6 +98,43 @@ function packageManager(directory: string): PackageManager {
 
 async function exitWith(code: number): Promise<never> {
   process.exit(code)
+}
+
+function portlessCliEntry(): string {
+  const portlessModule = fileURLToPath(import.meta.resolve('portless'))
+  const entry = path.join(path.dirname(portlessModule), 'cli.js')
+  if (!existsSync(entry)) {
+    throw new Error('The bundled Portless CLI is missing. Reinstall hookfish.')
+  }
+  return entry
+}
+
+async function startInspectorWithPortless(): Promise<never> {
+  const nodeMajor = Number.parseInt(process.versions.node, 10)
+  if (nodeMajor < 24) {
+    throw new Error(
+      'The Hookfish inspector requires Node.js 24 or newer to run with Portless.',
+    )
+  }
+
+  const environment = {
+    ...process.env,
+    HOOKFISH_INSPECTOR_PORTLESS_CHILD: '1',
+  }
+  const code = await run(
+    process.execPath,
+    [
+      portlessCliEntry(),
+      '--force',
+      'inspector',
+      process.execPath,
+      fileURLToPath(import.meta.url),
+      'inspect',
+    ],
+    environment,
+    process.cwd(),
+  )
+  return exitWith(code)
 }
 
 function parsePort(value: string | undefined): number | undefined {
@@ -272,6 +316,159 @@ type InspectorServerEntry = {
   }
 }
 
+type InspectorProcessLock = {
+  version: 1
+  pid: number
+  port: number
+  token: string
+}
+
+const inspectorShutdownPath = '/__hookfish/inspector/shutdown'
+
+function inspectorLockPath(dataDirectory: string): string {
+  return `${dataDirectory}.lock`
+}
+
+function readInspectorLock(lockPath: string): InspectorProcessLock | undefined {
+  try {
+    const value: unknown = JSON.parse(readFileSync(lockPath, 'utf8'))
+    if (!value || typeof value !== 'object') return undefined
+    const version = Reflect.get(value, 'version')
+    const pid = Reflect.get(value, 'pid')
+    const port = Reflect.get(value, 'port')
+    const token = Reflect.get(value, 'token')
+    if (
+      version !== 1 ||
+      !Number.isInteger(pid) ||
+      typeof pid !== 'number' ||
+      pid <= 0 ||
+      !Number.isInteger(port) ||
+      typeof port !== 'number' ||
+      port <= 0 ||
+      typeof token !== 'string' ||
+      token.length < 32
+    ) {
+      return undefined
+    }
+    return { version, pid, port, token }
+  } catch {
+    return undefined
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeInspectorLock(
+  lockPath: string,
+  expected: InspectorProcessLock,
+): void {
+  const current = readInspectorLock(lockPath)
+  if (current?.pid !== expected.pid || current.token !== expected.token) return
+  try {
+    unlinkSync(lockPath)
+  } catch {
+    // The owner may have removed its lock concurrently.
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) return true
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return !isProcessAlive(pid)
+}
+
+async function stopLockedInspector(lock: InspectorProcessLock) {
+  if (!isProcessAlive(lock.pid)) return
+
+  let accepted = false
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${lock.port}${inspectorShutdownPath}`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${lock.token}` },
+        signal: AbortSignal.timeout(1_000),
+      },
+    )
+    accepted = response.status === 202
+  } catch {
+    // The old Portless wrapper may already have stopped the process.
+  }
+
+  if (await waitForProcessExit(lock.pid, accepted ? 2_000 : 500)) return
+  throw new Error(
+    'Another Hookfish inspector is still using the local database. Stop it and try again.',
+  )
+}
+
+async function claimInspectorProcess(dataDirectory: string, port: number) {
+  const lockPath = inspectorLockPath(dataDirectory)
+  mkdirSync(path.dirname(dataDirectory), { recursive: true })
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const lockExists = existsSync(lockPath)
+    const existing = readInspectorLock(lockPath)
+    if (lockExists && !existing) {
+      throw new Error(
+        `The Hookfish inspector lock at ${lockPath} is invalid. Remove it after confirming no inspector is running.`,
+      )
+    }
+    if (existing && existing.pid !== process.pid) {
+      await stopLockedInspector(existing)
+      removeInspectorLock(lockPath, existing)
+    }
+
+    const lock: InspectorProcessLock = {
+      version: 1,
+      pid: process.pid,
+      port,
+      token: randomBytes(32).toString('hex'),
+    }
+    try {
+      writeFileSync(lockPath, `${JSON.stringify(lock)}\n`, {
+        flag: 'wx',
+        mode: 0o600,
+      })
+      let released = false
+      const release = () => {
+        if (released) return
+        released = true
+        removeInspectorLock(lockPath, lock)
+      }
+      return {
+        release,
+        acceptsShutdown(request: Request) {
+          return (
+            request.method === 'POST' &&
+            new URL(request.url).pathname === inspectorShutdownPath &&
+            request.headers.get('Authorization') === `Bearer ${lock.token}`
+          )
+        },
+      }
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'EEXIST'
+      ) {
+        throw error
+      }
+    }
+  }
+
+  throw new Error('Could not claim the local Hookfish inspector database.')
+}
+
 function isInspectorServerEntry(value: unknown): value is InspectorServerEntry {
   if (!value || typeof value !== 'object') return false
   const entry = Reflect.get(value, 'default')
@@ -302,20 +499,60 @@ async function startInspector(
   process.env.HOOKFISH_FRONTEND_URL ??= origin
   process.env.OAUTH_REDIRECT_BASE_URL ??= origin
 
-  const entry: unknown = await import(pathToFileURL(serverEntry).href)
-  if (!isInspectorServerEntry(entry)) {
-    throw new Error('The packaged inspector server entry is invalid.')
-  }
-  const server = serve({
-    manual: true,
-    silent: true,
-    hostname,
+  const processLock = await claimInspectorProcess(
+    process.env.PGLITE_DATA_DIR,
     port,
-    middleware: [serveStatic({ dir: path.join(inspectorDirectory, 'client') })],
-    fetch: (request) => entry.default.fetch(request),
-  })
-  await server.serve()
-  process.stdout.write(`Hookfish MCP Inspector running at ${origin}\n`)
+  )
+  let server: ReturnType<typeof serve> | undefined
+  let shuttingDown = false
+  const shutdown = async (exitCode: number) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    const forceExit = setTimeout(() => {
+      processLock.release()
+      process.exit(exitCode)
+    }, 500)
+    forceExit.unref()
+    await server?.close(true).catch(() => undefined)
+    clearTimeout(forceExit)
+    processLock.release()
+    process.exit(exitCode)
+  }
+  const onSigint = () => void shutdown(130)
+  const onSigterm = () => void shutdown(143)
+  process.once('SIGINT', onSigint)
+  process.once('SIGTERM', onSigterm)
+  process.once('exit', processLock.release)
+
+  try {
+    const entry: unknown = await import(pathToFileURL(serverEntry).href)
+    if (!isInspectorServerEntry(entry)) {
+      throw new Error('The packaged inspector server entry is invalid.')
+    }
+    server = serve({
+      manual: true,
+      silent: true,
+      hostname,
+      port,
+      middleware: [
+        serveStatic({ dir: path.join(inspectorDirectory, 'client') }),
+      ],
+      fetch: (request) => {
+        if (processLock.acceptsShutdown(request)) {
+          setTimeout(() => void shutdown(0), 25)
+          return new Response(null, { status: 202 })
+        }
+        return entry.default.fetch(request)
+      },
+    })
+    await server.serve()
+    process.stdout.write(`Hookfish MCP Inspector running at ${origin}\n`)
+  } catch (error) {
+    process.off('SIGINT', onSigint)
+    process.off('SIGTERM', onSigterm)
+    processLock.release()
+    throw error
+  }
 }
 
 function loadDevelopmentEnvironment(): void {
@@ -500,17 +737,31 @@ program
   .alias('inspector')
   .description('Run the inspector')
   .action(async () => {
+    const isPortlessChild =
+      process.env.HOOKFISH_INSPECTOR_PORTLESS_CHILD === '1'
+    const configuredOrigin = process.env.HOOKFISH_INSPECTOR_URL?.trim()
+    const portlessOrigin = process.env.PORTLESS_URL?.trim()
+    if (!isPortlessChild && !configuredOrigin && !portlessOrigin) {
+      return startInspectorWithPortless()
+    }
+
     const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
     const requestedPort = parsePort(process.env.PORT)
-    const inspectorHostname = allocatedPort ? 'localhost' : '127.0.0.1'
+    const inspectorHostname = portlessOrigin
+      ? (process.env.HOST ?? '127.0.0.1')
+      : allocatedPort
+        ? 'localhost'
+        : '127.0.0.1'
     const inspectorHost = process.env.INSPECTOR_HOST ?? inspectorHostname
     const inspectorPort =
       parsePort(process.env.INSPECTOR_PORT) ??
-      offsetPort(allocatedPort, 2) ??
-      requestedPort ??
+      (portlessOrigin
+        ? (requestedPort ?? offsetPort(allocatedPort, 2))
+        : (offsetPort(allocatedPort, 2) ?? requestedPort)) ??
       3000
     const inspectorOrigin =
-      process.env.HOOKFISH_INSPECTOR_URL ??
+      configuredOrigin ??
+      portlessOrigin ??
       `http://${browserHostname(inspectorHost)}:${inspectorPort}`
 
     await startInspector(inspectorHost, inspectorPort, inspectorOrigin)

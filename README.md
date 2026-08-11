@@ -61,9 +61,12 @@ encryption key and `BROKER_API_KEY=test`.
 
 Start the standalone inspector with `npx hookfish inspect`. The `inspector`
 command is an alias. In this repository, `pnpm cli inspect` runs the same
-packaged server. It mounts the raw API at `/api` and the browser client facade
-at `/api/client`, backed by PGlite in `~/.hookfish/inspector` by default.
-`HOOKFISH_API_KEY` defaults to `test` when unset or empty.
+packaged server. The command uses Portless to serve
+`https://inspector.localhost`, terminating any process that already owns that
+route. It mounts the raw API at `/api` and the browser client facade at
+`/api/client`, backed by PGlite in `~/.hookfish/inspector` by default.
+`HOOKFISH_API_KEY` defaults to `test` when unset or empty. The CLI requires
+Node.js 24 or newer.
 
 `hookfish dev` delegates to `turbo dev` filtered to the frontend and the selected
 backend. Choose `hono-node` (the default), `express`, `nextjs`, or
