@@ -1,5 +1,12 @@
 # hookfish
 
+## 0.8.1
+
+### Patch Changes
+
+- 120c06f: Keep generated projects on the CLI's prerelease channel and preapprove the
+  required esbuild install script for pnpm.
+
 ## 0.8.0
 
 ### Minor Changes
