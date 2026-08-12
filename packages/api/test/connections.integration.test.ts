@@ -306,7 +306,7 @@ describe('connections', () => {
                 name: 'scopes',
                 label: 'Scopes',
                 type: 'string_list',
-                target: 'configuration',
+                target: 'scopes',
                 required: false,
               },
             ],
@@ -340,14 +340,30 @@ describe('connections', () => {
     const first = await harness.fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://mcp.example.com/one', scopes: [] }),
+      body: JSON.stringify({
+        url: 'https://mcp.example.com/one',
+        scopes: ['read'],
+      }),
     })
     expect(first.status).toBe(401)
+
+    const migrated = await harness.fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        configuration: { resource_url: 'https://mcp.example.com/one' },
+        scopes: ['read'],
+      }),
+    })
+    expect(migrated.status).toBe(401)
 
     const conflict = await harness.fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://mcp.example.com/two', scopes: [] }),
+      body: JSON.stringify({
+        url: 'https://mcp.example.com/two',
+        scopes: ['read'],
+      }),
     })
     expect(conflict.status).toBe(409)
     await expect(conflict.json()).resolves.toMatchObject({

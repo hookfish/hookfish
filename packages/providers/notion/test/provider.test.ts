@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { NotionProvider } from '../src'
 
 describe('NotionProvider', () => {
+  it('describes requested scopes as authorization input', () => {
+    expect(new NotionProvider().inputSchema.fields).toContainEqual(
+      expect.objectContaining({
+        name: 'scopes',
+        type: 'string_list',
+        target: 'scopes',
+      }),
+    )
+  })
+
   it('uses the Notion SDK and validates its response with Zod', async () => {
     const token = vi.fn(async () => ({
       access_token: 'notion-token',

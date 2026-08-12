@@ -952,7 +952,7 @@ export type ConnectionsProvidersResponses = {
                     name: string;
                     label: string;
                     type: 'text' | 'url' | 'string_list';
-                    target: 'identity' | 'configuration';
+                    target: 'identity' | 'configuration' | 'scopes';
                     required: boolean;
                     placeholder?: string;
                     description?: string;
@@ -2203,7 +2203,7 @@ export type OrganizationConnectionsProvidersResponses = {
                     name: string;
                     label: string;
                     type: 'text' | 'url' | 'string_list';
-                    target: 'identity' | 'configuration';
+                    target: 'identity' | 'configuration' | 'scopes';
                     required: boolean;
                     placeholder?: string;
                     description?: string;

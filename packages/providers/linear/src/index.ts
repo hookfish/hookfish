@@ -33,6 +33,19 @@ export type LinearProviderOptions = ProviderCredentials & {
 export class LinearProvider implements OAuthProviderTemplate {
   readonly authentication = 'oauth' as const
   readonly label = 'Linear'
+  readonly inputSchema = {
+    fields: [
+      {
+        name: 'scopes',
+        label: 'Scopes',
+        type: 'string_list',
+        target: 'scopes',
+        required: false,
+        placeholder: 'read, write',
+        description: 'Separate scopes with commas or spaces.',
+      },
+    ],
+  } as const
   readonly defaultScopes = ['read', 'write'] as const
   readonly availableScopes = ['read', 'write'] as const
   readonly usesPkce = false

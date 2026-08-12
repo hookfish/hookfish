@@ -67,6 +67,13 @@ The provider list describes credential acquisition and input controls:
             "type": "url",
             "target": "configuration",
             "required": true
+          },
+          {
+            "name": "scopes",
+            "label": "Scopes",
+            "type": "string_list",
+            "target": "scopes",
+            "required": false
           }
         ]
       }
@@ -76,7 +83,8 @@ The provider list describes credential acquisition and input controls:
 ```
 
 Authentication is `oauth` or `secret`. Identity fields become path segments;
-configuration fields become immutable, non-secret connection configuration.
+configuration fields become immutable, non-secret connection configuration;
+scope fields become requested OAuth scopes.
 The deprecated `configurable` boolean remains in responses for compatibility;
 new clients should render `input_schema.fields` instead.
 

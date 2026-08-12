@@ -107,7 +107,7 @@ function stubMcpProvider(stub: OAuthStub): OAuthProviderTemplate {
           name: 'scopes',
           label: 'Scopes',
           type: 'string_list',
-          target: 'configuration',
+          target: 'scopes',
           required: false,
         },
       ],

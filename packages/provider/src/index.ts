@@ -25,7 +25,7 @@ export type ProviderInputField = {
   readonly name: string
   readonly label: string
   readonly type: 'text' | 'url' | 'string_list'
-  readonly target: 'identity' | 'configuration'
+  readonly target: 'identity' | 'configuration' | 'scopes'
   readonly required: boolean
   readonly placeholder?: string
   readonly description?: string
@@ -339,7 +339,11 @@ export class ProviderRegistry {
     const provider = this.getProvider(slug)
     return (
       provider !== undefined &&
-      (isSecretProvider(provider) || (provider.isConfigured?.() ?? true))
+      (isSecretProvider(provider) ||
+        (provider.inputSchema?.fields ?? []).some(
+          (field) => field.target === 'identity',
+        ) ||
+        (provider.isConfigured?.() ?? true))
     )
   }
 }

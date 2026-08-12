@@ -129,7 +129,11 @@ type ConnectionAccessBody = z.infer<typeof connectionAccessInput>
 function requestConfiguration(
   body: ConnectionAccessBody,
 ): Record<string, unknown> | undefined {
-  if (body.configuration) return body.configuration
+  if (body.configuration) {
+    return body.scopes === undefined
+      ? body.configuration
+      : { ...body.configuration, scopes: body.scopes }
+  }
   if (!body.url) return undefined
   return { resource_url: body.url, scopes: body.scopes ?? [] }
 }
@@ -203,7 +207,7 @@ const listProvidersRoute = createRoute({
                       name: z.string(),
                       label: z.string(),
                       type: z.enum(['text', 'url', 'string_list']),
-                      target: z.enum(['identity', 'configuration']),
+                      target: z.enum(['identity', 'configuration', 'scopes']),
                       required: z.boolean(),
                       placeholder: z.string().optional(),
                       description: z.string().optional(),

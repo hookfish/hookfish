@@ -298,7 +298,7 @@ export class McpProvider implements OAuthProviderTemplate {
         name: 'scopes',
         label: 'Scopes',
         type: 'string_list',
-        target: 'configuration',
+        target: 'scopes',
         required: false,
         placeholder: 'read, write',
         description: 'Separate scopes with commas or spaces.',

@@ -102,7 +102,7 @@ type ProviderInputField = {
   name: string
   label: string
   type: 'text' | 'url' | 'string_list'
-  target: 'identity' | 'configuration'
+  target: 'identity' | 'configuration' | 'scopes'
   required: boolean
   placeholder?: string
   description?: string
@@ -330,15 +330,19 @@ function AddResourceDialog({
             ),
         )
         const configuredScopes = configuration.scopes
+        const scopesField = fields.find((field) => field.target === 'scopes')
+        const requestedScopes = scopesField
+          ? fieldValue(scopesField)
+          : configuredScopes
         const authorization = await authorizeConnection(
           managementToken,
           path,
           providerId,
           {
             ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
-            ...(Array.isArray(configuredScopes)
+            ...(Array.isArray(requestedScopes)
               ? {
-                  scopes: configuredScopes.filter(
+                  scopes: requestedScopes.filter(
                     (scope) => typeof scope === 'string',
                   ),
                 }

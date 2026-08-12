@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createProviderRegistry } from '@hookfish/provider'
 import { McpProvider } from '../src'
 
 const resourceUrl = 'https://mcp.example.com/team/mcp'
@@ -41,6 +42,12 @@ function discoveryResponse(input: string | URL | Request) {
 describe('McpProvider', () => {
   it('acquires credentials with OAuth', () => {
     expect(new McpProvider().authentication).toBe('oauth')
+  })
+
+  it('is configured as a connection-configured registry provider', () => {
+    const registry = createProviderRegistry({ mcp: new McpProvider() })
+
+    expect(registry.isProviderConfigured('mcp')).toBe(true)
   })
 
   it('discovers MCP OAuth metadata, registers, and uses PKCE and resource indicators', async () => {
