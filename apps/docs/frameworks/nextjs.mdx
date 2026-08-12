@@ -24,7 +24,7 @@ Create `app/api/[[...path]]/route.ts`:
 
 ```ts
 import path from 'node:path'
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import config from '../../../hookfish.config'
 
@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic'
 const db = pglite(
   process.env.PGLITE_DATA_DIR ?? path.resolve(process.cwd(), 'hookfish-data'),
 )
-const hookfishPromise = Hookfish.init({ ...config, db })
+const hookfishPromise = HookfishServer.init({ ...config, db })
 
 async function handle(request: Request) {
   const hookfish = await hookfishPromise

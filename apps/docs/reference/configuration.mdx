@@ -4,7 +4,7 @@ description: "Reference Hookfish config fields and runtime-specific options."
 ---
 
 Define shared broker behavior in `hookfish.config.ts`. Pass host-specific
-behavior as the second argument to `Hookfish.init`.
+behavior as the second argument to `HookfishServer.init`.
 
 ## Broker configuration
 
@@ -45,7 +45,9 @@ call Hookfish with a scoped broker token.
 ## Runtime options
 
 ```ts
-const hookfish = await Hookfish.init(config, {
+import { HookfishServer } from '@hookfish/api'
+
+const hookfish = await HookfishServer.init(config, {
   runtime: 'node',
 })
 ```

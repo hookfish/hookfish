@@ -26,7 +26,7 @@ Branch on `error.code`, not the message text.
 | `401` | `invalid_access_token` | Scoped token is malformed, expired, or revoked |
 | `401` | `reauthorization_required` | Provider credentials cannot be refreshed |
 | `403` | `insufficient_scope` | Credential does not cover the resource path |
-| `403` | `root_access_required` | Operation requires `BROKER_API_KEY` |
+| `403` | `root_access_required` | Operation requires `HOOKFISH_API_KEY` |
 | `403` | `untrusted_return_to` | Destination origin is not allowlisted |
 | `403` | `untrusted_browser_origin` | Browser origin is not allowlisted |
 | `404` | `not_connected` | Connection ID does not exist |
@@ -54,9 +54,22 @@ server logs.
 
 ## Typed client errors
 
-The Hono client returns a Fetch-compatible `Response`. Check `response.ok`,
-then parse the Hookfish error body and translate it into an application-level
-response. Do not forward provider details or credentials to the browser.
+`@hookfish/sdk` throws `HookfishError`. Check its `status` for HTTP behavior and
+its `code` for the stable Hookfish error code. The original error object remains
+available as `body`. Translate the failure into an application-level response;
+do not forward provider details or credentials to the browser.
+
+```ts
+import { HookfishError } from '@hookfish/sdk'
+
+try {
+  await hookfish.oauth.getToken('billing/github')
+} catch (error) {
+  if (error instanceof HookfishError && error.status === 404) {
+    // Start authorization for this connection.
+  }
+}
+```
 
 `@hookfish/hooks`, when used with the optional browser facade, throws
 `HookfishApiError` from its queries and mutations.

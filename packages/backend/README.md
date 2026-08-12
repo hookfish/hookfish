@@ -2,7 +2,7 @@
 
 Fetch-compatible composition layer for a Hookfish deployment.
 
-`Hookfish.init(...).fetch` applies this composition automatically. Import this
+`HookfishServer.init(...).fetch` applies this composition automatically. Import this
 lower-level package only when composing a raw Hookfish-compatible API handler
 yourself.
 
@@ -18,7 +18,7 @@ import config from './hookfish.config'
 const backend = createHookfishBackend({
   config,
   hookfishFetch: rawApiFetch,
-  brokerApiKey: (env) => env.BROKER_API_KEY,
+  brokerApiKey: (env) => env.HOOKFISH_API_KEY,
 })
 
 export default {

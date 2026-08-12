@@ -35,7 +35,7 @@ client registration or HTTPS client-ID metadata documents.
 
 ```bash
 curl --request PUT http://127.0.0.1:8787/api/admin/providers/notion-mcp \
-  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "template": "mcp",
@@ -75,7 +75,7 @@ The dynamic provider ID becomes the authorization path:
 
 ```bash
 curl --request POST http://127.0.0.1:8787/api/oauth/authorize/notion-mcp \
-  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
   --header 'Content-Type: application/json' \
   --data '{"connection_id":"personal/notion"}'
 ```

@@ -85,8 +85,35 @@ describe('scaffoldProject', () => {
       path.join(result.directory, environmentFile),
       'utf8',
     )
-    expect(environment).toMatch(/OAUTH_ENCRYPTION_KEY=.+/)
-    expect(environment).toContain('BROKER_API_KEY=test')
+    const encryptionKey = environment.match(
+      /^OAUTH_ENCRYPTION_KEY=(.+)$/m,
+    )?.[1]
+    const brokerApiKey = environment.match(/^HOOKFISH_API_KEY=(.+)$/m)?.[1]
+
+    expect(encryptionKey).toMatch(/^[A-Za-z0-9+/]{43}=$/)
+    expect(brokerApiKey).toMatch(/^[A-Za-z0-9+/]{43}=$/)
+    expect(brokerApiKey).not.toBe(encryptionKey)
+    expect(brokerApiKey).not.toBe('test')
+  })
+
+  it('generates a distinct broker API key for each project', () => {
+    const parentDirectory = temporaryDirectory()
+    const first = scaffoldProject({
+      name: 'broker-one',
+      backend: 'node',
+      parentDirectory,
+    })
+    const second = scaffoldProject({
+      name: 'broker-two',
+      backend: 'node',
+      parentDirectory,
+    })
+    const brokerKey = (directory: string) =>
+      readFileSync(path.join(directory, '.env'), 'utf8').match(
+        /^HOOKFISH_API_KEY=(.+)$/m,
+      )?.[1]
+
+    expect(brokerKey(first.directory)).not.toBe(brokerKey(second.directory))
   })
 
   it('keeps all Hookfish dependencies on the requested release channel', () => {

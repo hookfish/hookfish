@@ -61,6 +61,7 @@ const secretMetadataSchema = z.object({
 const listRoute = createRoute({
   method: 'get',
   path: '/secrets',
+  operationId: 'secrets.list',
   summary: 'List secret metadata',
   description: 'Lists accessible paths and timestamps, never secret values.',
   security: brokerAuth,
@@ -85,6 +86,7 @@ const listRoute = createRoute({
 const putRoute = createRoute({
   method: 'put',
   path: '/secrets/{secret_path}',
+  operationId: 'secrets.put',
   summary: 'Store an encrypted secret',
   security: brokerAuth,
   request: {
@@ -113,6 +115,7 @@ const putRoute = createRoute({
 const getRoute = createRoute({
   method: 'get',
   path: '/secrets/{secret_path}',
+  operationId: 'secrets.get',
   summary: 'Retrieve a decrypted secret',
   description:
     'Server-only operation. This route is never exposed through the browser-safe client facade.',
@@ -134,6 +137,7 @@ const getRoute = createRoute({
 const deleteRoute = createRoute({
   method: 'delete',
   path: '/secrets/{secret_path}',
+  operationId: 'secrets.delete',
   summary: 'Delete a secret',
   security: brokerAuth,
   request: { params: pathParam },

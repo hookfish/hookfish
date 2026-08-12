@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import '@tanstack/react-start/server-only'
 import config, { dataDirectory } from '../../hookfish.config'
 import { inspectorPublicOrigin } from './public-origin.server'
@@ -38,7 +38,6 @@ function inspectorEnvironment(origin: string) {
 
   return {
     ...process.env,
-    BROKER_API_KEY: apiKey,
     HOOKFISH_API_KEY: apiKey,
     OAUTH_ENCRYPTION_KEY: encryptionKey,
     OAUTH_REDIRECT_BASE_URL: origin,
@@ -49,14 +48,14 @@ type InspectorEnvironment = ReturnType<typeof inspectorEnvironment>
 
 const hookfishByOrigin = new Map<
   string,
-  Promise<Hookfish<InspectorEnvironment>>
+  Promise<HookfishServer<InspectorEnvironment>>
 >()
 
 function hookfishForOrigin(origin: string) {
   const existing = hookfishByOrigin.get(origin)
   if (existing) return existing
 
-  const hookfish = Hookfish.init<InspectorEnvironment>(
+  const hookfish = HookfishServer.init<InspectorEnvironment>(
     {
       ...config,
       includeClient: true,

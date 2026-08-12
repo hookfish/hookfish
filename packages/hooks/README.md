@@ -43,7 +43,7 @@ const providers = hookfish.useProviderSearch({
 ```
 
 Protected routes accept any headers supported by Hono's RPC client. Prefer a
-browser-safe session token or cookie. Never put `BROKER_API_KEY` in frontend
+browser-safe session token or cookie. Never put `HOOKFISH_API_KEY` in frontend
 code:
 
 ```ts

@@ -24,8 +24,9 @@
             ]
           },
           {
-            "group": "Connect providers",
+            "group": "Store secrets",
             "pages": [
+              "secrets/api-keys",
               "authentication/oauth-providers",
               "providers/remote-mcp",
               "providers/dynamic",
@@ -57,8 +58,7 @@
             "pages": [
               "authentication/application-auth",
               "authorization/token-scoping",
-              "authorization/organization-routing",
-              "authorization/secret-vault"
+              "authorization/organization-routing"
             ]
           },
           {

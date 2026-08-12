@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test'
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import { durableObjects } from '@hookfish/database/durable-object'
 import { describe, expect, it } from 'vitest'
 
@@ -98,7 +98,7 @@ describe('HookfishDurableObject', () => {
         `auth-routing:${context.organization ?? '__global__'}`,
       ),
     )
-    const hookfish = await Hookfish.init<Env>({
+    const hookfish = await HookfishServer.init<Env>({
       db,
       providers: {},
       organizationRouting: true,

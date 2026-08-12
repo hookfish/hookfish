@@ -13,6 +13,7 @@ const statsResponseSchema = z
 const statsRoute = createRoute({
   method: 'get',
   path: '/',
+  operationId: 'stats.get',
   summary: 'Read runtime stats',
   responses: {
     200: {

@@ -19,7 +19,7 @@ import {
   type DatabaseContext,
   defineDatabase,
   createProviderSource,
-  Hookfish,
+  HookfishServer,
 } from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
 import { listConnections, purgeExpiredStates } from '../src/oauth/broker'
@@ -35,7 +35,7 @@ describe('OAuth broker integration', () => {
 
   async function createHookfish(overrides: Partial<TestHarness['env']> = {}) {
     const bindings = { ...h.env, ...overrides }
-    const hookfish = await Hookfish.init<TestHarness['env']>({
+    const hookfish = await HookfishServer.init<TestHarness['env']>({
       db: h.db,
       providers: h.providers,
     })
@@ -356,8 +356,15 @@ describe('OAuth broker integration', () => {
     }
   })
 
+  it('serves Swagger UI at /api/docs instead of /api', async () => {
+    expect((await h.fetch('/api')).status).toBe(404)
+    const response = await h.fetch('/api/docs')
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/html')
+  })
+
   it('can limit OpenAPI to client-safe operations', async () => {
-    const app = await Hookfish.init({
+    const app = await HookfishServer.init({
       db: h.db,
       providers: h.providers,
       includeSwagger: false,
@@ -365,7 +372,6 @@ describe('OAuth broker integration', () => {
     const fetchApp = (path: string) =>
       app.fetch(new Request(`${API_ORIGIN}${path}`), h.env)
 
-    expect((await fetchApp('/api')).status).toBe(200)
     const document: {
       servers?: Array<{ url: string }>
       paths: Record<string, Record<string, unknown>>
@@ -380,7 +386,7 @@ describe('OAuth broker integration', () => {
   })
 
   it('mounts the configured client facade on the Hookfish fetch handler', async () => {
-    const app = await Hookfish.init(
+    const app = await HookfishServer.init(
       {
         db: h.db,
         providers: h.providers,
@@ -1313,7 +1319,7 @@ describe('OAuth broker integration', () => {
 
   it('passes organization context to request-aware database bindings', async () => {
     const contexts: DatabaseContext[] = []
-    const app = await Hookfish.init({
+    const app = await HookfishServer.init({
       db: defineDatabase((_bindings, context = {}) => {
         contexts.push(context)
         return h.db
@@ -1803,7 +1809,7 @@ describe('OAuth broker integration', () => {
   it('treats blank NODE_ENV as development', async () => {
     const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: '   ',
-      BROKER_API_KEY: undefined,
+      HOOKFISH_API_KEY: undefined,
     })
     const res = await app.fetch(
       new Request(`${API_ORIGIN}/api/oauth/providers`, {
@@ -1815,10 +1821,10 @@ describe('OAuth broker integration', () => {
     expect(res.status).toBe(200)
   })
 
-  it('requires BROKER_API_KEY in production when unset', async () => {
+  it('requires HOOKFISH_API_KEY in production when unset', async () => {
     const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: 'production',
-      BROKER_API_KEY: undefined,
+      HOOKFISH_API_KEY: undefined,
     })
     const res = await app.fetch(
       new Request(`${API_ORIGIN}/api/oauth/providers`),
@@ -1833,7 +1839,7 @@ describe('OAuth broker integration', () => {
   it('requires a fixed OAuth redirect base URL in production', async () => {
     const { hookfish: app, bindings } = await createHookfish({
       NODE_ENV: 'production',
-      BROKER_API_KEY: 'production-key',
+      HOOKFISH_API_KEY: 'production-key',
       OAUTH_REDIRECT_BASE_URL: undefined,
     })
     const res = await app.fetch(
@@ -1910,15 +1916,15 @@ describe('OAuth broker integration', () => {
     type Bindings = typeof h.env & { DYNAMIC_PROVIDER: OAuthProvider }
     const firstBindings: Bindings = {
       ...h.env,
-      BROKER_API_KEY: 'factory-key',
+      HOOKFISH_API_KEY: 'factory-key',
       DYNAMIC_PROVIDER: provider,
     }
     const rotatedBindings: Bindings = {
       ...firstBindings,
-      BROKER_API_KEY: 'rotated-key',
+      HOOKFISH_API_KEY: 'rotated-key',
       DYNAMIC_PROVIDER: rotatedProvider,
     }
-    const hookfish = await Hookfish.init<Bindings>({
+    const hookfish = await HookfishServer.init<Bindings>({
       db: h.db,
       providers: async (env) => {
         resolvedBindings.push(env)
@@ -1928,7 +1934,7 @@ describe('OAuth broker integration', () => {
     const request = (bindings: Bindings) =>
       hookfish.fetch(
         new Request(`${API_ORIGIN}/api/oauth/providers`, {
-          headers: { Authorization: `Bearer ${bindings.BROKER_API_KEY}` },
+          headers: { Authorization: `Bearer ${bindings.HOOKFISH_API_KEY}` },
         }),
         bindings,
       )
@@ -1958,7 +1964,7 @@ describe('OAuth broker integration', () => {
 
     const resolvedIds: string[] = []
     const listingQueries: string[] = []
-    const hookfish = await Hookfish.init<typeof h.env>({
+    const hookfish = await HookfishServer.init<typeof h.env>({
       db: h.db,
       providerManagement: true,
       providers: createProviderSource({
@@ -2027,7 +2033,7 @@ describe('OAuth broker integration', () => {
     const provider = h.providers.getProvider(h.providerId)
     if (!provider) throw new Error('Stub provider is missing.')
 
-    const hookfish = await Hookfish.init<typeof h.env>({
+    const hookfish = await HookfishServer.init<typeof h.env>({
       db: h.db,
       providers: createProviderSource({
         getProvider: async (providerId) =>
@@ -2061,7 +2067,7 @@ describe('OAuth broker integration', () => {
     type Bindings = typeof h.env & { DATABASE: typeof h.db }
     let databaseBindings: Bindings | undefined
     let providerBindings: Bindings | undefined
-    const hookfish = await Hookfish.init<Bindings>({
+    const hookfish = await HookfishServer.init<Bindings>({
       db: defineDatabase((bindings: Bindings) => {
         databaseBindings = bindings
         return bindings.DATABASE

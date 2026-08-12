@@ -49,6 +49,7 @@ const errors = {
 const mintTokenRoute = createRoute({
   method: 'post',
   path: '/tokens',
+  operationId: 'admin.tokens.create',
   summary: 'Mint a named broker access token',
   description:
     'Creates an expiring named credential for one or more connection folders. Folder paths are canonicalized to `folder/**`. Tokens may delegate only to folders they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.',
@@ -111,6 +112,7 @@ const mintTokenRoute = createRoute({
 const listTokensRoute = createRoute({
   method: 'get',
   path: '/tokens',
+  operationId: 'admin.tokens.list',
   summary: 'List active broker access token names',
   description:
     'Requires root access. Returns names only; bearer values, scopes, and expiration metadata are never included.',
@@ -131,6 +133,7 @@ const listTokensRoute = createRoute({
 const revokeTokenRoute = createRoute({
   method: 'delete',
   path: '/tokens/{name}',
+  operationId: 'admin.tokens.revoke',
   summary: 'Revoke a named broker access token',
   description:
     'Requires root access. Deletes the persisted token record, immediately invalidating its bearer credential.',

@@ -1,0 +1,37 @@
+{
+  "name": "@hookfish/sdk",
+  "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kamath/hookfish.git",
+    "directory": "packages/sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "generate": "tsx ./scripts/generate-openapi.ts && openapi-ts",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "@hookfish/api": "workspace:*",
+    "@types/node": "^24.12.3",
+    "tsx": "4.23.12",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

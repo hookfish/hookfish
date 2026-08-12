@@ -12,7 +12,7 @@ and runtime resolvers can override these conventions.
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `OAUTH_ENCRYPTION_KEY` | For credential operations | Encrypt provider tokens and vault values |
-| `BROKER_API_KEY` | For authenticated API operations | Root API credential and scoped-token signing key |
+| `HOOKFISH_API_KEY` | For authenticated API operations | Root API credential and scoped-token signing key |
 | `OAUTH_REDIRECT_BASE_URL` | Production | Public origin used to derive callback URLs |
 | `HOOKFISH_FRONTEND_URL` | When serving a separate dashboard | Browser origin and default callback destination in generated projects |
 
@@ -24,7 +24,7 @@ openssl rand -base64 32
 
 <Warning>
   Rotating `OAUTH_ENCRYPTION_KEY` makes existing encrypted values unreadable.
-  Rotating `BROKER_API_KEY` invalidates every scoped broker token.
+  Rotating `HOOKFISH_API_KEY` invalidates every scoped broker token.
 </Warning>
 
 ## Database variables
@@ -60,7 +60,9 @@ register a client or store custom credentials.
 | `FRONTEND_HOST` / `FRONTEND_PORT` | Packaged dashboard bind address |
 | `INSPECTOR_HOST` / `INSPECTOR_PORT` | Inspector bind address |
 | `HOOKFISH_INSPECTOR_URL` | Public inspector origin behind an intentional proxy |
-| `HOOKFISH_API_KEY` | Inspector's local broker key; defaults to `test` |
+
+The inspector uses `HOOKFISH_API_KEY` as its local broker key and defaults to
+`test` when it is unset.
 
 Store production values in the runtime's secret manager. Do not commit `.env`,
 `.dev.vars`, database URLs, or provider credentials.

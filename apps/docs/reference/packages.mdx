@@ -9,7 +9,8 @@ provider implementations, React integration, and CLI into published packages.
 | Package | Use it for |
 | --- | --- |
 | `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
-| `@hookfish/api` | `Hookfish`, config types, events, database contract, and route types |
+| `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
+| `@hookfish/sdk` | Generated, end-to-end typed `Hookfish` client for trusted application code |
 | `@hookfish/database` | Shared database types and migration helper |
 | `@hookfish/providers` | GitHub, Linear, Notion, and MCP factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
@@ -34,7 +35,7 @@ Hyperdrive for production Workers deployments.
 ## API import paths
 
 ```ts
-import { Hookfish, defineHookfishConfig } from '@hookfish/api'
+import { HookfishServer, defineHookfishConfig } from '@hookfish/api'
 import { createHookfishBackend } from '@hookfish/api/client'
 import {
   defineDatabase,
@@ -42,10 +43,24 @@ import {
 } from '@hookfish/api/database'
 ```
 
-For user-facing applications, import `AppType` from `@hookfish/api` and create
-a server-side client with `hc` from `hono/client`. Import the migration helper
-from `@hookfish/database`. The API subpaths are available for lower-level
-composition.
+For trusted application code, construct `Hookfish` from `@hookfish/sdk`.
+Pass `organization` once to select organization-prefixed operations for every
+supported resource:
+
+```ts
+import { Hookfish } from '@hookfish/sdk'
+
+const hookfish = new Hookfish({
+  apiKey: process.env.HOOKFISH_API_KEY,
+  baseUrl: 'https://broker.example.com/api',
+  organization: 'acme',
+})
+
+const token = await hookfish.oauth.getToken('billing/github')
+```
+
+Use `@hookfish/api` for the broker runtime and lower-level composition. Import
+the migration helper from `@hookfish/database`.
 
 ## Individual provider packages
 
@@ -55,5 +70,5 @@ want to keep the dependency surface narrow.
 
 <Note>
   Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
-  handler yourself. `Hookfish.init(...).fetch` already applies that layer.
+  handler yourself. `HookfishServer.init(...).fetch` already applies that layer.
 </Note>

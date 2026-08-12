@@ -261,6 +261,7 @@ function serializeConnection(
 const listProvidersRoute = createRoute({
   method: 'get',
   path: '/providers',
+  operationId: 'oauth.providers.list',
   summary: 'List known providers and whether credentials are configured',
   description:
     "Returns configured providers by default. Set `include_unconfigured=true` to include providers that cannot start a new authorization. Each `callback_url` is the exact string this deployment will send as `redirect_uri`; paste it into the provider's developer console verbatim.",
@@ -308,6 +309,7 @@ const listProvidersRoute = createRoute({
 const authorizeRoute = createRoute({
   method: 'post',
   path: '/authorize/{provider_path}',
+  operationId: 'oauth.authorize',
   summary: 'Create a consent URL for a connection',
   description:
     'Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.',
@@ -364,6 +366,7 @@ const authorizeRoute = createRoute({
 const callbackRoute = createRoute({
   method: 'get',
   path: '/callback/{provider_path}',
+  operationId: 'oauth.callback',
   summary: 'OAuth redirect target (called by the provider, not by your code)',
   description:
     "Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.",
@@ -392,6 +395,7 @@ const callbackRoute = createRoute({
 const clientMetadataRoute = createRoute({
   method: 'get',
   path: '/client-metadata/{provider_path}',
+  operationId: 'oauth.clientMetadata.get',
   summary: 'OAuth client metadata document for MCP authorization servers',
   request: { params: providerPathParamSchema },
   responses: {
@@ -416,6 +420,7 @@ const clientMetadataRoute = createRoute({
 const listConnectionsRoute = createRoute({
   method: 'get',
   path: '/connections',
+  operationId: 'oauth.connections.list',
   summary: 'List connections',
   description:
     'Returns every stored connection. Pass `provider`, `connection_id_prefix`, or both to filter. Connection id prefixes respect `/` segment boundaries: `team/apple` matches itself and `team/apple/...`, but not `team/apples`.',
@@ -456,6 +461,7 @@ const listConnectionsRoute = createRoute({
 const getConnectionRoute = createRoute({
   method: 'get',
   path: '/connections/{connection_id}',
+  operationId: 'oauth.connections.get',
   summary: 'Get a connection by id',
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
@@ -475,6 +481,7 @@ const getConnectionRoute = createRoute({
 const tokenRoute = createRoute({
   method: 'get',
   path: '/tokens/{connection_id}',
+  operationId: 'oauth.tokens.get',
   summary: 'Get a currently-valid access token, refreshing if needed',
   security: brokerAuth,
   request: { params: connectionIdParamSchema },
@@ -502,6 +509,7 @@ const tokenRoute = createRoute({
 const disconnectRoute = createRoute({
   method: 'delete',
   path: '/connections/{connection_id}',
+  operationId: 'oauth.connections.disconnect',
   summary: 'Revoke and forget a stored connection',
   description:
     'Revokes upstream credentials when the provider implements revocation, then deletes the encrypted local record. If upstream revocation fails, the record is retained so the operation can be retried. Providers without revocation support are deleted locally.',

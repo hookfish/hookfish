@@ -7,6 +7,7 @@ backend runtimes:
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
 - `packages/backend` — browser-safe facade plus raw Hookfish API composition
 - `packages/api` — shared Hono API and OAuth broker
+- `packages/sdk` — generated, typed server client for Hookfish operations
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
 - `packages/database` — PGlite, Postgres, and Durable Object adapters
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
@@ -24,7 +25,7 @@ The frontend contains no server functions or database code. Every host exposes:
 ```sh
 pnpm install
 cp apps/frontend/.env.example apps/frontend/.env
-# Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
+# Fill OAUTH_ENCRYPTION_KEY, HOOKFISH_API_KEY, and provider credentials.
 
 pnpm dev
 # Frontend: http://127.0.0.1:5173
@@ -39,7 +40,8 @@ pnpm dev --backend cloudflare-worker
 Scaffold a deployable Hookfish backend with the dashboard development server:
 
 ```sh
-pnpm dlx hookfish init my-broker --backend node
+npm install --global hookfish@latest
+hookfish init my-broker --backend node
 # Backends: vercel, cloudflare, node, bun, docker
 
 cd my-broker
@@ -56,7 +58,7 @@ initialization to skip dependency installation. The Cloudflare scaffold uses a
 SQLite-backed Durable Object; the Vercel scaffold expects Postgres through
 `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
 Each scaffold generates a gitignored local environment file with a unique
-encryption key and `BROKER_API_KEY=test`.
+encryption key and broker API key.
 
 Start the standalone inspector with `npx hookfish inspect`. The `inspector`
 command is an alias. In this repository, `pnpm cli inspect` runs the same
@@ -140,7 +142,7 @@ Store production credentials as Worker secrets and deploy:
 
 ```sh
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put OAUTH_ENCRYPTION_KEY
-pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put BROKER_API_KEY
+pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put HOOKFISH_API_KEY
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put GITHUB_CLIENT_ID
 pnpm --filter @hookfish/example-cloudflare-worker exec wrangler secret put GITHUB_CLIENT_SECRET
 pnpm --filter @hookfish/example-cloudflare-worker deploy
@@ -162,7 +164,7 @@ VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend bui
 
 For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
 to the selected backend. Before exposing the dashboard in production, pass an
-`authorizeBrowserRequest` runtime option to `Hookfish.init` and enforce the
+`authorizeBrowserRequest` runtime option to `HookfishServer.init` and enforce the
 application's session/authentication policy.
 
 The bundled dashboard currently shows global routes only. It has no

@@ -69,7 +69,7 @@ Swagger UI, the OpenAPI document, and MCP client metadata are also public.
 | --- | --- | --- |
 | Your application API | User-facing connection operations | Your application session and permissions |
 | Hookfish `/api/*` | Complete broker API | Root or scoped broker credential |
-| `/api` | Swagger UI | Visibility controlled by `includeSwagger` |
+| `/api/docs` | Swagger UI | Visibility controlled by `includeSwagger` |
 | `/api/openapi.json` | OpenAPI 3.1 document | Visibility controlled by `includeSwagger` |
 
 Authenticate browser requests in your application. The authorized route
@@ -84,7 +84,7 @@ Prefer an authenticated application route when serving your users.
 
 ## Portable runtime and storage
 
-`Hookfish.init(config)` returns an object with a Fetch-compatible `fetch`
+`HookfishServer.init(config)` returns an object with a Fetch-compatible `fetch`
 handler. Framework adapters translate their request model or mount that handler
 without changing Hookfish's API.
 
