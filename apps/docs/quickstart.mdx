@@ -75,10 +75,7 @@ server's OAuth discovery metadata and supported client-registration mechanism.
                 )
               ).secret,
             onUnauthorized: async () => {
-              await hookfish.connections.authorize(
-                'user/personal/gmail/mcp',
-                { url: 'https://gmail.run.tools' },
-              )
+              await hookfish.connections.authorize('user/personal/gmail/mcp')
             },
           },
         },
