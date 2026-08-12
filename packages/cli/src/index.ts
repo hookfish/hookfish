@@ -27,6 +27,7 @@ import {
   proxyBackendRequest,
   resolveBackendUrl,
 } from './serve.js'
+import { npmUpdateCommand, warnIfOutdated } from './update.js'
 
 function packageVersion(): string {
   const manifest: unknown = JSON.parse(
@@ -565,7 +566,35 @@ function developmentBackendPackage(backend: string): string {
   return packageName
 }
 
-program.name('hookfish').description('OAuth broker CLI')
+program
+  .name('hookfish')
+  .description('OAuth broker CLI')
+  .version(packageVersion())
+
+let availableVersion: string | undefined
+program.hook('preAction', async () => {
+  availableVersion = await warnIfOutdated(packageVersion())
+})
+
+program
+  .command('update')
+  .description('Update a global Hookfish installation to the latest version')
+  .action(async () => {
+    const update = npmUpdateCommand()
+    process.stdout.write('Updating Hookfish to the latest version...\n')
+    const code = await run(
+      update.command,
+      update.args,
+      process.env,
+      process.cwd(),
+    )
+    if (code !== 0) await exitWith(code)
+    process.stdout.write(
+      availableVersion
+        ? `Hookfish ${availableVersion} installed successfully.\n`
+        : 'The latest Hookfish version installed successfully.\n',
+    )
+  })
 
 program
   .command('init')
