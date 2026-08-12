@@ -1,0 +1,66 @@
+---
+title: "OAuth providers"
+description: "Configure built-in, remote MCP, dynamic, and custom OAuth providers."
+---
+
+An OAuth provider owns protocol details such as authorization parameters, provider scopes, token parsing, refresh, and revocation. Your Hookfish configuration assigns each provider a resource path.
+
+## Built-in providers
+
+Hookfish includes provider packages for GitHub, Linear, Notion, and remote MCP servers.
+
+```ts
+import { defineHookfishConfig } from '@hookfish/api'
+import {
+  createGitHubProvider,
+  createLinearProvider,
+  createMcpProvider,
+  createNotionProvider,
+} from '@hookfish/providers'
+
+export default defineHookfishConfig({
+  db,
+  providers: (env: typeof process.env) => ({
+    github: createGitHubProvider({
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+    }),
+    linear: createLinearProvider({
+      clientId: env.LINEAR_CLIENT_ID,
+      clientSecret: env.LINEAR_CLIENT_SECRET,
+    }),
+    mcp: createMcpProvider(),
+    notion: createNotionProvider({
+      clientId: env.NOTION_CLIENT_ID,
+      clientSecret: env.NOTION_CLIENT_SECRET,
+    }),
+  }),
+})
+```
+
+`GET /api/oauth/providers` reports which providers are configured, the exact callback URL to register, default provider scopes, available provider scopes, and refresh or revocation support.
+
+## Select provider scopes
+
+Pass `scopes` when starting an authorization to override a provider's defaults for that connection.
+
+```json
+{
+  "connection_id": "acme/engineering/github",
+  "scopes": ["read:user", "repo"]
+}
+```
+
+These are upstream provider permissions, not Hookfish [resource scopes](/concepts/scopes).
+
+## Dynamic providers
+
+Set `providerManagement: true` to create database-backed provider instances from trusted templates. Use dynamic providers when different tenants need separate OAuth applications or remote MCP endpoints.
+
+Dynamic provider secrets are encrypted in Hookfish's internal vault and are never returned through the API.
+
+## Custom providers
+
+Implement `OAuthProvider` from `@hookfish/provider` when a service is not built in. A provider must create authorization URLs and exchange authorization codes. Refresh and revocation are optional capabilities.
+
+Keep provider-specific URL formats, client authentication, PKCE behavior, and token response parsing inside the provider package.

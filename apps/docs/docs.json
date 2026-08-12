@@ -1,0 +1,95 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Hookfish",
+  "colors": {
+    "primary": "#15803D",
+    "light": "#07C983",
+    "dark": "#15803D"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "pages": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "index",
+          "quickstart",
+          "concepts/how-it-works",
+          "concepts/scopes"
+        ]
+      },
+      {
+        "group": "Framework guides",
+        "pages": [
+          "frameworks/hono",
+          "frameworks/nextjs",
+          "frameworks/express",
+          "frameworks/cloudflare-workers"
+        ]
+      },
+      {
+        "group": "Authentication",
+        "pages": [
+          "authentication/application-auth",
+          "authentication/oauth-providers"
+        ]
+      },
+      {
+        "group": "Authorization",
+        "pages": [
+          "authorization/token-scoping",
+          "authorization/organization-routing",
+          "authorization/secret-vault"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/configuration",
+          "reference/api",
+          "reference/security"
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/kamath/hookfish",
+          "icon": "github"
+        }
+      ]
+    }
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/kamath/hookfish"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Quickstart",
+      "href": "/quickstart"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/kamath/hookfish"
+    }
+  }
+}

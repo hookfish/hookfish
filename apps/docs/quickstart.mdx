@@ -1,0 +1,102 @@
+---
+title: "Quickstart"
+description: "Scaffold Hookfish and connect to the Notion MCP server."
+---
+
+Create a standalone Hookfish broker, connect a Notion workspace through its remote MCP server, and retrieve a current provider token from trusted server code.
+
+## Prerequisites
+
+Before you begin, install Node.js 20 or later. You also need a Notion account with access to the workspace you want to connect. Notion hosts its Streamable HTTP MCP server at [`https://mcp.notion.com/mcp`](https://developers.notion.com/guides/mcp/get-started-with-mcp).
+
+## Get started
+
+<Steps>
+  <Step title="Create a Hookfish project">
+    Run the initializer with the Node.js backend.
+
+    ```bash
+    pnpm dlx hookfish init my-broker --backend node
+    cd my-broker
+    ```
+
+    The initializer installs dependencies and creates a deployable broker. Pass `--no-install` if you want to install dependencies yourself.
+  </Step>
+  <Step title="Start Hookfish">
+    Run the backend and packaged dashboard together.
+
+    ```bash
+    pnpm dev
+    ```
+
+    Open `http://localhost:5173`. Requests below `/api` are proxied to the backend, so the dashboard and OAuth callbacks stay on the same origin.
+
+    The initializer generated a unique `OAUTH_ENCRYPTION_KEY` and set `BROKER_API_KEY=test` in the gitignored `.env` file. Use `pnpm dev:server` when you only want to run the backend.
+  </Step>
+  <Step title="Add the Notion MCP provider">
+    Create a provider from Hookfish's built-in MCP template. The `register` credential mode lets Hookfish register itself with the MCP authorization server automatically.
+
+    ```bash
+    curl --request PUT http://localhost:5173/api/admin/providers/notion-mcp \
+      --header 'Authorization: Bearer test' \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "template": "mcp",
+        "label": "Notion MCP",
+        "configuration": {
+          "resource_url": "https://mcp.notion.com/mcp",
+          "scopes": []
+        },
+        "credentials": {
+          "mode": "register"
+        }
+      }'
+    ```
+
+    Hookfish discovers the MCP authorization server and stores the resulting client registration. You can also create the provider from **Add provider** in the dashboard.
+  </Step>
+  <Step title="Start a Notion connection">
+    Request an authorization URL from trusted server code.
+
+    ```bash
+    curl --request POST http://localhost:5173/api/oauth/authorize/notion-mcp \
+      --header 'Authorization: Bearer test' \
+      --header 'Content-Type: application/json' \
+      --data '{"connection_id":"personal/notion"}'
+    ```
+
+    Open the returned `authorize_url`, sign in to Notion, and approve access. Hookfish handles the callback, encrypts the returned credentials, and persists the connection.
+  </Step>
+  <Step title="Retrieve a current token">
+    After the callback completes, retrieve the provider token from trusted server code.
+
+    ```bash
+    curl http://localhost:5173/api/oauth/tokens/personal/notion \
+      --header 'Authorization: Bearer test'
+    ```
+
+    Hookfish refreshes an expiring token before returning it when the authorization server supports refresh.
+  </Step>
+</Steps>
+
+<Check>
+  You have a persisted Notion MCP connection and can request its current provider access token by connection ID.
+</Check>
+
+## Choose another backend
+
+The initializer supports five deployment targets.
+
+```bash
+pnpm dlx hookfish init my-broker --backend <backend>
+```
+
+| Backend | Default storage |
+| --- | --- |
+| `node` | PGlite |
+| `bun` | PGlite |
+| `docker` | PGlite in a Docker volume |
+| `vercel` | PGlite locally and Postgres through `DATABASE_URL` when deployed |
+| `cloudflare` | SQLite Durable Objects |
+
+Next, embed Hookfish with a [framework guide](/frameworks/hono), configure [application authentication](/authentication/application-auth), or replace the root key with a [scoped broker token](/authorization/token-scoping).

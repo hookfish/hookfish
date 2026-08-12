@@ -1,0 +1,83 @@
+---
+title: "Token scoping"
+description: "Create least-privilege broker access tokens for Hookfish resource paths."
+---
+
+The root `BROKER_API_KEY` can access every Hookfish resource. Replace it with named, expiring broker access tokens when a service needs only one part of the resource tree.
+
+## Resource paths
+
+Connection IDs, dynamic provider IDs, and secret paths share one slash-delimited namespace.
+
+```text
+acme/engineering/github
+acme/engineering/notion
+acme/finance/github
+```
+
+A submitted scope of `acme/engineering` is canonicalized to `acme/engineering/**`. It includes the exact path and all descendants. It does not include `acme/engineering-tools` or a path where the same text appears later.
+
+Use `**` only when the caller requires root access.
+
+## Mint a scoped token
+
+Use the root credential to create a named, one-hour token.
+
+```bash
+curl --request POST http://127.0.0.1:8787/api/admin/tokens \
+  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "acme-worker",
+    "scopes": ["acme/engineering"],
+    "expires_in": 3600
+  }'
+```
+
+```json
+{
+  "name": "acme-worker",
+  "access_token": "hookfish_at_v1.eyJ2IjoxLC...",
+  "token_type": "Bearer",
+  "scopes": ["acme/engineering/**"],
+  "expires_at": "2026-08-11T20:00:00.000Z"
+}
+```
+
+The bearer value is returned once. Store it in your service's secret manager.
+
+## Use the token
+
+Send it through the same `Authorization` header used by the root key.
+
+```bash
+curl http://127.0.0.1:8787/api/oauth/connections/acme/engineering/github \
+  --header "Authorization: Bearer $HOOKFISH_ACCESS_TOKEN"
+```
+
+Requests outside every granted scope return `403 insufficient_scope`. A non-root token must supply `connection_id` or `connection_id_prefix` when starting authorization because a root-level generated ID would fall outside its namespace.
+
+## Delegate access
+
+A scoped token may mint another token with the same or narrower resource scopes. It cannot create a token that outlives it.
+
+Token names form a dot-delimited delegation namespace. `acme-worker` may mint `acme-worker.eu`, but it may not mint `production-api`.
+
+- Default lifetime: one hour
+- Maximum lifetime: 30 days
+- Maximum resource scopes per token: 32
+
+## Revoke access
+
+Root credentials can list active token names and revoke one immediately.
+
+```bash
+curl --request DELETE http://127.0.0.1:8787/api/admin/tokens/acme-worker \
+  --header "Authorization: Bearer $BROKER_API_KEY"
+```
+
+Hookfish stores a hash of each token's random identifier. Every request checks the signed token against its authoritative database record, so expiry changes, scope narrowing, and deletion take effect on the next request.
+
+<Warning>
+  Rotating `BROKER_API_KEY` invalidates every scoped token because the root key signs them. Plan root-key rotation as a deployment-wide credential rollover.
+</Warning>

@@ -1,0 +1,37 @@
+---
+title: "Introduction"
+description: "Connect applications to OAuth providers without storing provider tokens in application code."
+---
+
+Hookfish is a portable OAuth and encrypted-secret broker. It runs provider consent flows, encrypts tokens at rest, refreshes expiring credentials, and returns current provider tokens to trusted server code.
+
+Each **connection** represents one linked provider account. You choose a connection ID, or let Hookfish generate one, then organize connections into resource paths such as `acme/payments/github`.
+
+<Card title="Quickstart" icon="rocket" href="/quickstart">
+  Scaffold Hookfish and complete your first GitHub connection.
+</Card>
+<Card title="How Hookfish works" icon="diagram-project" href="/concepts/how-it-works">
+  Follow a connection from authorization through refresh and revocation.
+</Card>
+<Card title="Token scoping" icon="key" href="/authorization/token-scoping">
+  Grant services access to specific resource subtrees.
+</Card>
+
+## What Hookfish owns
+
+- OAuth authorization, callback validation, token exchange, refresh, and revocation
+- AES-GCM encryption for provider tokens and stored secrets
+- Hierarchical broker credentials with delegation and immediate revocation
+- A Fetch-compatible handler for Node.js, Next.js, Express, and Cloudflare Workers
+- A browser-safe facade for connection management
+
+## What your application owns
+
+- User sessions and application authorization
+- Which Hookfish resource path belongs to each user or tenant
+- Provider application credentials and registered callback URLs
+- The database and runtime used by the Hookfish deployment
+
+<Warning>
+  Provider tokens and secret values are server-only. Never expose `BROKER_API_KEY` or the raw `/api/oauth/tokens/*` routes to browser code.
+</Warning>

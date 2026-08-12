@@ -1,0 +1,54 @@
+---
+title: "Hono on Node.js"
+description: "Mount Hookfish in a Node.js server with the Hono Fetch adapter."
+---
+
+Hono on Node.js is the smallest Hookfish host. Use this guide to add Hookfish to an existing Hono application. For a standalone broker, start with [`hookfish init`](/quickstart), which creates this server and its local configuration for you.
+
+## Install
+
+```bash
+pnpm add @hookfish/api @hookfish/database @hookfish/providers @hono/node-server
+pnpm add --save-dev tsx typescript
+```
+
+## Create the server
+
+```ts
+import { serve } from '@hono/node-server'
+import { Hookfish } from '@hookfish/api'
+import config from './hookfish.config'
+
+const hookfish = await Hookfish.init(config)
+
+serve({
+  fetch: (request) => hookfish.fetch(request, process.env),
+  hostname: process.env.HOST ?? '127.0.0.1',
+  port: Number(process.env.PORT ?? 8787),
+})
+```
+
+Initialize Hookfish once during process startup. Provider factories still receive the current bindings for each request that needs a provider.
+
+## Load local environment variables
+
+Node.js can load the development environment without adding a runtime dependency.
+
+```json
+{
+  "scripts": {
+    "dev": "node --watch --env-file=.env --import tsx src/server.ts"
+  }
+}
+```
+
+Run the server and open its API documentation.
+
+```bash
+pnpm dev
+open http://127.0.0.1:8787/api
+```
+
+<Warning>
+  Before exposing `/api/client` in production, configure [application authentication](/authentication/application-auth). Keep raw `/api/*` routes behind trusted server boundaries.
+</Warning>

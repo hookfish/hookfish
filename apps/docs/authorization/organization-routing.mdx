@@ -1,0 +1,43 @@
+---
+title: "Organization routing"
+description: "Partition Hookfish resources with organization-aware API routes and database context."
+---
+
+Enable organization routing when each tenant needs an explicit API namespace and storage context.
+
+```ts
+export default defineHookfishConfig({
+  db,
+  organizationRouting: true,
+  providers,
+})
+```
+
+OAuth management routes then include the organization segment.
+
+```text
+/api/organization/acme/oauth/connections
+/api/organization/acme/oauth/authorize/github
+/api/organization/acme/secrets
+/api/organization/acme/admin/providers
+```
+
+Provider callbacks remain global:
+
+```text
+/api/oauth/callback/github
+```
+
+Hookfish stores the validated organization separately on authorization state and connection rows. It also requires explicit connection IDs and prefixes to remain below the organization's resource path.
+
+## Database context
+
+Request-aware database adapters receive the validated organization in their binding context. A shared Postgres adapter can apply row-level connection context, while a partitioned adapter can select an isolated database.
+
+<Note>
+  Organization routing and resource scoping reinforce each other but solve different problems. Organization routing supplies an authenticated tenant context; broker scopes limit what a credential can access.
+</Note>
+
+## Browser integration
+
+The current browser facade allowlist covers the non-organization OAuth paths. For organization-routed applications, proxy the required operations through your authenticated server and call Hookfish with the tenant's scoped broker token.
