@@ -329,11 +329,10 @@ function AddResourceDialog({
               Array.isArray(value) ? value.length > 0 : value.length > 0,
             ),
         )
-        const configuredScopes = configuration.scopes
         const scopesField = fields.find((field) => field.target === 'scopes')
         const requestedScopes = scopesField
           ? fieldValue(scopesField)
-          : configuredScopes
+          : undefined
         const authorization = await authorizeConnection(
           managementToken,
           path,
