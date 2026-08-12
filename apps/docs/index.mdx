@@ -29,7 +29,7 @@ backend a consistent way to use them.
 ## What Hookfish does for you
 
 - Stores API keys and other secrets for your users
-- Runs OAuth and MCP authorization flows
+- Runs OAuth authorization flows, including for MCP resources
 - Encrypts access tokens, refresh tokens, and stored secrets
 - Refreshes OAuth tokens when they expire
 - Keeps each credential under a stable `namespace/providerId` connection path
@@ -62,8 +62,8 @@ browser to call your application, and another in server code to call Hookfish.
 Only return connection metadata and other values the browser needs.
 
 <Warning>
-  Never put `HOOKFISH_API_KEY`, a scoped broker token, a provider access token, or
-  a decrypted vault value in browser code.
+  Never put `HOOKFISH_API_KEY`, a scoped broker token, a provider access token,
+  or a decrypted credential in browser code.
 </Warning>
 
 ## Where to start

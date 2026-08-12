@@ -269,23 +269,131 @@ describe('connections', () => {
     })
   })
 
+  it('describes OAuth and secret provider inputs', async () => {
+    const response = await harness.fetch('/api/connections/providers')
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      providers: [
+        {
+          id: 'stub',
+          label: 'Stub OAuth',
+          authentication: 'oauth',
+          input_schema: { fields: [] },
+        },
+        {
+          id: 'mcp',
+          label: 'Stub OAuth',
+          authentication: 'oauth',
+          input_schema: {
+            fields: [
+              {
+                name: 'name',
+                label: 'Resource name',
+                type: 'text',
+                target: 'identity',
+                required: true,
+              },
+              {
+                name: 'resource_url',
+                label: 'MCP server URL',
+                type: 'url',
+                target: 'configuration',
+                required: true,
+              },
+              {
+                name: 'scopes',
+                label: 'Scopes',
+                type: 'string_list',
+                target: 'scopes',
+                required: false,
+              },
+            ],
+          },
+        },
+        {
+          id: 'secret',
+          label: 'Static secret',
+          authentication: 'secret',
+          input_schema: {
+            fields: [
+              {
+                name: 'name',
+                label: 'Credential name',
+                type: 'text',
+                target: 'identity',
+                required: true,
+                placeholder: 'openai',
+              },
+            ],
+          },
+        },
+      ],
+    })
+  })
+
+  it('accepts empty provider configuration with requested scopes', async () => {
+    const response = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configuration: {}, scopes: ['read'] }),
+      },
+    )
+
+    expect(response.status).toBe(401)
+    await expect(
+      harness.db.getConnection('', 'user/personal', 'stub'),
+    ).resolves.toMatchObject({ configuration: {} })
+  })
+
   it('stores MCP configuration on the connection and rejects changes', async () => {
     const path = '/api/connections/access/user/personal/notion/mcp'
     const first = await harness.fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://mcp.example.com/one', scopes: [] }),
+      body: JSON.stringify({
+        configuration: { resource_url: 'https://mcp.example.com/one' },
+        scopes: ['read'],
+      }),
     })
     expect(first.status).toBe(401)
 
     const conflict = await harness.fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: 'https://mcp.example.com/two', scopes: [] }),
+      body: JSON.stringify({
+        configuration: { resource_url: 'https://mcp.example.com/two' },
+        scopes: ['read'],
+      }),
     })
     expect(conflict.status).toBe(409)
     await expect(conflict.json()).resolves.toMatchObject({
       error: { code: 'connection_configuration_conflict' },
+    })
+  })
+
+  it('accepts provider configuration from metadata-driven clients', async () => {
+    const response = await harness.fetch(
+      '/api/connections/access/user/personal/slack/mcp',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configuration: { resource_url: 'https://mcp.example.com/slack' },
+          scopes: ['read'],
+        }),
+      },
+    )
+
+    expect(response.status).toBe(401)
+    await expect(
+      harness.db.getConnection('', 'user/personal/slack', 'mcp'),
+    ).resolves.toMatchObject({
+      configuration: {
+        resource_url: 'https://mcp.example.com/slack',
+      },
     })
   })
 

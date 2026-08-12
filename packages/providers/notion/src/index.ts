@@ -36,7 +36,20 @@ export type NotionProviderOptions = ProviderCredentials & {
 }
 
 export class NotionProvider implements OAuthProviderTemplate {
+  readonly authentication = 'oauth' as const
   readonly label = 'Notion'
+  readonly inputSchema = {
+    fields: [
+      {
+        name: 'scopes',
+        label: 'Scopes',
+        type: 'string_list',
+        target: 'scopes',
+        required: false,
+        description: 'Separate scopes with commas or spaces.',
+      },
+    ],
+  } as const
   readonly defaultScopes: readonly string[] = []
   readonly availableScopes: readonly string[] = []
   readonly usesPkce = false

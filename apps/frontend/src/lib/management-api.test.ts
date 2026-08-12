@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  authorizeConnection,
-  listSecrets,
-  setConnectionSecret,
-} from './management-api'
+import { authorizeConnection, setConnectionSecret } from './management-api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -26,6 +22,9 @@ describe('management API', () => {
 
     await expect(
       authorizeConnection('token', 'team/notion', 'notion', {
+        configuration: {
+          resource_url: 'https://mcp.example.com/notion',
+        },
         scopes: ['read'],
         returnTo: 'https://dashboard.example/connections',
       }),
@@ -37,7 +36,16 @@ describe('management API', () => {
     })
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/connections/authorize/team/notion',
-      expect.objectContaining({ method: 'POST' }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          configuration: {
+            resource_url: 'https://mcp.example.com/notion',
+          },
+          scopes: ['read'],
+          return_to: 'https://dashboard.example/connections',
+        }),
+      }),
     )
   })
 
@@ -59,29 +67,6 @@ describe('management API', () => {
         method: 'PUT',
         body: JSON.stringify({ secret: 'sk-example' }),
       }),
-    )
-  })
-
-  it('lists vault metadata for the current tree path', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          secrets: [
-            {
-              path: 'team/openai',
-              created_at: '2026-08-12T20:00:00.000Z',
-              updated_at: '2026-08-12T20:00:00.000Z',
-            },
-          ],
-        }),
-      ),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    await expect(listSecrets('token', 'team')).resolves.toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/secrets?path_prefix=team',
-      expect.any(Object),
     )
   })
 })

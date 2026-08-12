@@ -728,9 +728,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
                   },
                   "scopes": {
                     "type": "array",
@@ -1079,9 +1079,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
                   },
                   "scopes": {
                     "type": "array",
@@ -2446,14 +2446,73 @@
                           "label": {
                             "type": "string"
                           },
-                          "configurable": {
-                            "type": "boolean"
+                          "authentication": {
+                            "type": "string",
+                            "enum": [
+                              "oauth",
+                              "secret"
+                            ]
+                          },
+                          "input_schema": {
+                            "type": "object",
+                            "properties": {
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text",
+                                        "url",
+                                        "string_list"
+                                      ]
+                                    },
+                                    "target": {
+                                      "type": "string",
+                                      "enum": [
+                                        "identity",
+                                        "configuration",
+                                        "scopes"
+                                      ]
+                                    },
+                                    "required": {
+                                      "type": "boolean"
+                                    },
+                                    "placeholder": {
+                                      "type": "string"
+                                    },
+                                    "description": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "label",
+                                    "type",
+                                    "target",
+                                    "required"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "fields"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "label",
-                          "configurable"
+                          "authentication",
+                          "input_schema"
                         ]
                       }
                     }
@@ -4291,9 +4350,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
                   },
                   "scopes": {
                     "type": "array",
@@ -4656,9 +4715,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
                   },
                   "scopes": {
                     "type": "array",
@@ -6008,14 +6067,73 @@
                           "label": {
                             "type": "string"
                           },
-                          "configurable": {
-                            "type": "boolean"
+                          "authentication": {
+                            "type": "string",
+                            "enum": [
+                              "oauth",
+                              "secret"
+                            ]
+                          },
+                          "input_schema": {
+                            "type": "object",
+                            "properties": {
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text",
+                                        "url",
+                                        "string_list"
+                                      ]
+                                    },
+                                    "target": {
+                                      "type": "string",
+                                      "enum": [
+                                        "identity",
+                                        "configuration",
+                                        "scopes"
+                                      ]
+                                    },
+                                    "required": {
+                                      "type": "boolean"
+                                    },
+                                    "placeholder": {
+                                      "type": "string"
+                                    },
+                                    "description": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "label",
+                                    "type",
+                                    "target",
+                                    "required"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "fields"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "label",
-                          "configurable"
+                          "authentication",
+                          "input_schema"
                         ]
                       }
                     }

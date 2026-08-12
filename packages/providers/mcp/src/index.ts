@@ -21,7 +21,6 @@ const httpUrlSchema = z.url().refine((value) => {
 
 const mcpConfigurationSchema = z.object({
   resource_url: httpUrlSchema,
-  scopes: z.array(z.string().trim().min(1).max(512)).max(128).default([]),
 })
 
 const protectedResourceMetadataSchema = z.looseObject({
@@ -274,8 +273,37 @@ async function createPkcePair() {
 }
 
 export class McpProvider implements OAuthProviderTemplate {
-  readonly kind = 'mcp' as const
+  readonly authentication = 'oauth' as const
   readonly label = 'MCP server'
+  readonly inputSchema = {
+    fields: [
+      {
+        name: 'name',
+        label: 'Resource name',
+        type: 'text',
+        target: 'identity',
+        required: true,
+        placeholder: 'notion',
+      },
+      {
+        name: 'resource_url',
+        label: 'MCP server URL',
+        type: 'url',
+        target: 'configuration',
+        required: true,
+        placeholder: 'https://mcp.example.com/mcp',
+      },
+      {
+        name: 'scopes',
+        label: 'Scopes',
+        type: 'string_list',
+        target: 'scopes',
+        required: false,
+        placeholder: 'read, write',
+        description: 'Separate scopes with commas or spaces.',
+      },
+    ],
+  } as const
   readonly usesPkce = true
   readonly allowsPublicClient = true
   readonly defaultScopes: readonly string[]
@@ -304,7 +332,7 @@ export class McpProvider implements OAuthProviderTemplate {
       ...this.credentials,
       ...credentials,
       resourceUrl: normalized.resource_url,
-      scopes: normalized.scopes,
+      scopes: this.defaultScopes,
       fetch: this.fetcher,
     })
   }
@@ -315,7 +343,7 @@ export class McpProvider implements OAuthProviderTemplate {
     const parsed = mcpConfigurationSchema.safeParse(configuration)
     if (!parsed.success) {
       throw new ProviderConfigurationError(
-        'MCP configuration requires an absolute resource_url and an optional list of scopes.',
+        'MCP configuration requires an absolute resource_url.',
       )
     }
     return parsed.data

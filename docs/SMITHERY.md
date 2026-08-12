@@ -78,8 +78,8 @@ export default defineHookfishConfig({
 
 There is no provider-management flag, runtime provider record, template in the
 request body, or `/admin/providers` setup step. The first access stores the
-catalog server's normalized URL and scopes on that connection. Reusing the same
-path with different configuration returns
+catalog server's normalized URL as immutable configuration and tracks OAuth
+scopes separately. Reusing the same path with different configuration returns
 `409 connection_configuration_conflict`.
 
 Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers up
@@ -133,7 +133,7 @@ app.post('/organizations/:organization/servers/:server/connect', async (ctx) => 
   const connection = await hookfish.connections.access(
     `catalog/${catalogServer.id}/mcp`,
     {
-      url: catalogServer.resourceUrl,
+      configuration: { resource_url: catalogServer.resourceUrl },
       scopes: catalogServer.scopes,
       returnTo: `${APP_URL}/organizations/${organization}/connections`,
     },
@@ -168,7 +168,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
         await hookfish.connections.access(
           `catalog/${catalogServer.id}/mcp`,
           {
-            url: mcpUrl.href,
+            configuration: { resource_url: mcpUrl.href },
             scopes: catalogServer.scopes,
             returnTo: `${APP_URL}/organizations/${organization}/connections`,
           },
@@ -178,7 +178,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
       await hookfish.connections.authorize(
         `catalog/${catalogServer.id}/mcp`,
         {
-          url: mcpUrl.href,
+          configuration: { resource_url: mcpUrl.href },
           scopes: catalogServer.scopes,
           returnTo: `${APP_URL}/organizations/${organization}/connections`,
         },

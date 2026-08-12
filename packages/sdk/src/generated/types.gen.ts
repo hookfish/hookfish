@@ -249,7 +249,9 @@ export type AdminTokensRevokeResponse = AdminTokensRevokeResponses[keyof AdminTo
 
 export type ConnectionsAccessData = {
     body?: {
-        url?: string;
+        configuration?: {
+            [key: string]: unknown;
+        };
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -366,7 +368,9 @@ export type ConnectionsAccessResponse = ConnectionsAccessResponses[keyof Connect
 
 export type ConnectionsAuthorizeData = {
     body?: {
-        url?: string;
+        configuration?: {
+            [key: string]: unknown;
+        };
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -940,7 +944,18 @@ export type ConnectionsProvidersResponses = {
         providers: Array<{
             id: string;
             label: string;
-            configurable: boolean;
+            authentication: 'oauth' | 'secret';
+            input_schema: {
+                fields: Array<{
+                    name: string;
+                    label: string;
+                    type: 'text' | 'url' | 'string_list';
+                    target: 'identity' | 'configuration' | 'scopes';
+                    required: boolean;
+                    placeholder?: string;
+                    description?: string;
+                }>;
+            };
         }>;
     };
 };
@@ -1480,7 +1495,9 @@ export type SecretsListResponse = SecretsListResponses[keyof SecretsListResponse
 
 export type OrganizationConnectionsAccessData = {
     body?: {
-        url?: string;
+        configuration?: {
+            [key: string]: unknown;
+        };
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -1601,7 +1618,9 @@ export type OrganizationConnectionsAccessResponse = OrganizationConnectionsAcces
 
 export type OrganizationConnectionsAuthorizeData = {
     body?: {
-        url?: string;
+        configuration?: {
+            [key: string]: unknown;
+        };
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -2173,7 +2192,18 @@ export type OrganizationConnectionsProvidersResponses = {
         providers: Array<{
             id: string;
             label: string;
-            configurable: boolean;
+            authentication: 'oauth' | 'secret';
+            input_schema: {
+                fields: Array<{
+                    name: string;
+                    label: string;
+                    type: 'text' | 'url' | 'string_list';
+                    target: 'identity' | 'configuration' | 'scopes';
+                    required: boolean;
+                    placeholder?: string;
+                    description?: string;
+                }>;
+            };
         }>;
     };
 };

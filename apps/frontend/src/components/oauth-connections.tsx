@@ -1,10 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRightIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
-  KeyRoundIcon,
   Link2Icon,
   ListIcon,
   PlusIcon,
@@ -92,20 +91,28 @@ import {
 } from '@/lib/local-folders'
 import {
   authorizeConnection,
-  deleteSecret,
-  listSecrets,
   type PendingAuthorization,
-  type SecretMetadata,
   setConnectionSecret,
-  storeSecret,
 } from '@/lib/management-api'
 
 const ALL_PROVIDERS = '__all__'
 type ConnectionView = 'tree' | 'all'
-type ResourceKind = 'oauth' | 'static' | 'vault'
 
-function isResourceKind(value: string): value is ResourceKind {
-  return value === 'oauth' || value === 'static' || value === 'vault'
+type ProviderInputField = {
+  name: string
+  label: string
+  type: 'text' | 'url' | 'string_list'
+  target: 'identity' | 'configuration' | 'scopes'
+  required: boolean
+  placeholder?: string
+  description?: string
+}
+
+type ProviderMetadata = {
+  id: string
+  label: string
+  authentication: 'oauth' | 'secret'
+  input_schema: { fields: ProviderInputField[] }
 }
 
 function directResources<T extends { path: string }>(
@@ -205,7 +212,7 @@ function AddFolderDialog({
             <DialogTitle>Add folder</DialogTitle>
             <DialogDescription>
               Create a folder in {currentPath || 'Connections'} to organize
-              connection namespaces and vault secrets.
+              connection namespaces.
             </DialogDescription>
           </DialogHeader>
           <Field data-invalid={Boolean(error || exists)}>
@@ -257,66 +264,89 @@ function AddResourceDialog({
   open: boolean
   currentPath: string
   managementToken: string
-  providers: Array<{ id: string; label: string; configurable: boolean }>
+  providers: ProviderMetadata[]
   existingPaths: string[]
   pendingPaths: string[]
   onAuthorized: (authorization: PendingAuthorization) => void
   onSaved: () => Promise<void>
   onOpenChange: (open: boolean) => void
 }) {
-  const [kind, setKind] = useState<ResourceKind>('oauth')
-  const [name, setName] = useState('')
   const [providerId, setProviderId] = useState('')
-  const [url, setUrl] = useState('')
-  const [scopes, setScopes] = useState('')
+  const [values, setValues] = useState<Record<string, string>>({})
   const [secret, setSecret] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const selectedProvider = providers.find(
     (provider) => provider.id === providerId,
   )
-  const normalizedName = name.trim()
-  const nameError = normalizedName
-    ? validateConnectionName(normalizedName)
-    : undefined
-  const namespace = normalizedName
-    ? joinConnectionPath(currentPath, normalizedName)
+  const fields = selectedProvider?.input_schema.fields ?? []
+  const identityField = fields.find((field) => field.target === 'identity')
+  const identity = identityField
+    ? (values[identityField.name] ?? '').trim()
+    : ''
+  const identityError = identity ? validateConnectionName(identity) : undefined
+  const namespace = identity
+    ? joinConnectionPath(currentPath, identity)
     : currentPath
-  const path =
-    kind === 'vault'
-      ? namespace
-      : providerId
-        ? joinConnectionPath(namespace, providerId)
-        : namespace
-  const nameRequired = kind === 'vault'
+  const path = providerId ? joinConnectionPath(namespace, providerId) : ''
   const pathTaken = existingPaths.includes(path) || pendingPaths.includes(path)
+  const missingRequiredField = fields.some(
+    (field) => field.required && !(values[field.name] ?? '').trim(),
+  )
+
+  function fieldValue(field: ProviderInputField): string | string[] {
+    const value = (values[field.name] ?? '').trim()
+    if (field.type !== 'string_list') return value
+    return value
+      .split(/[\s,]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (nameError || (nameRequired && !normalizedName) || !path || pathTaken)
+    if (
+      identityError ||
+      missingRequiredField ||
+      !selectedProvider ||
+      !path ||
+      pathTaken
+    )
       return
     setPending(true)
     setError(null)
     try {
-      if (kind === 'vault') {
-        await storeSecret(managementToken, path, secret)
-        await onSaved()
-        onOpenChange(false)
-      } else if (kind === 'static') {
+      if (selectedProvider.authentication === 'secret') {
         await setConnectionSecret(managementToken, path, secret)
         await onSaved()
         onOpenChange(false)
       } else {
+        const configuration = Object.fromEntries(
+          fields
+            .filter((field) => field.target === 'configuration')
+            .map((field) => [field.name, fieldValue(field)])
+            .filter(([, value]) =>
+              Array.isArray(value) ? value.length > 0 : value.length > 0,
+            ),
+        )
+        const configuredScopes = configuration.scopes
+        const scopesField = fields.find((field) => field.target === 'scopes')
+        const requestedScopes = scopesField
+          ? fieldValue(scopesField)
+          : configuredScopes
         const authorization = await authorizeConnection(
           managementToken,
           path,
           providerId,
           {
-            ...(selectedProvider?.configurable ? { url } : {}),
-            scopes: scopes
-              .split(/[\s,]+/)
-              .map((scope) => scope.trim())
-              .filter(Boolean),
+            ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
+            ...(Array.isArray(requestedScopes)
+              ? {
+                  scopes: requestedScopes.filter(
+                    (scope) => typeof scope === 'string',
+                  ),
+                }
+              : {}),
             returnTo: window.location.href,
           },
         )
@@ -331,12 +361,11 @@ function AddResourceDialog({
   }
 
   const invalid =
-    Boolean(nameError) ||
-    (nameRequired && !normalizedName) ||
+    Boolean(identityError) ||
+    missingRequiredField ||
     pathTaken ||
-    (kind !== 'vault' && !providerId) ||
-    (kind === 'oauth' && Boolean(selectedProvider?.configurable) && !url) ||
-    ((kind === 'static' || kind === 'vault') && !secret)
+    !selectedProvider ||
+    (selectedProvider.authentication === 'secret' && !secret)
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
@@ -345,101 +374,62 @@ function AddResourceDialog({
           <DialogHeader>
             <DialogTitle>Add connection</DialogTitle>
             <DialogDescription>
-              Add a trusted provider connection or encrypted secret to{' '}
-              {currentPath || 'Connections'}.
+              Choose a trusted provider for {currentPath || 'Connections'}.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="resource-kind">Type</FieldLabel>
+              <FieldLabel htmlFor="resource-provider">Provider</FieldLabel>
               <Select
-                value={kind}
+                value={providerId}
                 onValueChange={(value) => {
-                  if (isResourceKind(value)) setKind(value)
+                  setProviderId(value)
+                  setValues({})
+                  setSecret('')
                 }}
               >
-                <SelectTrigger id="resource-kind" className="w-full">
-                  <SelectValue />
+                <SelectTrigger id="resource-provider" className="w-full">
+                  <SelectValue placeholder="Select a configured provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="oauth">OAuth / MCP connection</SelectItem>
-                  <SelectItem value="static">Static provider secret</SelectItem>
-                  <SelectItem value="vault">Generic vault secret</SelectItem>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
-            <Field
-              data-invalid={Boolean(
-                nameError || (nameRequired && !normalizedName),
-              )}
-            >
-              <FieldLabel htmlFor="resource-name">
-                {kind === 'vault' ? 'Secret name' : 'Namespace (optional)'}
-              </FieldLabel>
-              <Input
-                id="resource-name"
-                value={name}
-                required={nameRequired}
-                placeholder={
-                  kind === 'vault' ? 'production' : 'Optional namespace'
-                }
-                autoComplete="off"
-                onChange={(event) => setName(event.target.value)}
-              />
-              <FieldDescription>
-                {kind === 'vault'
-                  ? 'The encrypted value is stored at this path.'
-                  : 'Provider IDs are the final segment of a connection path.'}
-              </FieldDescription>
-              <FieldError>
-                {nameError ??
-                  (nameRequired && !normalizedName
-                    ? 'Enter a secret name.'
-                    : undefined)}
-              </FieldError>
-            </Field>
-            {kind !== 'vault' ? (
-              <Field>
-                <FieldLabel htmlFor="resource-provider">Provider</FieldLabel>
-                <Select value={providerId} onValueChange={setProviderId}>
-                  <SelectTrigger id="resource-provider" className="w-full">
-                    <SelectValue placeholder="Select a configured provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providers.map((provider) => (
-                      <SelectItem key={provider.id} value={provider.id}>
-                        {provider.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            ) : null}
-            {kind === 'oauth' && selectedProvider?.configurable ? (
-              <Field>
-                <FieldLabel htmlFor="resource-url">MCP server URL</FieldLabel>
-                <Input
-                  id="resource-url"
-                  type="url"
-                  value={url}
-                  required
-                  placeholder="https://mcp.example.com/mcp"
-                  onChange={(event) => setUrl(event.target.value)}
-                />
-              </Field>
-            ) : null}
-            {kind === 'oauth' ? (
-              <Field>
-                <FieldLabel htmlFor="resource-scopes">Scopes</FieldLabel>
-                <Input
-                  id="resource-scopes"
-                  value={scopes}
-                  placeholder="read, write (optional)"
-                  onChange={(event) => setScopes(event.target.value)}
-                />
-              </Field>
-            ) : null}
-            {kind === 'static' || kind === 'vault' ? (
+            {fields.map((field) => {
+              const fieldId = `provider-input-${field.name}`
+              const value = values[field.name] ?? ''
+              const fieldError =
+                field.target === 'identity' ? identityError : undefined
+              return (
+                <Field key={field.name} data-invalid={Boolean(fieldError)}>
+                  <FieldLabel htmlFor={fieldId}>{field.label}</FieldLabel>
+                  <Input
+                    id={fieldId}
+                    type={field.type === 'url' ? 'url' : 'text'}
+                    value={value}
+                    required={field.required}
+                    placeholder={field.placeholder}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.name]: event.target.value,
+                      }))
+                    }
+                  />
+                  {field.description ? (
+                    <FieldDescription>{field.description}</FieldDescription>
+                  ) : null}
+                  <FieldError>{fieldError}</FieldError>
+                </Field>
+              )
+            })}
+            {selectedProvider?.authentication === 'secret' ? (
               <Field>
                 <FieldLabel htmlFor="resource-secret">Secret value</FieldLabel>
                 <Input
@@ -483,7 +473,11 @@ function AddResourceDialog({
             </Button>
             <Button type="submit" disabled={pending || invalid}>
               {pending ? <Spinner /> : <PlusIcon />}
-              {pending ? 'Saving…' : 'Add connection'}
+              {pending
+                ? 'Saving…'
+                : selectedProvider?.authentication === 'oauth'
+                  ? 'Authorize'
+                  : 'Save credential'}
             </Button>
           </DialogFooter>
         </form>
@@ -542,61 +536,6 @@ function ConnectionItem({
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction variant="destructive" onClick={onDisconnect}>
                 Disconnect
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </ItemActions>
-    </Item>
-  )
-}
-
-function SecretItem({
-  secret,
-  pending,
-  onDelete,
-}: {
-  secret: SecretMetadata
-  pending: boolean
-  onDelete: () => void
-}) {
-  const name = secret.path.split('/').at(-1) ?? secret.path
-  return (
-    <Item variant="outline">
-      <ItemMedia variant="icon">
-        <KeyRoundIcon />
-      </ItemMedia>
-      <ItemContent>
-        <ItemTitle>
-          {name}
-          <Badge variant="outline">Vault secret</Badge>
-        </ItemTitle>
-        <ItemDescription>
-          Encrypted in the Hookfish vault · {secret.path}
-        </ItemDescription>
-      </ItemContent>
-      <ItemActions>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button size="sm" variant="destructive" disabled={pending}>
-              {pending ? <Spinner /> : null}
-              {pending ? 'Deleting…' : 'Delete'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogMedia>
-                <ShieldCheckIcon />
-              </AlertDialogMedia>
-              <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This permanently removes the encrypted value.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={onDelete}>
-                Delete secret
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -686,41 +625,21 @@ export function OAuthConnections({
       : { provider_id: providerFilter }),
   })
   const providers = hookfish.useProviders()
-  const secrets = useQuery({
-    queryKey: [
-      'management',
-      'secrets',
-      managementToken,
-      view === 'tree' ? currentPath : '',
-    ],
-    queryFn: () =>
-      listSecrets(
-        managementToken,
-        view === 'tree' ? currentPath || undefined : undefined,
-      ),
-    enabled: Boolean(managementToken),
-  })
   const disconnect = hookfish.useDisconnectConnection()
-  const deleteSecretMutation = useMutation({
-    mutationFn: (path: string) => deleteSecret(managementToken, path),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ['management', 'secrets'] }),
-  })
   const connectionItems = connections.data?.connections ?? []
-  const secretItems = secrets.data ?? []
   const activePending = pendingAuthorizations.filter(
     (item) => Date.parse(item.expiresAt) > Date.now(),
   )
   const directory = useMemo(
     () =>
-      connectionDirectory(connectionItems, currentPath, localFolders, [
-        ...secretItems.map((item) => item.path),
-        ...activePending.map((item) => item.path),
-      ]),
-    [connectionItems, currentPath, localFolders, secretItems, activePending],
+      connectionDirectory(
+        connectionItems,
+        currentPath,
+        localFolders,
+        activePending.map((item) => item.path),
+      ),
+    [connectionItems, currentPath, localFolders, activePending],
   )
-  const visibleSecrets =
-    view === 'tree' ? directResources(secretItems, currentPath) : secretItems
   const visiblePending =
     view === 'tree'
       ? directResources(activePending, currentPath)
@@ -731,10 +650,8 @@ export function OAuthConnections({
       : [...connectionItems].sort((a, b) => a.path.localeCompare(b.path))
   const empty =
     !connections.isPending &&
-    !secrets.isPending &&
     (view === 'tree' ? directory.folders.length === 0 : true) &&
     visibleConnections.length === 0 &&
-    visibleSecrets.length === 0 &&
     visiblePending.length === 0
 
   function updateFolders(next: string[]) {
@@ -742,13 +659,10 @@ export function OAuthConnections({
     window.localStorage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(next))
   }
 
-  async function refreshResources() {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: hookfish.keys.connectionsRoot(),
-      }),
-      queryClient.invalidateQueries({ queryKey: ['management', 'secrets'] }),
-    ])
+  async function refreshConnections() {
+    await queryClient.invalidateQueries({
+      queryKey: hookfish.keys.connectionsRoot(),
+    })
   }
 
   return (
@@ -823,19 +737,13 @@ export function OAuthConnections({
             </div>
           </div>
 
-          {connections.isPending || secrets.isPending || providers.isPending ? (
+          {connections.isPending || providers.isPending ? (
             <LoadingItems />
           ) : null}
           {connections.error ? (
             <Alert variant="destructive">
               <AlertTitle>Could not load connections</AlertTitle>
               <AlertDescription>{connections.error.message}</AlertDescription>
-            </Alert>
-          ) : null}
-          {secrets.error ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load vault secrets</AlertTitle>
-              <AlertDescription>{secrets.error.message}</AlertDescription>
             </Alert>
           ) : null}
           {providers.error ? (
@@ -855,8 +763,7 @@ export function OAuthConnections({
                   {view === 'tree' ? 'This folder is empty' : 'No connections'}
                 </EmptyTitle>
                 <EmptyDescription>
-                  Add a folder, trusted provider connection, or encrypted
-                  secret.
+                  Add a folder or trusted provider connection.
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -917,17 +824,6 @@ export function OAuthConnections({
                   }
                 />
               ))}
-              {visibleSecrets.map((secret) => (
-                <SecretItem
-                  key={secret.path}
-                  secret={secret}
-                  pending={
-                    deleteSecretMutation.isPending &&
-                    deleteSecretMutation.variables === secret.path
-                  }
-                  onDelete={() => deleteSecretMutation.mutate(secret.path)}
-                />
-              ))}
             </ItemGroup>
           ) : null}
         </CardContent>
@@ -946,10 +842,7 @@ export function OAuthConnections({
         currentPath={view === 'tree' ? currentPath : ''}
         managementToken={managementToken}
         providers={providers.data?.providers ?? []}
-        existingPaths={[
-          ...connectionItems.map((item) => item.path),
-          ...secretItems.map((item) => item.path),
-        ]}
+        existingPaths={[...connectionItems.map((item) => item.path)]}
         pendingPaths={activePending.map((item) => item.path)}
         onAuthorized={(authorization) =>
           setPendingAuthorizations((items) => [
@@ -957,7 +850,7 @@ export function OAuthConnections({
             authorization,
           ])
         }
-        onSaved={refreshResources}
+        onSaved={refreshConnections}
         onOpenChange={setResourceOpen}
       />
     </section>

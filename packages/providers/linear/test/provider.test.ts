@@ -4,6 +4,16 @@ import { LinearProvider } from '../src'
 const credentials = { clientId: 'linear-client', clientSecret: 'secret' }
 
 describe('LinearProvider', () => {
+  it('describes requested scopes as authorization input', () => {
+    expect(new LinearProvider().inputSchema.fields).toContainEqual(
+      expect.objectContaining({
+        name: 'scopes',
+        type: 'string_list',
+        target: 'scopes',
+      }),
+    )
+  })
+
   it('encapsulates its form-encoded token request', async () => {
     const fetcher = vi.fn(async () =>
       Response.json({

@@ -3,9 +3,9 @@ title: "Quickstart"
 description: "Run Hookfish locally, connect Gmail through MCP, and read an inbox from one TypeScript script."
 ---
 
-This guide creates a local Hookfish API and calls it from a standalone
-TypeScript script. The script connects Gmail through
-`https://gmail.run.tools` and prints the inbox result.
+This guide creates a local Hookfish API and calls it from one TypeScript
+script. The script completes OAuth for `https://gmail.run.tools`, connects its
+MCP client, and prints the Gmail inbox without using the Hookfish dashboard.
 
 ## Prerequisites
 
@@ -25,10 +25,10 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     pnpm dev
     ```
 
-    The scaffold registers the trusted `mcp` provider implementation and
-    creates gitignored `OAUTH_ENCRYPTION_KEY` and `HOOKFISH_API_KEY` values. The
-    Hookfish API listens at `http://127.0.0.1:8787/api` by default. Leave this
-    terminal running.
+    The scaffold registers the trusted `mcp` and `secret` provider
+    implementations and creates gitignored `OAUTH_ENCRYPTION_KEY` and
+    `HOOKFISH_API_KEY` values. The Hookfish API listens at
+    `http://127.0.0.1:8787/api` by default. Leave this terminal running.
   </Step>
 
   <Step title="Create the Gmail script">
@@ -47,51 +47,60 @@ server's OAuth discovery metadata and supported client-registration mechanism.
       Client as McpClient,
       StreamableHTTPClientTransport,
     } from '@modelcontextprotocol/client'
+    async function main() {
+      if (!process.env.HOOKFISH_API_KEY) {
+        throw new Error('HOOKFISH_API_KEY is required')
+      }
 
-    if (!process.env.HOOKFISH_API_KEY) {
-      throw new Error('HOOKFISH_API_KEY is required')
+      const hookfish = new Hookfish({
+        apiKey: process.env.HOOKFISH_API_KEY,
+        baseUrl: 'http://127.0.0.1:8787/api',
+      })
+      const mcp = new McpClient(
+        { name: 'gmail-inbox-quickstart', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      )
+
+      try {
+        await mcp.connect(
+          new StreamableHTTPClientTransport(
+            new URL('https://gmail.run.tools'),
+            {
+              authProvider: {
+                token: async () => {
+                  const connection = await hookfish.connections.access(
+                    'user/personal/gmail/mcp',
+                    {
+                      configuration: {
+                        resource_url: 'https://gmail.run.tools',
+                      },
+                    },
+                  )
+                  return connection.secret
+                },
+                onUnauthorized: async () => {
+                  await hookfish.connections.authorize('user/personal/gmail/mcp')
+                },
+              },
+            },
+          ),
+        )
+        const inbox = await mcp.callTool({
+          name: 'Gmail_SearchEmailsByQuery',
+          arguments: {
+            query: 'in:inbox',
+            max_results: 10,
+            result_detail: 'lightweight',
+          },
+        })
+
+        console.dir(inbox, { depth: null })
+      } finally {
+        await mcp.close()
+      }
     }
 
-    const hookfish = new Hookfish({
-      apiKey: process.env.HOOKFISH_API_KEY,
-      baseUrl: 'http://127.0.0.1:8787/api',
-    })
-
-    const mcp = new McpClient(
-      { name: 'gmail-inbox-quickstart', version: '1.0.0' },
-      { versionNegotiation: { mode: 'auto' } },
-    )
-
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL('https://gmail.run.tools'),
-        {
-          authProvider: {
-            token: async () =>
-              (
-                await hookfish.connections.access(
-                  'user/personal/gmail/mcp',
-                  { url: 'https://gmail.run.tools' },
-                )
-              ).secret,
-            onUnauthorized: async () => {
-              await hookfish.connections.authorize('user/personal/gmail/mcp')
-            },
-          },
-        },
-      ),
-    )
-    const inbox = await mcp.callTool({
-      name: 'Gmail_SearchEmailsByQuery',
-      arguments: {
-        query: 'in:inbox',
-        max_results: 10,
-        result_detail: 'lightweight',
-      },
-    })
-    await mcp.close()
-
-    console.dir(inbox, { depth: null })
+    await main()
     ```
   </Step>
 
@@ -103,19 +112,25 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     ```
 
     The first run throws a `HookfishError` containing a fresh `authorizeUrl`.
-    Open that URL and approve access. Run the same command again to print the
-    inbox result.
+    Open that URL and approve access, then run the command again to print the
+    inbox result. If the MCP server later rejects the credential,
+    `onUnauthorized` starts a fresh authorization flow and lets the same error
+    bubble up.
   </Step>
 </Steps>
 
-The path `user/personal/gmail/mcp` means:
+The path `user/personal/gmail/mcp` has four parts:
 
-- Namespace: `user/personal/gmail`
-- Provider ID: `mcp`
+- Namespace: `user/personal`
+- Resource identity: `gmail`
+- Provider implementation: `mcp`
+- Authentication: OAuth
 
-Hookfish creates the connection on first access and rejects a later access
-that supplies a different MCP URL for the same path. A fixed Gmail provider at
-`user/personal/gmail` is a different connection because its provider ID is
+The final segment selects trusted provider code. The `gmail` identity
+distinguishes this generic MCP connection from other resources under the same
+namespace. Hookfish stores the URL on first access and rejects a later access
+that supplies a different URL for the same path. A concrete Gmail provider at
+`user/personal/gmail` is a different connection because its final segment is
 `gmail`.
 
 <Warning>

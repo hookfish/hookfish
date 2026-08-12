@@ -4,6 +4,16 @@ import { createGitHubProvider, GitHubProvider } from '../src'
 const credentials = { clientId: 'github-client', clientSecret: 'secret' }
 
 describe('GitHubProvider', () => {
+  it('describes requested scopes as authorization input', () => {
+    expect(new GitHubProvider().inputSchema.fields).toContainEqual(
+      expect.objectContaining({
+        name: 'scopes',
+        type: 'string_list',
+        target: 'scopes',
+      }),
+    )
+  })
+
   it('creates reusable fixed providers with atomic credential overrides', async () => {
     const factory = vi.fn(() => ({
       getWebFlowAuthorizationUrl: () => ({ url: 'https://github.example' }),

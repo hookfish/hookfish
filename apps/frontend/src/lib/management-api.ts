@@ -1,13 +1,7 @@
 import { backendUrl } from './api-url'
 
-export type SecretMetadata = {
-  path: string
-  created_at: string
-  updated_at: string
-}
-
 export type AuthorizationInput = {
-  url?: string
+  configuration?: Record<string, unknown>
   scopes?: string[]
   returnTo?: string
 }
@@ -67,37 +61,6 @@ async function request<T>(
   )
 }
 
-export async function listSecrets(
-  token: string,
-  pathPrefix?: string,
-): Promise<SecretMetadata[]> {
-  const query = pathPrefix
-    ? `?path_prefix=${encodeURIComponent(pathPrefix)}`
-    : ''
-  const data = await request<{ secrets: SecretMetadata[] }>(
-    token,
-    `/secrets${query}`,
-  )
-  return data.secrets
-}
-
-export async function storeSecret(
-  token: string,
-  path: string,
-  value: string,
-): Promise<SecretMetadata> {
-  const data = await request<{ secret: SecretMetadata }>(
-    token,
-    `/secrets/${encodePath(path)}`,
-    { method: 'PUT', body: JSON.stringify({ value }) },
-  )
-  return data.secret
-}
-
-export async function deleteSecret(token: string, path: string): Promise<void> {
-  await request(token, `/secrets/${encodePath(path)}`, { method: 'DELETE' })
-}
-
 export async function setConnectionSecret(
   token: string,
   path: string,
@@ -119,7 +82,7 @@ export async function authorizeConnection(
     await request(token, `/connections/authorize/${encodePath(path)}`, {
       method: 'POST',
       body: JSON.stringify({
-        ...(input.url ? { url: input.url } : {}),
+        ...(input.configuration ? { configuration: input.configuration } : {}),
         ...(input.scopes?.length ? { scopes: input.scopes } : {}),
         ...(input.returnTo ? { return_to: input.returnTo } : {}),
       }),

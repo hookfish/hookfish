@@ -14,7 +14,7 @@ const hookfish = new Hookfish({
 const mcpUrl = new URL('https://gmail.run.tools')
 const connection = {
   path: 'user/personal/gmail/mcp',
-  input: { url: mcpUrl.href },
+  input: { configuration: { resource_url: mcpUrl.href } },
 }
 const authProvider = {
   token: async () =>

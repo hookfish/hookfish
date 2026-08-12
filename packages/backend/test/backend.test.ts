@@ -41,6 +41,9 @@ describe('Hookfish backend', () => {
   it('allows metadata and disconnect but rejects credential routes', () => {
     expect(isAllowedBrowserApiRequest('GET', '/api/connections')).toBe(true)
     expect(
+      isAllowedBrowserApiRequest('GET', '/api/connections/providers'),
+    ).toBe(true)
+    expect(
       isAllowedBrowserApiRequest(
         'GET',
         '/api/connections/entry/user/personal/github',
@@ -56,6 +59,12 @@ describe('Hookfish backend', () => {
       isAllowedBrowserApiRequest(
         'POST',
         '/api/connections/access/user/personal/github',
+      ),
+    ).toBe(false)
+    expect(
+      isAllowedBrowserApiRequest(
+        'POST',
+        '/api/connections/authorize/user/personal/github',
       ),
     ).toBe(false)
     expect(

@@ -3,8 +3,9 @@ title: "Remote MCP servers"
 description: "Create per-connection MCP configuration with OAuth discovery, CIMD, PKCE, and DCR fallback."
 ---
 
-The trusted `mcp` provider turns any compatible Streamable HTTP endpoint into a
-connection. There are no runtime provider records to create.
+MCP is the resource protocol, not an authentication kind. The trusted `mcp`
+provider acquires OAuth credentials for compatible Streamable HTTP endpoints.
+There are no runtime provider records to create.
 
 ## Register the implementation
 
@@ -28,7 +29,7 @@ const mcpUrl = new URL('https://mcp.notion.com/mcp')
 const connection = {
   path: 'user/personal/notion/mcp',
   input: {
-    url: mcpUrl.href,
+    configuration: { resource_url: mcpUrl.href },
     returnTo: 'https://app.example.com/integrations',
   },
 }
@@ -51,12 +52,13 @@ application error handler. When the MCP server returns `401`, `onUnauthorized`
 starts fresh authorization and lets the same
 `authorization_required` error bubble to your application error handler.
 
-The path ends in `mcp` because `mcp` is the provider implementation. The
-preceding `user/personal/notion` segments are the namespace. This cannot collide
-with a fixed Notion connection at `user/personal/notion`, whose provider ID is
-`notion`.
+The path ends in `mcp` because `mcp` is the provider implementation.
+`user/personal` is the namespace and `notion` identifies this resource for the
+generic provider. This cannot collide with a concrete Notion connection at
+`user/personal/notion`, whose provider ID is `notion`.
 
-The first access stores the normalized URL and scopes. Reusing the path with a
+The first access stores the normalized URL as immutable configuration and
+tracks requested and granted scopes separately. Reusing the path with a
 different URL returns `connection_configuration_conflict`.
 
 If the authorization server grants fewer scopes than requested, access that
@@ -64,11 +66,12 @@ requires an omitted scope returns `scope_not_granted`. Hookfish does not restart
 consent automatically for a scope the provider already declined. See
 [Errors](/reference/errors) for handling guidance.
 
-## Non-OAuth credentials
+## Supplied credentials
 
 The MCP `AuthProvider` sends an `Authorization: Bearer` header. It can return a
-static bearer token from a Hookfish `secret` connection instead of an OAuth
-connection:
+supplied bearer token from a Hookfish `secret` connection instead of an OAuth
+connection. The fact that the application sends that credential to an MCP
+server does not change its Hookfish provider:
 
 ```ts
 const authProvider = {

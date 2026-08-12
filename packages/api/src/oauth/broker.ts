@@ -89,35 +89,33 @@ function normalizeConfiguration(
   provider: Awaited<ReturnType<typeof getProvider>>,
   configuration: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (provider.kind !== 'mcp') {
-    if (Object.keys(configuration).length > 0) {
-      throw new BrokerError(
-        400,
-        'connection_configuration_unsupported',
-        `Provider "${provider.label ?? 'unknown'}" does not accept per-connection configuration.`,
-      )
+  if (
+    !isSecretProvider(provider) &&
+    isOAuthProviderTemplate(provider) &&
+    provider.normalizeConfiguration
+  ) {
+    try {
+      return provider.normalizeConfiguration(configuration)
+    } catch (error) {
+      if (error instanceof ProviderConfigurationError) {
+        throw new BrokerError(
+          400,
+          'invalid_connection_configuration',
+          error.message,
+        )
+      }
+      throw error
     }
-    return {}
   }
-  if (!isOAuthProviderTemplate(provider)) {
+
+  if (Object.keys(configuration).length > 0) {
     throw new BrokerError(
-      500,
-      'invalid_provider',
-      'The MCP provider does not support per-connection configuration.',
+      400,
+      'connection_configuration_unsupported',
+      `Provider "${provider.label ?? 'unknown'}" does not accept per-connection configuration.`,
     )
   }
-  try {
-    return provider.normalizeConfiguration?.(configuration) ?? configuration
-  } catch (error) {
-    if (error instanceof ProviderConfigurationError) {
-      throw new BrokerError(
-        400,
-        'invalid_connection_configuration',
-        error.message,
-      )
-    }
-    throw error
-  }
+  return {}
 }
 
 export async function ensureConnection(
@@ -188,14 +186,8 @@ async function configureOAuthProvider(
       'This provider uses a stored secret.',
     )
   }
-  if (provider.kind !== 'mcp') return { connection, provider }
-  if (!isOAuthProviderTemplate(provider) || !provider.registerClient) {
-    throw new BrokerError(
-      500,
-      'invalid_provider',
-      'The MCP provider cannot prepare an OAuth client.',
-    )
-  }
+  if (!isOAuthProviderTemplate(provider) || !provider.registerClient)
+    return { connection, provider }
 
   let prepared = connection
   if (!prepared.oauthClientId) {

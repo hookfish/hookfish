@@ -19,14 +19,48 @@ export type ProviderCredentials = {
 
 export type ProviderConfiguration = Record<string, unknown>
 
+export type ProviderAuthentication = 'oauth' | 'secret'
+
+export type ProviderInputField = {
+  readonly name: string
+  readonly label: string
+  readonly type: 'text' | 'url' | 'string_list'
+  readonly target: 'identity' | 'configuration' | 'scopes'
+  readonly required: boolean
+  readonly placeholder?: string
+  readonly description?: string
+}
+
+export type ProviderInputSchema = {
+  readonly fields: readonly ProviderInputField[]
+}
+
 /** A provider whose credential is supplied directly by trusted application code. */
 export interface SecretProvider {
   readonly kind: 'secret'
+  readonly authentication?: 'secret'
   readonly label?: string
+  readonly inputSchema?: ProviderInputSchema
 }
 
 export function createSecretProvider(label = 'Secret'): SecretProvider {
-  return { kind: 'secret', label }
+  return {
+    kind: 'secret',
+    authentication: 'secret',
+    label,
+    inputSchema: {
+      fields: [
+        {
+          name: 'name',
+          label: 'Credential name',
+          type: 'text',
+          target: 'identity',
+          required: true,
+          placeholder: 'openai',
+        },
+      ],
+    },
+  }
 }
 
 export type RegisterProviderClientInput = {
@@ -110,8 +144,9 @@ export type ProviderTokenResponse = {
  * request encodings.
  */
 export interface OAuthProvider {
-  readonly kind?: 'oauth' | 'mcp'
+  readonly authentication?: 'oauth'
   readonly label?: string
+  readonly inputSchema?: ProviderInputSchema
   readonly defaultScopes?: readonly string[]
   readonly availableScopes?: readonly string[]
   readonly usesPkce?: boolean
@@ -132,7 +167,7 @@ export type ConnectionProvider = OAuthProvider | SecretProvider
 export function isSecretProvider(
   provider: ConnectionProvider,
 ): provider is SecretProvider {
-  return provider.kind === 'secret'
+  return Reflect.get(provider, 'kind') === 'secret'
 }
 
 export type ProviderSourceEntry = {
@@ -303,7 +338,9 @@ export class ProviderRegistry {
     return (
       provider !== undefined &&
       (isSecretProvider(provider) ||
-        provider.kind === 'mcp' ||
+        (provider.inputSchema?.fields ?? []).some(
+          (field) => field.target === 'identity',
+        ) ||
         (provider.isConfigured?.() ?? true))
     )
   }

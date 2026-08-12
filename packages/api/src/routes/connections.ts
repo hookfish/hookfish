@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { isSecretProvider } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import { assertConnectionAccess } from '../oauth/access-token'
@@ -116,7 +117,7 @@ const connectionPathParam = z.object({
 })
 
 const connectionAccessInput = z.object({
-  url: z.url().optional(),
+  configuration: z.record(z.string(), z.unknown()).optional(),
   scopes: z.array(z.string()).optional(),
   return_to: z.url().optional(),
 })
@@ -171,7 +172,20 @@ const listProvidersRoute = createRoute({
               z.object({
                 id: z.string(),
                 label: z.string(),
-                configurable: z.boolean(),
+                authentication: z.enum(['oauth', 'secret']),
+                input_schema: z.object({
+                  fields: z.array(
+                    z.object({
+                      name: z.string(),
+                      label: z.string(),
+                      type: z.enum(['text', 'url', 'string_list']),
+                      target: z.enum(['identity', 'configuration', 'scopes']),
+                      required: z.boolean(),
+                      placeholder: z.string().optional(),
+                      description: z.string().optional(),
+                    }),
+                  ),
+                }),
               }),
             ),
           }),
@@ -502,7 +516,10 @@ export function createConnectionRoutes<Bindings extends object>(
         providers: result.providers.map(({ id, provider }) => ({
           id,
           label: provider.label ?? id,
-          configurable: provider.kind === 'mcp',
+          authentication: isSecretProvider(provider) ? 'secret' : 'oauth',
+          input_schema: {
+            fields: [...(provider.inputSchema?.fields ?? [])],
+          },
         })),
       },
       200,
@@ -523,9 +540,7 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: body.url
-            ? { resource_url: body.url, scopes: body.scopes ?? [] }
-            : undefined,
+          configuration: body.configuration,
           scopes: body.scopes,
           returnTo: validateReturnTo(
             body.return_to,
@@ -587,9 +602,7 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: body.url
-            ? { resource_url: body.url, scopes: body.scopes ?? [] }
-            : undefined,
+          configuration: body.configuration,
           scopes: body.scopes,
           returnTo: validateReturnTo(
             body.return_to,
