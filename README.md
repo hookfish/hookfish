@@ -14,6 +14,7 @@ backend runtimes:
 - `examples/backends/hono-node` — default Node backend using PGlite
 - `examples/backends/express` and `examples/backends/nextjs` — alternative Node hosts
 - `examples/backends/cloudflare-worker` — Worker backend using SQLite Durable Objects
+- `examples/chatbot` — shadcn chatbot with Better Auth and per-user Hookfish secrets in PGlite
 
 The frontend contains no server functions or database code. Every host exposes:
 
@@ -119,6 +120,15 @@ Each backend example owns its `hookfish.config.ts`, including its database,
 providers, browser policy, and documentation visibility. The Node examples
 store PGlite data in a local `pgdata` directory; the Worker config uses its
 Durable Object binding.
+
+Run the full-stack chatbot example separately:
+
+```sh
+pnpm --filter @hookfish/example-chatbot dev
+```
+
+See [`examples/chatbot/README.md`](examples/chatbot/README.md) for its local
+environment and account setup.
 
 ## Cloudflare Worker backend
 
