@@ -12,20 +12,45 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      TURBO_SCM_HEAD: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
+          package-manager-cache: false
+
+      - name: Restore build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .turbo/cache
+            examples/nextjs/.next/cache
+          key: ${{ runner.os }}-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm lint
 
-      - run: pnpm typecheck
+      - name: Build affected packages
+        run: pnpm exec turbo run build --affected
 
-      - run: pnpm test
+      # The build scripts already run TypeScript for every workspace except the
+      # inspector, whose Vite build only transpiles source files.
+      - name: Typecheck inspector
+        run: pnpm --filter @hookfish/inspector typecheck
+
+      - name: Validate generated Cloudflare types
+        run: pnpm exec turbo run cf-typecheck --affected
+
+      - name: Test affected packages
+        run: pnpm exec turbo run test --affected

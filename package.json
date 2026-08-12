@@ -6,8 +6,8 @@
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "dev": "node ./packages/cli/bin/hookfish.mjs repo-dev",
-    "postinstall": "pnpm build",
     "build": "turbo build",
+    "build:publish": "turbo build --filter='./packages/**'",
     "typecheck": "turbo typecheck && turbo cf-typecheck",
     "test": "turbo test",
     "prepare": "git config core.hooksPath .githooks",
@@ -22,7 +22,7 @@
     "migrate": "node ./packages/cli/bin/hookfish.mjs migrate",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build:publish && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
