@@ -1,5 +1,13 @@
 # @hookfish/backend
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [460692e]
+- Updated dependencies [796722e]
+  - @hookfish/api@0.4.0
+
 ## 0.1.3
 
 ### Patch Changes
