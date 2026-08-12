@@ -1,13 +1,15 @@
 import { z } from '@hono/zod-openapi'
 import {
-  defaultProviderRegistry,
   ProviderConfigurationError,
-  type ProviderRegistry,
   ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { Database, OAuthConnection, OAuthState } from '../db/types'
+import {
+  type BoundProviderSource,
+  defaultBoundProviderSource,
+} from '../provider-source'
 import { generateConnectionId } from './connection-id'
 import {
   decryptSecret,
@@ -128,7 +130,7 @@ export async function startAuthorization(
   db: Database,
   env: object,
   input: StartAuthorizationInput,
-  providers: ProviderRegistry = defaultProviderRegistry,
+  providers: BoundProviderSource = defaultBoundProviderSource,
 ): Promise<{
   authorizeUrl: string
   state: string
@@ -281,7 +283,7 @@ export async function completeAuthorization(
   db: Database,
   env: object,
   input: { provider: string; code: string; state: string; issuer?: string },
-  providers: ProviderRegistry = defaultProviderRegistry,
+  providers: BoundProviderSource = defaultBoundProviderSource,
 ): Promise<{
   connection: OAuthConnection
   state: OAuthState
@@ -477,7 +479,7 @@ async function refreshConnection(
   db: Database,
   env: object,
   connection: OAuthConnection,
-  providers: ProviderRegistry,
+  providers: BoundProviderSource,
 ): Promise<OAuthConnection> {
   const config = await resolveRequestProviderConfig(
     db,
@@ -571,7 +573,7 @@ export async function getAccessToken(
   db: Database,
   env: object,
   connectionId: string,
-  providers: ProviderRegistry = defaultProviderRegistry,
+  providers: BoundProviderSource = defaultBoundProviderSource,
   organization?: string,
 ): Promise<AccessTokenResult> {
   const existing = await getConnection(db, connectionId, organization)
@@ -616,7 +618,7 @@ export async function deleteConnection(
   db: Database,
   env: object,
   connectionId: string,
-  providers: ProviderRegistry = defaultProviderRegistry,
+  providers: BoundProviderSource = defaultBoundProviderSource,
   organization?: string,
 ): Promise<DeleteConnectionResult> {
   const connection = await findConnection(db, connectionId, organization)

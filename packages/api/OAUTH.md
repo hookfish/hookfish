@@ -117,6 +117,71 @@ clients in an isolate. A static provider map and an existing
 bindings. Hookfish validates its own broker settings; provider binding types
 and any additional validation belong to the host application.
 
+Large, application-owned registries can resolve providers lazily instead of
+building a complete map for every request. `getProvider` is used by OAuth,
+refresh, and revocation operations and should load only the requested entry.
+The optional `listProviders` callback runs only for an explicit provider-list
+request. It receives the original query parameters, requires only a
+`providers` array, and may return any JSON-serializable pagination metadata:
+
+```ts
+import { createProviderSource, defineHookfishConfig } from '@hookfish/api'
+import { createMcpProvider } from '@hookfish/provider-mcp'
+
+type Bindings = {
+  REGISTRY: {
+    get(id: string): Promise<Server | undefined>
+    list(input: {
+      limit?: number
+      offset?: number
+    }): Promise<{ items: Server[]; total: number }>
+  }
+}
+
+type Server = {
+  id: string
+  name: string
+  resourceUrl: string
+  scopes: string[]
+}
+
+const toProvider = (server: Server) =>
+  createMcpProvider({
+    resourceUrl: server.resourceUrl,
+    scopes: server.scopes,
+  })
+
+export default defineHookfishConfig<Bindings>({
+  db,
+  providers: createProviderSource<Bindings>({
+    async getProvider(id, env) {
+      const server = await env.REGISTRY.get(id)
+      return server ? toProvider(server) : undefined
+    },
+    async listProviders(query, env) {
+      const offset = Number(query.get('offset') ?? 0)
+      const limit = Number(query.get('limit') ?? 50)
+      const page = await env.REGISTRY.list({ offset, limit })
+      return {
+        providers: page.items.map((server) => ({
+          id: server.id,
+          provider: toProvider(server),
+        })),
+        offset,
+        limit,
+        total: page.total,
+      }
+    },
+  }),
+})
+```
+
+A registry may instead interpret `cursor`, return `next_cursor`, ignore query
+parameters and list everything, or omit `listProviders` entirely. Hookfish
+serializes each provider into its standard public shape and passes every other
+result field through unchanged. Provider lookups are memoized within one
+request, but not across requests.
+
 Production deployments must set `OAUTH_REDIRECT_BASE_URL`; development and test
 instances may derive it from the incoming request origin. This keeps registered
 callback URLs independent of forwarded or untrusted Host headers.
