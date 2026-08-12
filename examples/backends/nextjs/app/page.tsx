@@ -3,7 +3,7 @@ export default function Home() {
     <main>
       <h1>Hookfish + Next.js</h1>
       <p>
-        Hookfish is mounted at <a href="/api">/api</a>.
+        Hookfish is mounted at <a href="/api/docs">/api/docs</a>.
       </p>
     </main>
   )

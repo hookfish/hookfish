@@ -23,7 +23,7 @@ const db = durableObjects<Env>((bindings, context) =>
 //   (bindings) => bindings.HYPERDRIVE.connectionString,
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
-// const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
+// const hookfish = await HookfishServer.init({ ...config, db: cloudflareDb })
 export default defineHookfishConfig<Env>({
   db,
   includeClient: true,

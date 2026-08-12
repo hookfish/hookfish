@@ -14,7 +14,7 @@ import { encodeResourcePath } from './resource-path'
 export type BrokerEnv = {
   NODE_ENV?: string
   OAUTH_ENCRYPTION_KEY?: string
-  BROKER_API_KEY?: string
+  HOOKFISH_API_KEY?: string
   OAUTH_REDIRECT_BASE_URL?: string
   [key: string]: unknown
 }
@@ -34,7 +34,7 @@ const brokerConfigSchema = z.object({
     z.string().trim().default('development'),
   ),
   OAUTH_ENCRYPTION_KEY: optionalEnvironmentString,
-  BROKER_API_KEY: optionalEnvironmentString,
+  HOOKFISH_API_KEY: optionalEnvironmentString,
   OAUTH_REDIRECT_BASE_URL: optionalEnvironmentString,
 })
 
@@ -75,7 +75,7 @@ export function resolveBrokerConfig(bindings: object): BrokerConfig {
       ambient,
       'OAUTH_ENCRYPTION_KEY',
     ),
-    BROKER_API_KEY: bindingValue(bindings, ambient, 'BROKER_API_KEY'),
+    HOOKFISH_API_KEY: bindingValue(bindings, ambient, 'HOOKFISH_API_KEY'),
     OAUTH_REDIRECT_BASE_URL: bindingValue(
       bindings,
       ambient,
@@ -212,7 +212,7 @@ function readAmbientNodeEnv(): string | undefined {
 }
 
 export function requireBrokerApiKey(env: object): string {
-  const configured = readEnvString(env, 'BROKER_API_KEY')
+  const configured = readEnvString(env, 'HOOKFISH_API_KEY')
   if (configured) return configured
 
   const nodeEnv = readEnvString(env, 'NODE_ENV') ?? readAmbientNodeEnv()
@@ -221,5 +221,5 @@ export function requireBrokerApiKey(env: object): string {
     return 'test'
   }
 
-  return requireEnvString(env, 'BROKER_API_KEY')
+  return requireEnvString(env, 'HOOKFISH_API_KEY')
 }

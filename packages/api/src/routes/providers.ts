@@ -1,10 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
   isOAuthProviderTemplate,
-  ProviderConfigurationError,
-  ProviderRequestError,
   type OAuthProviderTemplate,
   type ProviderConfiguration,
+  ProviderConfigurationError,
+  ProviderRequestError,
 } from '@hookfish/provider'
 import { createMiddleware } from 'hono/factory'
 import type { DatabaseInput } from '../db/binding'
@@ -128,6 +128,7 @@ const errors = {
 const listRoute = createRoute({
   method: 'get',
   path: '/providers',
+  operationId: 'admin.providers.list',
   summary: 'List fixed and dynamic providers',
   security: brokerAuth,
   request: { query: z.object({}).catchall(z.coerce.string().optional()) },
@@ -149,6 +150,7 @@ const listRoute = createRoute({
 const getRoute = createRoute({
   method: 'get',
   path: '/providers/{provider_path}',
+  operationId: 'admin.providers.get',
   summary: 'Get a provider configuration',
   security: brokerAuth,
   request: { params: providerPathParam },
@@ -168,6 +170,7 @@ const getRoute = createRoute({
 const putRoute = createRoute({
   method: 'put',
   path: '/providers/{provider_path}',
+  operationId: 'admin.providers.put',
   summary: 'Create or replace a dynamic provider',
   description:
     'Custom client secrets are encrypted and write-only. Inherited credentials use the complete credential pair from the fixed provider template.',
@@ -204,6 +207,7 @@ const putRoute = createRoute({
 const patchRoute = createRoute({
   method: 'patch',
   path: '/providers/{provider_path}',
+  operationId: 'admin.providers.patch',
   summary: 'Update a dynamic provider',
   security: brokerAuth,
   request: {
@@ -247,6 +251,7 @@ const patchRoute = createRoute({
 const deleteRoute = createRoute({
   method: 'delete',
   path: '/providers/{provider_path}',
+  operationId: 'admin.providers.delete',
   summary: 'Delete an unused dynamic provider',
   description:
     'Returns 409 while an OAuth connection references the provider. Disable it to block new authorizations while retaining refresh and revocation.',

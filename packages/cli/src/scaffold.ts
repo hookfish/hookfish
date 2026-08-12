@@ -62,7 +62,7 @@ const environmentExample = `# Copy to .env (or .dev.vars on Cloudflare) for loca
 # Never commit the copied file.
 # Generate with: openssl rand -base64 32
 OAUTH_ENCRYPTION_KEY=
-BROKER_API_KEY=
+HOOKFISH_API_KEY=
 
 # Required for the Vercel backend. Other backends ignore this by default.
 DATABASE_URL=
@@ -88,7 +88,10 @@ function localEnvironment(): string {
       'OAUTH_ENCRYPTION_KEY=',
       `OAUTH_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
     )
-    .replace('BROKER_API_KEY=', 'BROKER_API_KEY=test')
+    .replace(
+      'HOOKFISH_API_KEY=',
+      `HOOKFISH_API_KEY=${randomBytes(32).toString('base64')}`,
+    )
 }
 
 const tsconfig = `{
@@ -198,10 +201,10 @@ export default defineHookfishConfig({
 }
 
 const nodeServer = `import { serve } from '@hono/node-server'
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import config from '../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const hookfish = await HookfishServer.init(config)
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
@@ -211,13 +214,13 @@ serve({
   port,
 })
 
-console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api\`)
+console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api/docs\`)
 `
 
-const bunServer = `import { Hookfish } from '@hookfish/api'
+const bunServer = `import { HookfishServer } from '@hookfish/api'
 import config from '../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const hookfish = await HookfishServer.init(config)
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
@@ -227,14 +230,14 @@ Bun.serve({
   port,
 })
 
-console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api\`)
+console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api/docs\`)
 `
 
-const vercelServer = `import { Hookfish } from '@hookfish/api'
+const vercelServer = `import { HookfishServer } from '@hookfish/api'
 import { Hono } from 'hono'
 import config from '../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const hookfish = await HookfishServer.init(config)
 const app = new Hono()
 
 app.all('*', (context) => hookfish.fetch(context.req.raw, process.env))
@@ -242,7 +245,7 @@ app.all('*', (context) => hookfish.fetch(context.req.raw, process.env))
 export default app
 `
 
-const cloudflareServer = `import { Hookfish } from '@hookfish/api'
+const cloudflareServer = `import { HookfishServer } from '@hookfish/api'
 import {
   durableObjects,
   HookfishDurableObject,
@@ -260,7 +263,7 @@ const db = durableObjects<Env>((bindings, context) =>
   bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
 )
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
-const hookfish = await Hookfish.init<Env>({
+const hookfish = await HookfishServer.init<Env>({
   db,
   includeClient: true,
   includeSwagger: true,
@@ -405,7 +408,7 @@ pnpm dev:server
 
 \`pnpm dev:server\` starts the ${backend} development server directly. \`pnpm dev\` runs that script beside \`hookfish serve --backend-url <backend-url>\`, which serves the packaged dashboard and proxies \`/api\` to the backend so the browser stays same-origin.
 
-A gitignored \`${localEnvironmentFile}\` is generated with a unique local encryption key and \`BROKER_API_KEY=test\`. Add provider credentials there when you are ready to connect accounts.
+A gitignored \`${localEnvironmentFile}\` is generated with unique local encryption and broker API keys. Add provider credentials there when you are ready to connect accounts.
 
 ## Deploy
 
@@ -433,7 +436,7 @@ function backendFiles(
     files['src/index.ts'] = cloudflareServer
     files['tsconfig.json'] = cloudflareTsconfig()
     files['wrangler-typegen.env'] = `OAUTH_ENCRYPTION_KEY=
-BROKER_API_KEY=
+HOOKFISH_API_KEY=
 OAUTH_REDIRECT_BASE_URL=
 HOOKFISH_FRONTEND_URL=
 GITHUB_CLIENT_ID=

@@ -190,7 +190,7 @@ app.get('/organizations/:organization/connections', async (c) => {
 })
 ```
 
-Do not expose the root `BROKER_API_KEY` to the browser. Use a server-held root
+Do not expose the root `HOOKFISH_API_KEY` to the browser. Use a server-held root
 credential or mint scoped Hookfish credentials. A scoped credential that uses
 a global provider currently needs access to both the organization namespace
 and provider ID, for example `['acme/**', 'notion']`.

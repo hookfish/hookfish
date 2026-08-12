@@ -17,7 +17,7 @@ import {
 import { pglite } from '../../database/src/pglite'
 import type { DrizzleDatabase } from '../src/db/schema'
 import type { Database } from '../src/db/types'
-import { Hookfish, type HookfishEvent } from '../src/index'
+import { HookfishServer, type HookfishEvent } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { createPkcePair } from '../src/oauth/crypto'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
@@ -270,7 +270,7 @@ export async function createHarness(
     NODE_ENV: 'test',
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
-    BROKER_API_KEY: 'test',
+    HOOKFISH_API_KEY: 'test',
     STUB_CLIENT_ID: 'stub-client',
     STUB_CLIENT_SECRET: 'stub-secret',
     STUB_ALT_CLIENT_ID: 'stub-alt-client',
@@ -280,7 +280,7 @@ export async function createHarness(
     STUB_NOSCOPE_CLIENT_ID: 'stub-noscope-client',
     STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
-  const app = await Hookfish.init({
+  const app = await HookfishServer.init({
     db,
     providers,
     returnTo: options.returnTo,

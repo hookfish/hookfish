@@ -1,108 +1,180 @@
 ---
 title: "Quickstart"
-description: "Scaffold Hookfish, connect a Notion workspace through MCP, and retrieve its current access token."
+description: "Scaffold Hookfish, connect a Gmail account through MCP, and read the user's inbox with a current access token."
 ---
 
-Create a standalone Node.js broker, connect Notion's remote MCP server, and
-retrieve the current provider token from trusted server code.
+Create a standalone Node.js broker, connect a user's Gmail account through the
+remote MCP server at `https://gmail.run.tools`, and read their inbox from
+trusted server code.
 
 ## Prerequisites
 
 - Node.js 20 or later
 - pnpm
-- A Notion account with access to a workspace you can authorize
+- A Google account with Gmail enabled
 
-You do not need to create a Notion OAuth application. The MCP provider uses
-Notion's authorization-server metadata and dynamic client registration.
+You do not need to create a Google OAuth application. The MCP provider uses the
+server's authorization metadata and dynamic client registration.
 
-## Create your broker
+## Create your broker and read Gmail
 
 <Steps>
   <Step title="Scaffold a Node.js project">
-    Run the initializer and enter the generated directory.
+    Install the latest Hookfish CLI, run the initializer, and enter the
+    generated directory.
 
     ```bash
-    pnpm dlx hookfish init my-broker --backend node
+    npm i -g hookfish@latest
+    hookfish init my-broker --backend node
     cd my-broker
     ```
 
     The initializer installs dependencies and creates a gitignored `.env` with
-    a unique `OAUTH_ENCRYPTION_KEY` and `BROKER_API_KEY=test`.
+    unique `OAUTH_ENCRYPTION_KEY` and `HOOKFISH_API_KEY` values.
   </Step>
 
-  <Step title="Start the backend and dashboard">
-    Run both processes with one command.
+  <Step title="Install the clients">
+    Add the first-party Hookfish SDK and the MCP TypeScript client to the
+    generated Node.js project.
+
+    ```bash
+    pnpm add @hookfish/sdk @modelcontextprotocol/client
+    ```
+  </Step>
+
+  <Step title="Add an inbox endpoint">
+    Replace `src/index.ts` with this Hono API. The `/gmail/inbox` endpoint keeps
+    the broker access token and Gmail access token on the server.
+
+    ```ts
+    import { serve } from '@hono/node-server'
+    import { HookfishServer } from '@hookfish/api'
+    import { Hookfish, HookfishError } from '@hookfish/sdk'
+    import {
+      Client as McpClient,
+      StreamableHTTPClientTransport,
+      UnauthorizedError,
+    } from '@modelcontextprotocol/client'
+    import { Hono } from 'hono'
+    import config from '../hookfish.config'
+
+    const app = new Hono()
+    const broker = await HookfishServer.init(config)
+    if (!process.env.HOOKFISH_API_KEY) throw new Error('HOOKFISH_API_KEY is required')
+
+    const hookfish = new Hookfish({
+      apiKey: process.env.HOOKFISH_API_KEY,
+      baseUrl: 'http://local/api',
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) =>
+        broker.fetch(new Request(input, init), process.env),
+    })
+
+    // Mount Hookfish's API and OAuth callback routes.
+    app.all('/api/*', (ctx) =>
+      broker.fetch(ctx.req.raw, process.env),
+    )
+
+    // Authorize Gmail when needed, then return the user's inbox.
+    app.get('/gmail/inbox', async (ctx) => {
+      const mcpUrl = new URL('https://gmail.run.tools')
+
+      // Ensure the remote Gmail MCP server is configured as a provider.
+      try {
+        await hookfish.providers.get('gmail')
+      } catch (error) {
+        if (!(error instanceof HookfishError) || error.status !== 404) throw error
+        await hookfish.providers.put('gmail', {
+          template: 'mcp',
+          configuration: { resource_url: mcpUrl.href, scopes: [] },
+          credentials: { mode: 'register' },
+        })
+      }
+
+      let accessToken: string
+
+      // Get a current token or return a URL that starts authorization.
+      try {
+        accessToken = (
+          await hookfish.oauth.getToken('personal/gmail')
+        ).access_token
+      } catch (error) {
+        if (!(error instanceof HookfishError) || error.status !== 404) throw error
+        const { authorize_url } = await hookfish.oauth.authorize('gmail', {
+          connectionId: 'personal/gmail',
+        })
+        return ctx.json({ error: 'authorization_required', authorize_url }, 401)
+      }
+
+      const mcp = new McpClient(
+        { name: 'gmail-inbox-quickstart', version: '1.0.0' },
+        { versionNegotiation: { mode: 'auto' } },
+      )
+
+      // Call Gmail through MCP, restarting authorization if the token is rejected.
+      try {
+        await mcp.connect(new StreamableHTTPClientTransport(mcpUrl, {
+          authProvider: { token: async () => accessToken },
+        }))
+        const inbox = await mcp.callTool({
+          name: 'Gmail_SearchEmailsByQuery',
+          arguments: {
+            query: 'in:inbox',
+            max_results: 10,
+            result_detail: 'lightweight',
+          },
+        })
+        return ctx.json(inbox)
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) throw error
+        const { authorize_url } = await hookfish.oauth.authorize('gmail', {
+          connectionId: 'personal/gmail',
+        })
+        return ctx.json({ error: 'authorization_required', authorize_url }, 401)
+      } finally {
+        await mcp.close().catch(() => undefined)
+      }
+    })
+
+    serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 8787) })
+    ```
+
+    The `/api/*` route mounts Hookfish, including its API documentation at
+    `/api/docs`.
+  </Step>
+
+  <Step title="Start the API">
+    Start the generated backend and dashboard.
 
     ```bash
     pnpm dev
     ```
-
-    The terminal prints the dashboard URL, normally `http://127.0.0.1:5173`.
-    The dashboard proxies `/api` to the generated backend. Use
-    `pnpm dev:server` when you only need the backend.
   </Step>
 
-  <Step title="Create the Notion MCP provider">
-    In the dashboard, enter the local broker key `test`, then select
-    **Add provider**. Choose the MCP template and enter:
-
-    | Field | Value |
-    | --- | --- |
-    | Configuration ID | `notion-mcp` |
-    | Label | `Notion MCP` |
-    | Resource URL | `https://mcp.notion.com/mcp` |
-    | Credential mode | Register automatically |
-
-    You can perform the same operation from trusted server code:
+  <Step title="Request the inbox">
+    Call the application endpoint from another terminal.
 
     ```bash
-    curl --request PUT http://127.0.0.1:5173/api/admin/providers/notion-mcp \
-      --header 'Authorization: Bearer test' \
-      --header 'Content-Type: application/json' \
-      --data '{
-        "template": "mcp",
-        "label": "Notion MCP",
-        "configuration": {
-          "resource_url": "https://mcp.notion.com/mcp",
-          "scopes": []
-        },
-        "credentials": { "mode": "register" }
-      }'
-    ```
-  </Step>
-
-  <Step title="Start a connection">
-    Request an authorization URL from trusted server code.
-
-    ```bash
-    curl --request POST http://127.0.0.1:5173/api/oauth/authorize/notion-mcp \
-      --header 'Authorization: Bearer test' \
-      --header 'Content-Type: application/json' \
-      --data '{"connection_id":"personal/notion"}'
+    curl --include http://127.0.0.1:8787/gmail/inbox
     ```
 
-    Open the returned `authorize_url`, sign in to Notion, and approve access.
-    Hookfish validates the callback, encrypts the credentials, and stores the
-    connection as `personal/notion`.
-  </Step>
-
-  <Step title="Retrieve a current provider token">
-    After the callback completes, request the token from the backend.
-
-    ```bash
-    curl http://127.0.0.1:5173/api/oauth/tokens/personal/notion \
-      --header 'Authorization: Bearer test'
-    ```
-
-    Hookfish refreshes an expiring token before returning it when the provider
-    supports refresh.
+    The first request returns `401 Unauthorized` with an `authorize_url`. Open
+    that URL, sign in with Google, and approve access. After Hookfish handles the
+    callback, run the same command again. The endpoint now returns the MCP tool
+    result for the user's inbox.
   </Step>
 </Steps>
 
 <Check>
-  You now have a persisted OAuth connection. Your application can refer to it
-  as `personal/notion` without storing the provider credentials itself.
+  You now have one Hono endpoint that returns an authorization URL until Gmail
+  is connected, then returns the user's inbox through MCP. Hookfish stores and
+  refreshes the provider token behind that endpoint.
 </Check>
+
+<Warning>
+  This quickstart leaves `/gmail/inbox` unauthenticated for local testing.
+  Authenticate the application user and use a scoped broker token before you
+  deploy it.
+</Warning>
 
 ## Understand the generated project
 
@@ -123,7 +195,7 @@ PGlite data/hookfish
 
 The generated `hookfish.config.ts` contains provider factories, database
 configuration, callback settings, and documentation visibility. The backend
-mounts `Hookfish.init(config).fetch` below `/api`.
+mounts `HookfishServer.init(config).fetch` below `/api`.
 
 ## Next steps
 

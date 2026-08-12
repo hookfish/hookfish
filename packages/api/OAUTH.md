@@ -17,7 +17,7 @@ cp apps/frontend/.env.example apps/frontend/.env
 
 # Fill in at minimum:
 openssl rand -base64 32   # -> OAUTH_ENCRYPTION_KEY
-openssl rand -base64 32   # -> BROKER_API_KEY
+openssl rand -base64 32   # -> HOOKFISH_API_KEY
 # ...plus NOTION_CLIENT_ID / NOTION_CLIENT_SECRET
 ```
 
@@ -38,7 +38,7 @@ running broker for the exact string rather than guessing it—the host depends o
 how you reach the API, and providers match `redirect_uri` byte for byte:
 
 ```sh
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   http://127.0.0.1:8787/api/oauth/providers \
   | jq -r '.providers[] | "\(.id)\t\(.callback_url)"'
 ```
@@ -103,7 +103,7 @@ export default defineHookfishConfig<Bindings>({
 })
 ```
 
-Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `BROKER_API_KEY`,
+Hookfish reads its conventional `OAUTH_ENCRYPTION_KEY`, `HOOKFISH_API_KEY`,
 `OAUTH_REDIRECT_BASE_URL`, and `NODE_ENV` settings lazily when an OAuth request
 arrives. Request bindings take precedence over the ambient Node environment;
 an operation that needs a missing broker secret returns `500
@@ -190,10 +190,10 @@ Fetch entrypoints initialize Hookfish and the backend once. If a Node host loads
 an env file itself, it does so before dynamically importing the config:
 
 ```ts
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import config from '../../../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const hookfish = await HookfishServer.init(config)
 
 export default { fetch: (request) => hookfish.fetch(request, process.env) }
 ```
@@ -201,14 +201,14 @@ export default { fetch: (request) => hookfish.fetch(request, process.env) }
 Hosts can replace the configured database without changing anything else:
 
 ```ts
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import config from '../../../hookfish.config'
 import { durableObjects } from '@hookfish/database/durable-object'
 
 const db = durableObjects((env: Env, context) =>
   env.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
 )
-const hookfish = await Hookfish.init<Env>({
+const hookfish = await HookfishServer.init<Env>({
   ...config,
   db,
 })
@@ -234,10 +234,10 @@ resolve a request-time host binding or storage partition.
 
 All routes require `Authorization: Bearer <credential>`, except the callback —
 that one is hit by the user's browser and is authenticated by its single-use
-`state` value instead. `BROKER_API_KEY` is the root credential and can access
+`state` value instead. `HOOKFISH_API_KEY` is the root credential and can access
 every resource. It can mint expiring credentials limited to one or more
 hierarchical resource folders. Outside production,
-`BROKER_API_KEY` defaults to `test` when unset.
+`HOOKFISH_API_KEY` defaults to `test` when unset.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -288,7 +288,7 @@ Paths are limited to 512 characters and must use NFC Unicode with non-empty
 segments. Hookfish rejects dot segments, backslashes, control and bidirectional
 formatting characters, and encoded values that decode into path structure.
 
-Swagger UI always lives at `/api`, with its document at `/api/openapi.json`.
+Swagger UI always lives at `/api/docs`, with its document at `/api/openapi.json`.
 With `includeSwagger: true`, the document includes the complete server API.
 With `includeSwagger: false`, it includes only client-safe routes and advertises
 `/api/client` as its server.
@@ -300,7 +300,7 @@ Start a connection. Omit `connection_id` to have the broker mint one as
 
 ```sh
 curl -X POST http://127.0.0.1:5173/api/oauth/authorize/notion \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{}'
 ```
@@ -330,7 +330,7 @@ Connection ids may contain `/` and span multiple path segments, such as
 
 ```sh
 curl -X POST http://127.0.0.1:5173/api/oauth/authorize/notion \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"connection_id":"team/swift-orchid-4821"}'
 ```
@@ -363,17 +363,17 @@ matches `team/apple` and descendants such as `team/apple/calendar`, but not
 prefix itself.
 
 ```sh
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   "http://127.0.0.1:5173/api/oauth/connections?provider=notion&connection_id_prefix=team"
 
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   "http://127.0.0.1:5173/api/oauth/connections/team/swift-orchid-4821"
 ```
 
 Then, whenever you need to call the provider:
 
 ```sh
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   "http://127.0.0.1:5173/api/oauth/tokens/team/swift-orchid-4821"
 ```
 
@@ -404,7 +404,7 @@ Mint a named, one-hour credential for one or more scopes with the root key:
 
 ```sh
 curl -X POST http://127.0.0.1:5173/api/admin/tokens \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"name":"team-worker","scopes":["team"],"expires_in":3600}'
 ```
@@ -437,7 +437,7 @@ are capped at 30 days.
 Root credentials can list active token names:
 
 ```sh
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   http://127.0.0.1:5173/api/admin/tokens
 ```
 
@@ -452,7 +452,7 @@ after the previous token expires.
 Revoke a token immediately with the root credential:
 
 ```sh
-curl -X DELETE -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -X DELETE -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   http://127.0.0.1:5173/api/admin/tokens/team-worker
 ```
 
@@ -460,7 +460,7 @@ The broker stores only a SHA-256 hash of each token's random identifier. Every
 scoped request must match an unexpired database record after its HMAC signature
 is verified. The record's scopes and expiration are authoritative, so narrowing
 either value takes effect on the next request; deleting the record invalidates
-the bearer credential without rotating `BROKER_API_KEY`.
+the bearer credential without rotating `HOOKFISH_API_KEY`.
 
 ## Generic secret vault
 
@@ -469,7 +469,7 @@ access scopes:
 
 ```sh
 curl -X PUT http://127.0.0.1:5173/api/secrets/team/browserbase/api-key \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"value":"secret"}'
 ```
@@ -477,7 +477,7 @@ curl -X PUT http://127.0.0.1:5173/api/secrets/team/browserbase/api-key \
 Retrieve the value from trusted server code:
 
 ```sh
-curl -H "Authorization: Bearer $BROKER_API_KEY" \
+curl -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   http://127.0.0.1:5173/api/secrets/team/browserbase/api-key
 ```
 
@@ -519,7 +519,7 @@ credential pair:
 
 ```sh
 curl -X PUT http://127.0.0.1:5173/api/admin/providers/acme-github \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{"template":"github","label":"Acme GitHub","credentials":{"mode":"inherit"}}'
 ```
@@ -572,7 +572,7 @@ authorization and token requests:
 
 ```sh
 curl -X PUT http://127.0.0.1:5173/api/admin/providers/acme-mcp \
-  -H "Authorization: Bearer $BROKER_API_KEY" \
+  -H "Authorization: Bearer $HOOKFISH_API_KEY" \
   -H 'content-type: application/json' \
   -d '{
     "template":"mcp",
@@ -632,7 +632,7 @@ export default defineHookfishConfig<Bindings>({
 })
 ```
 
-After `const hookfish = await Hookfish.init(config)`, the instance's
+After `const hookfish = await HookfishServer.init(config)`, the instance's
 `fetch` property is already bound, so hosts can pass it directly or call
 `hookfish.fetch(request, bindings)`.
 
@@ -733,11 +733,11 @@ pnpm --filter @hookfish/provider-github test
   exchanging the provider code again.
 - The API key is compared without early exit to keep it off the timing side
   channel.
-- Scoped broker credentials are named and HMAC-signed with `BROKER_API_KEY`.
+- Scoped broker credentials are named and HMAC-signed with `HOOKFISH_API_KEY`.
   Bearer values and raw token identifiers are never stored. A SHA-256 identifier
   hash links each signed token to an authoritative database record for immediate
   scope narrowing, expiry changes, and individual revocation. Rotating
-  `BROKER_API_KEY` still invalidates every scoped token at once.
+  `HOOKFISH_API_KEY` still invalidates every scoped token at once.
 - Connection-listing responses never include token columns.
 - Token responses send `Cache-Control: no-store` and `Pragma: no-cache`.
 - Disconnect revokes access upstream for GitHub, Linear, and Notion before

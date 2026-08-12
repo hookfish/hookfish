@@ -20,6 +20,7 @@
     { "path": "./packages/hooks" },
     { "path": "./packages/provider" },
     { "path": "./packages/providers" },
+    { "path": "./packages/sdk" },
     { "path": "./packages/providers/github" },
     { "path": "./packages/providers/linear" },
     { "path": "./packages/providers/notion" }

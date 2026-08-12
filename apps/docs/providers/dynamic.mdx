@@ -36,7 +36,7 @@ Client secrets are encrypted and never returned.
 
 ```bash
 curl --request PUT http://127.0.0.1:8787/api/admin/providers/acme/github \
-  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "template": "github",

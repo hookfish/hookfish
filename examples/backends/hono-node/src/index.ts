@@ -1,8 +1,8 @@
 import { serve } from '@hono/node-server'
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import config from '../hookfish.config'
 
-const hookfish = await Hookfish.init(config)
+const hookfish = await HookfishServer.init(config)
 const providers = await hookfish.getProviders(process.env)
 
 const port = Number(process.env.PORT ?? 8787)
@@ -21,7 +21,7 @@ serve(
     const publicOrigin =
       process.env.OAUTH_REDIRECT_BASE_URL ?? `http://localhost:${info.port}`
 
-    console.log(`OAuth broker on ${publicOrigin}/api`)
+    console.log(`OAuth broker on ${publicOrigin}/api/docs`)
     console.log(
       configured.length > 0
         ? `Providers configured: ${configured.join(', ')}`

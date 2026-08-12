@@ -55,7 +55,7 @@ Replace `src/index.ts` with a Worker that resolves the Hyperdrive binding for
 each request:
 
 ```ts
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import { postgres } from '@hookfish/database/postgres'
 import {
   createGitHubProvider,
@@ -74,7 +74,7 @@ const db = postgres<Env>(
   },
 )
 
-const hookfish = await Hookfish.init<Env>({
+const hookfish = await HookfishServer.init<Env>({
   db,
   includeSwagger: true,
   returnTo: 'https://dashboard.example.com',
@@ -144,7 +144,7 @@ Use Wrangler's interactive secret prompts:
 
 ```bash
 pnpm exec wrangler secret put OAUTH_ENCRYPTION_KEY
-pnpm exec wrangler secret put BROKER_API_KEY
+pnpm exec wrangler secret put HOOKFISH_API_KEY
 pnpm exec wrangler secret put GITHUB_CLIENT_ID
 pnpm exec wrangler secret put GITHUB_CLIENT_SECRET
 pnpm typecheck

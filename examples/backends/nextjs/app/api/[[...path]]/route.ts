@@ -1,10 +1,10 @@
-import { Hookfish } from '@hookfish/api'
+import { HookfishServer } from '@hookfish/api'
 import config from '../../../hookfish.config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const hookfishPromise = Hookfish.init(config)
+const hookfishPromise = HookfishServer.init(config)
 
 const handle = async (request: Request) => {
   const hookfish = await hookfishPromise

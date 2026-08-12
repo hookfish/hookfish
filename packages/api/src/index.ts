@@ -35,7 +35,7 @@ export type HookfishProviders<Bindings extends object = object> =
 export type HookfishConfig<Bindings extends object = object> = {
   /** Fixed providers, a lazy provider source, or a request-aware factory. */
   providers: HookfishProviders<Bindings>
-  /** Default database binding. A runtime host may override it in `Hookfish.init`. */
+  /** Default database binding. A runtime host may override it in `HookfishServer.init`. */
   db: DatabaseInput<Bindings>
   /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
   includeClient?: boolean
@@ -93,6 +93,7 @@ function createApiRoutes<Bindings extends object>(
     | 'onEvent'
   >,
   includeSwagger = true,
+  includeAllOpenApiRoutes = false,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -100,7 +101,7 @@ function createApiRoutes<Bindings extends object>(
     type: 'http',
     scheme: 'bearer',
     description:
-      'Send BROKER_API_KEY for root access, or a named scoped token minted by POST /admin/tokens.',
+      'Send HOOKFISH_API_KEY for root access, or a named scoped token minted by POST /admin/tokens.',
   })
 
   base.get('/openapi.json', (context) => {
@@ -112,6 +113,20 @@ function createApiRoutes<Bindings extends object>(
       },
       servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
     })
+
+    for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
+      if (!pathname.startsWith('/organization/{organization}/')) continue
+      for (const operation of Object.values(pathItem)) {
+        if (
+          operation &&
+          typeof operation === 'object' &&
+          'operationId' in operation &&
+          typeof operation.operationId === 'string'
+        ) {
+          operation.operationId = `organization.${operation.operationId}`
+        }
+      }
+    }
 
     // Organization mode still mounts the global OAuth app for the provider
     // callback. Keep its inactive management operations (and the inverse
@@ -130,9 +145,9 @@ function createApiRoutes<Bindings extends object>(
           '/organization/{organization}/oauth/client-metadata/{provider_path}'
 
         if (
-          isGlobalManagementRoute ||
           isOrganizationCallback ||
-          isOrganizationClientMetadata
+          isOrganizationClientMetadata ||
+          (!includeAllOpenApiRoutes && isGlobalManagementRoute)
         ) {
           delete document.paths?.[pathname]
           continue
@@ -160,7 +175,7 @@ function createApiRoutes<Bindings extends object>(
       }
     }
 
-    if (!options.providerManagement) {
+    if (!options.providerManagement && !includeAllOpenApiRoutes) {
       for (const pathname of Object.keys(document.paths ?? {})) {
         if (
           pathname.startsWith('/admin/providers') ||
@@ -201,7 +216,7 @@ function createApiRoutes<Bindings extends object>(
     return context.json(document)
   })
 
-  base.get('/', swaggerUI({ url: '/api/openapi.json' }))
+  base.get('/docs', swaggerUI({ url: '/api/openapi.json' }))
 
   const api = base
     .use('/stats', cors())
@@ -271,6 +286,37 @@ function createApiRoutes<Bindings extends object>(
   return api
 }
 
+/**
+ * Build the complete server contract used to generate the first-party SDK.
+ * Unlike a deployment's `/api/openapi.json`, this includes both global and
+ * organization-prefixed operations plus optional provider management routes.
+ */
+export async function createHookfishOpenAPIDocument(): Promise<unknown> {
+  const unavailableDatabase: DatabaseInput<object> = {
+    async getDatabase() {
+      throw new Error('The OpenAPI document does not execute database access.')
+    },
+  }
+  const unavailableProviders = async (): Promise<BoundProviderSource> => {
+    throw new Error('The OpenAPI document does not resolve providers.')
+  }
+  const api = createApiRoutes(
+    unavailableProviders,
+    unavailableDatabase,
+    {
+      organizationRouting: true,
+      providerManagement: true,
+    },
+    true,
+    true,
+  )
+  const response = await api.request('/openapi.json')
+  if (!response.ok) {
+    throw new Error(`Failed to create Hookfish OpenAPI: ${response.status}`)
+  }
+  return response.json()
+}
+
 export type AppType = ReturnType<typeof createApiRoutes>
 
 export type HookfishRuntime<Bindings extends object = object> = {
@@ -290,7 +336,7 @@ export type HookfishRuntime<Bindings extends object = object> = {
  * `fetch` is an instance property so it can be passed directly to Node,
  * Cloudflare Workers, or another Fetch-compatible host without rebinding it.
  */
-export class Hookfish<Bindings extends object = object> {
+export class HookfishServer<Bindings extends object = object> {
   readonly db: DatabaseInput<Bindings>
   readonly includeClient: boolean
   readonly includeSwagger: boolean
@@ -342,10 +388,10 @@ export class Hookfish<Bindings extends object = object> {
   static async init<Bindings extends object = object>(
     options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings> = {},
-  ): Promise<Hookfish<Bindings>> {
+  ): Promise<HookfishServer<Bindings>> {
     validateHookfishOptions(options)
     const resolveProviders = createProviderResolver(options.providers)
-    return new Hookfish(options, runtime, resolveProviders)
+    return new HookfishServer(options, runtime, resolveProviders)
   }
 
   readonly fetch = (
@@ -376,7 +422,7 @@ export class Hookfish<Bindings extends object = object> {
   }
 }
 
-export function isHookfish(value: unknown): value is Hookfish<object> {
+export function isHookfish(value: unknown): value is HookfishServer<object> {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -385,7 +431,6 @@ export function isHookfish(value: unknown): value is Hookfish<object> {
   )
 }
 
-export { z } from 'zod'
 export {
   createProviderSource,
   type ProviderSource,
@@ -393,7 +438,7 @@ export {
   type ProviderSourceListResult,
   type ProviderSourceQuery,
 } from '@hookfish/provider'
-export type { HookfishEvent, HookfishEventHandler } from './events'
+export { z } from 'zod'
 export {
   type DatabaseBinding,
   type DatabaseContext,
@@ -422,3 +467,4 @@ export type {
   VaultSecretFilter,
   VaultSecretMetadata,
 } from './db/types'
+export type { HookfishEvent, HookfishEventHandler } from './events'

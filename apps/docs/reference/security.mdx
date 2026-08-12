@@ -10,7 +10,7 @@ tenant authorization.
 ## Production checklist
 
 - Generate independent high-entropy `OAUTH_ENCRYPTION_KEY` and
-  `BROKER_API_KEY` values.
+  `HOOKFISH_API_KEY` values.
 - Store every secret in the runtime's secret manager.
 - Set `OAUTH_REDIRECT_BASE_URL` to the public HTTPS broker origin.
 - Register callback URLs returned by `/api/oauth/providers`.
@@ -37,7 +37,7 @@ replayed concurrently.
 
 ## Broker credentials
 
-Scoped tokens are HMAC-signed with `BROKER_API_KEY`. Hookfish stores only a
+Scoped tokens are HMAC-signed with `HOOKFISH_API_KEY`. Hookfish stores only a
 SHA-256 hash of each token's random identifier and checks the authoritative
 database record on every request. This enables immediate revocation and scope
 narrowing.

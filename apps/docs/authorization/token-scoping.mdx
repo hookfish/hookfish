@@ -3,7 +3,7 @@ title: "Scoped broker tokens"
 description: "Issue expiring, revocable broker credentials for Hookfish resource subtrees."
 ---
 
-The root `BROKER_API_KEY` can access every Hookfish resource. Give applications
+The root `HOOKFISH_API_KEY` can access every Hookfish resource. Give applications
 and workers named, expiring broker tokens instead of sharing that root key.
 
 ## Define resource paths
@@ -31,7 +31,7 @@ Use a root credential to create a named one-hour token:
 
 ```bash
 curl --request POST http://127.0.0.1:8787/api/admin/tokens \
-  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
     "name": "acme-worker",
@@ -79,7 +79,7 @@ mint `acme-worker.eu`, but not `production-api`.
 
 ```bash
 curl --request DELETE http://127.0.0.1:8787/api/admin/tokens/acme-worker \
-  --header "Authorization: Bearer $BROKER_API_KEY"
+  --header "Authorization: Bearer $HOOKFISH_API_KEY"
 ```
 
 Hookfish stores a hash of each token's random identifier and checks the
@@ -87,6 +87,6 @@ database record on every request. Deletion, expiry changes, and scope narrowing
 take effect on the next request.
 
 <Warning>
-  Rotating `BROKER_API_KEY` invalidates every scoped token because the root key
+  Rotating `HOOKFISH_API_KEY` invalidates every scoped token because the root key
   signs them. Treat root-key rotation as a deployment-wide credential rollover.
 </Warning>

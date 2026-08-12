@@ -19,7 +19,7 @@ wrong host.
 
 ## `missing_configuration`
 
-The operation needs `BROKER_API_KEY`, `OAUTH_ENCRYPTION_KEY`, or provider
+The operation needs `HOOKFISH_API_KEY`, `OAUTH_ENCRYPTION_KEY`, or provider
 credentials that are not available to the runtime. Confirm that the host passes
 its environment or bindings into `hookfish.fetch`.
 
@@ -62,6 +62,6 @@ credentials.
 
 ## Inspect the actual API
 
-Open `/api` for Swagger UI or request `/api/openapi.json`. The document reflects
-the configured organization-routing, provider-management, and Swagger settings
-for that deployment.
+Open `/api/docs` for Swagger UI or request `/api/openapi.json`. The document
+reflects the configured organization-routing, provider-management, and Swagger
+settings for that deployment.

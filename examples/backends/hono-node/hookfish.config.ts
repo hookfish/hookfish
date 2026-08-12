@@ -29,7 +29,7 @@ const db = pglite(
 //   (bindings) => bindings.HYPERDRIVE.connectionString,
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
-// const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
+// const hookfish = await HookfishServer.init({ ...config, db: cloudflareDb })
 // For SQLite-backed Durable Objects instead, see examples/backends/cloudflare-worker.
 
 export default defineHookfishConfig({
