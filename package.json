@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "node ./packages/cli/bin/hookfish.mjs dev",
+    "dev": "node ./packages/cli/bin/hookfish.mjs repo-dev",
     "postinstall": "pnpm build",
     "build": "turbo build",
     "typecheck": "turbo typecheck && turbo cf-typecheck",

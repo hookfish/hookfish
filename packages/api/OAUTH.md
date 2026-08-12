@@ -22,12 +22,12 @@ openssl rand -base64 32   # -> BROKER_API_KEY
 ```
 
 ```sh
-pnpm exec hookfish dev --backend hono-node
+pnpm dev --backend hono-node
 ```
 
-The CLI runs `turbo dev` with exactly the static Vite frontend and selected
-backend. Available backends are `hono-node`, `express`, `nextjs`, and
-`cloudflare-worker`.
+The repository development script runs `turbo dev` with exactly the static Vite
+frontend and selected backend. Available backends are `hono-node`, `express`,
+`nextjs`, and `cloudflare-worker`.
 The backend exposes raw Hookfish routes at `/api` and the browser facade at
 `/api/client`. Node examples persist PGlite to `pgdata`; the Worker uses local
 Durable Object storage. Both read `apps/frontend/.env`; the frontend only
@@ -49,10 +49,10 @@ Each host initializes Hookfish and mounts its Fetch-compatible handler directly:
 
 | command | process | default database |
 |---|---|---|
-| `pnpm exec hookfish dev --backend hono-node` | Vite SPA + Hono Node backend | `pgdata` |
-| `pnpm exec hookfish dev --backend express` | Vite SPA + Express backend | `pgdata` |
-| `pnpm exec hookfish dev --backend nextjs` | Vite SPA + Next.js backend | `pgdata` |
-| `pnpm exec hookfish dev --backend cloudflare-worker` | Vite SPA + Cloudflare Worker | SQLite Durable Objects |
+| `pnpm dev --backend hono-node` | Vite SPA + Hono Node backend | `pgdata` |
+| `pnpm dev --backend express` | Vite SPA + Express backend | `pgdata` |
+| `pnpm dev --backend nextjs` | Vite SPA + Next.js backend | `pgdata` |
+| `pnpm dev --backend cloudflare-worker` | Vite SPA + Cloudflare Worker | SQLite Durable Objects |
 | `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono backend | `pgdata` |
 | `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker backend | SQLite Durable Objects |
 

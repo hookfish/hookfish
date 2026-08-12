@@ -362,10 +362,6 @@ function packageJson(
   }
 }
 
-function projectManifest(backend: ScaffoldBackend): string {
-  return `${JSON.stringify({ backend, backendPort: 8787 }, null, 2)}\n`
-}
-
 function cloudflareTsconfig(): string {
   return `{
   "compilerOptions": {
@@ -425,7 +421,6 @@ function backendFiles(
   const files: Record<string, string> = {
     '.gitignore': gitignore,
     'README.md': readme(name, backend),
-    'hookfish.project.json': projectManifest(backend),
     'package.json': `${JSON.stringify(packageJson(name, backend, dependencyTag), null, 2)}\n`,
     'pnpm-workspace.yaml': `allowBuilds:
   esbuild: true

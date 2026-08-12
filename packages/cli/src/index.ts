@@ -19,11 +19,14 @@ import { inspectorServerConfig } from './inspector-server.js'
 import {
   dependencyTagForVersion,
   isScaffoldBackend,
-  type ScaffoldBackend,
   scaffoldBackends,
   scaffoldProject,
 } from './scaffold.js'
-import { defaultFrontendHostname, proxyBackendRequest } from './serve.js'
+import {
+  defaultFrontendHostname,
+  proxyBackendRequest,
+  resolveBackendUrl,
+} from './serve.js'
 
 function packageVersion(): string {
   const manifest: unknown = JSON.parse(
@@ -131,44 +134,6 @@ function browserHostname(hostname: string): string {
   return hostname.includes(':') ? `[${hostname}]` : hostname
 }
 
-type HookfishProject = {
-  backend: ScaffoldBackend
-  backendPort?: number
-}
-
-function hookfishProject(
-  directory = process.cwd(),
-): HookfishProject | undefined {
-  const manifestPath = path.join(directory, 'hookfish.project.json')
-  if (!existsSync(manifestPath)) return undefined
-
-  const parsed: unknown = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('hookfish.project.json must contain an object.')
-  }
-
-  const backend = Reflect.get(parsed, 'backend')
-  const backendPort = Reflect.get(parsed, 'backendPort')
-  if (typeof backend !== 'string' || !isScaffoldBackend(backend)) {
-    throw new Error(
-      `hookfish.project.json backend must be one of: ${scaffoldBackends.join(', ')}`,
-    )
-  }
-  let normalizedBackendPort: number | undefined
-  if (
-    backendPort !== undefined &&
-    (typeof backendPort !== 'number' ||
-      !Number.isInteger(backendPort) ||
-      backendPort <= 0 ||
-      backendPort >= 65_535)
-  ) {
-    throw new Error('hookfish.project.json backendPort must be a valid port.')
-  }
-  if (typeof backendPort === 'number') normalizedBackendPort = backendPort
-
-  return { backend, backendPort: normalizedBackendPort }
-}
-
 function openBrowser(url: string): void {
   const command =
     process.platform === 'darwin'
@@ -185,8 +150,7 @@ function openBrowser(url: string): void {
   child.unref()
 }
 
-async function runScaffoldedProject(
-  project: HookfishProject | undefined,
+async function runPackagedFrontend(
   shouldOpen: boolean,
   configuredBackendUrl: string | undefined,
 ): Promise<number> {
@@ -203,21 +167,8 @@ async function runScaffoldedProject(
     allocatedPort ??
     requestedPort ??
     5173
-  const backendPort =
-    parsePort(process.env.HOOKFISH_BACKEND_PORT) ??
-    followingPort(allocatedPort) ??
-    followingPort(requestedPort) ??
-    project?.backendPort ??
-    8787
   const frontendOrigin = `http://${browserHostname(frontendHost)}:${frontendPort}`
-  const backendOrigin =
-    configuredBackendUrl ??
-    process.env.HOOKFISH_BACKEND_URL ??
-    `http://127.0.0.1:${backendPort}`
-  const parsedBackendUrl = new URL(backendOrigin)
-  if (!['http:', 'https:'].includes(parsedBackendUrl.protocol)) {
-    throw new Error('--backend-url must use http or https.')
-  }
+  const backendOrigin = resolveBackendUrl(configuredBackendUrl)
 
   const frontendDirectory = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -261,7 +212,7 @@ async function runScaffoldedProject(
   })
   await server.serve()
   process.stdout.write(
-    `Hookfish frontend running at ${frontendOrigin} (${project?.backend ?? 'external'} backend: ${backendOrigin})\n`,
+    `Hookfish frontend running at ${frontendOrigin} (backend: ${backendOrigin})\n`,
   )
   if (shouldOpen) openBrowser(frontendOrigin)
 
@@ -666,45 +617,43 @@ program
 program
   .command('dev')
   .alias('serve')
-  .description('Run the Hookfish frontend and backend')
+  .description('Serve the packaged Hookfish frontend and proxy its backend')
+  .option('--no-open', 'Do not open the frontend in a browser')
+  .option(
+    '--backend-url <url>',
+    'Backend URL (required unless HOOKFISH_BACKEND_URL is set)',
+  )
+  .action(async (options: { backendUrl?: string; open: boolean }) => {
+    await exitWith(await runPackagedFrontend(options.open, options.backendUrl))
+  })
+
+program
+  .command('repo-dev', { hidden: true })
+  .description('Run the Hookfish repository frontend and example backend')
   .addOption(
     new Option('-b, --backend <name>', 'Backend example to run')
       .choices([...developmentBackends.keys()])
       .default('hono-node'),
   )
   .option('--no-open', 'Do not open the frontend in a browser')
-  .option('--backend-url <url>', 'Backend URL for the packaged frontend')
-  .action(
-    async (options: {
-      backend: string
-      backendUrl?: string
-      open: boolean
-    }) => {
-      const project = hookfishProject()
-      if (project || options.backendUrl) {
-        await exitWith(
-          await runScaffoldedProject(project, options.open, options.backendUrl),
-        )
-      }
-
-      const backendPackage = developmentBackendPackage(options.backend)
-      const args = [
-        'exec',
-        'turbo',
-        'dev',
-        '--env-mode=loose',
-        '--filter=@hookfish/frontend',
-        `--filter=${backendPackage}`,
-      ]
-      const environment = developmentEnvironment()
-      await exitWith(
-        await run('pnpm', args, {
-          ...environment,
-          HOOKFISH_OPEN: options.open ? 'true' : 'false',
-        }),
-      )
-    },
-  )
+  .action(async (options: { backend: string; open: boolean }) => {
+    const backendPackage = developmentBackendPackage(options.backend)
+    const args = [
+      'exec',
+      'turbo',
+      'dev',
+      '--env-mode=loose',
+      '--filter=@hookfish/frontend',
+      `--filter=${backendPackage}`,
+    ]
+    const environment = developmentEnvironment()
+    await exitWith(
+      await run('pnpm', args, {
+        ...environment,
+        HOOKFISH_OPEN: options.open ? 'true' : 'false',
+      }),
+    )
+  })
 
 program
   .command('inspect')
