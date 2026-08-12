@@ -274,8 +274,37 @@ async function createPkcePair() {
 }
 
 export class McpProvider implements OAuthProviderTemplate {
-  readonly kind = 'mcp' as const
+  readonly authentication = 'oauth' as const
   readonly label = 'MCP server'
+  readonly inputSchema = {
+    fields: [
+      {
+        name: 'name',
+        label: 'Resource name',
+        type: 'text',
+        target: 'identity',
+        required: true,
+        placeholder: 'notion',
+      },
+      {
+        name: 'resource_url',
+        label: 'MCP server URL',
+        type: 'url',
+        target: 'configuration',
+        required: true,
+        placeholder: 'https://mcp.example.com/mcp',
+      },
+      {
+        name: 'scopes',
+        label: 'Scopes',
+        type: 'string_list',
+        target: 'configuration',
+        required: false,
+        placeholder: 'read, write',
+        description: 'Separate scopes with commas or spaces.',
+      },
+    ],
+  } as const
   readonly usesPkce = true
   readonly allowsPublicClient = true
   readonly defaultScopes: readonly string[]

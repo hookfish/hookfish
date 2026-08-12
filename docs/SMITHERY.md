@@ -133,7 +133,7 @@ app.post('/organizations/:organization/servers/:server/connect', async (ctx) => 
   const connection = await hookfish.connections.access(
     `catalog/${catalogServer.id}/mcp`,
     {
-      url: catalogServer.resourceUrl,
+      configuration: { resource_url: catalogServer.resourceUrl },
       scopes: catalogServer.scopes,
       returnTo: `${APP_URL}/organizations/${organization}/connections`,
     },
@@ -168,7 +168,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
         await hookfish.connections.access(
           `catalog/${catalogServer.id}/mcp`,
           {
-            url: mcpUrl.href,
+            configuration: { resource_url: mcpUrl.href },
             scopes: catalogServer.scopes,
             returnTo: `${APP_URL}/organizations/${organization}/connections`,
           },
@@ -178,7 +178,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
       await hookfish.connections.authorize(
         `catalog/${catalogServer.id}/mcp`,
         {
-          url: mcpUrl.href,
+          configuration: { resource_url: mcpUrl.href },
           scopes: catalogServer.scopes,
           returnTo: `${APP_URL}/organizations/${organization}/connections`,
         },

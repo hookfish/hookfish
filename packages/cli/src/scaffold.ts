@@ -67,14 +67,6 @@ HOOKFISH_API_KEY=
 # Required for the Vercel backend. Other backends ignore this by default.
 DATABASE_URL=
 
-# Provider credentials are optional. Only configured providers are enabled.
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-LINEAR_CLIENT_ID=
-LINEAR_CLIENT_SECRET=
-NOTION_CLIENT_ID=
-NOTION_CLIENT_SECRET=
-
 # Production callback origin, for example https://broker.example.com.
 # OAUTH_REDIRECT_BASE_URL=
 
@@ -109,22 +101,10 @@ const tsconfig = `{
 }
 `
 
-const providerConfig = `providers: (env: typeof process.env) => ({
-    github: createGitHubProvider({
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: env.GITHUB_CLIENT_SECRET,
-    }),
-    linear: createLinearProvider({
-      clientId: env.LINEAR_CLIENT_ID,
-      clientSecret: env.LINEAR_CLIENT_SECRET,
-    }),
+const providerConfig = `providers: {
     mcp: createMcpProvider(),
-    notion: createNotionProvider({
-      clientId: env.NOTION_CLIENT_ID,
-      clientSecret: env.NOTION_CLIENT_SECRET,
-    }),
     secret: createSecretProvider(),
-  })`
+  }`
 
 function pgliteConfig(): string {
   return `import { mkdirSync } from 'node:fs'
@@ -132,10 +112,7 @@ import path from 'node:path'
 import { defineHookfishConfig } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import {
-  createGitHubProvider,
-  createLinearProvider,
   createMcpProvider,
-  createNotionProvider,
   createSecretProvider,
 } from '@hookfish/providers'
 
@@ -165,10 +142,7 @@ import { defineHookfishConfig } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
 import { postgres } from '@hookfish/database/postgres'
 import {
-  createGitHubProvider,
-  createLinearProvider,
   createMcpProvider,
-  createNotionProvider,
   createSecretProvider,
 } from '@hookfish/providers'
 
@@ -252,10 +226,7 @@ import {
   HookfishDurableObject,
 } from '@hookfish/database/durable-object'
 import {
-  createGitHubProvider,
-  createLinearProvider,
   createMcpProvider,
-  createNotionProvider,
   createSecretProvider,
 } from '@hookfish/providers'
 
@@ -272,22 +243,10 @@ const hookfish = await HookfishServer.init<Env>({
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   organizationRouting: false,
-  providers: (env) => ({
-    github: createGitHubProvider({
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: env.GITHUB_CLIENT_SECRET,
-    }),
-    linear: createLinearProvider({
-      clientId: env.LINEAR_CLIENT_ID,
-      clientSecret: env.LINEAR_CLIENT_SECRET,
-    }),
+  providers: {
     mcp: createMcpProvider(),
-    notion: createNotionProvider({
-      clientId: env.NOTION_CLIENT_ID,
-      clientSecret: env.NOTION_CLIENT_SECRET,
-    }),
     secret: createSecretProvider(),
-  }),
+  },
 })
 
 export default {
@@ -410,7 +369,7 @@ pnpm dev:server
 
 \`pnpm dev:server\` starts the ${backend} development server directly. \`pnpm dev\` runs that script beside \`hookfish serve --backend-url <backend-url>\`, which serves the packaged dashboard and proxies \`/api\` to the backend so the browser stays same-origin.
 
-A gitignored \`${localEnvironmentFile}\` is generated with unique local encryption and broker API keys. Add provider credentials there when you are ready to connect accounts.
+A gitignored \`${localEnvironmentFile}\` is generated with unique local encryption and broker API keys. The scaffold enables remote MCP OAuth and supplied-secret connections by default. Add other trusted providers in the Hookfish configuration when needed.
 
 ## Deploy
 
@@ -441,12 +400,6 @@ function backendFiles(
 HOOKFISH_API_KEY=
 OAUTH_REDIRECT_BASE_URL=
 HOOKFISH_FRONTEND_URL=
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-LINEAR_CLIENT_ID=
-LINEAR_CLIENT_SECRET=
-NOTION_CLIENT_ID=
-NOTION_CLIENT_SECRET=
 `
     files['wrangler.jsonc'] = `${JSON.stringify(
       {

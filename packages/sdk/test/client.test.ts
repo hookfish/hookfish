@@ -30,6 +30,32 @@ describe('Hookfish', () => {
     expect(request?.headers.get('Authorization')).toBe('Bearer broker-key')
   })
 
+  it('sends generic provider configuration', async () => {
+    let request: Request | undefined
+    const hookfish = new Hookfish({
+      apiKey: 'broker-key',
+      baseUrl: 'http://local/api',
+      fetch: async (input, init) => {
+        request = new Request(input, init)
+        return Response.json(access)
+      },
+    })
+
+    await hookfish.connections.access('user/personal/gmail/mcp', {
+      configuration: {
+        resource_url: 'https://gmail.run.tools',
+        scopes: ['read'],
+      },
+    })
+
+    await expect(request?.json()).resolves.toMatchObject({
+      configuration: {
+        resource_url: 'https://gmail.run.tools',
+        scopes: ['read'],
+      },
+    })
+  })
+
   it('selects organization-prefixed operations', async () => {
     let request: Request | undefined
     const hookfish = new Hookfish({

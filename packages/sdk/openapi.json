@@ -728,6 +728,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
                   "url": {
                     "type": "string",
                     "format": "uri"
@@ -1079,6 +1083,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
                   "url": {
                     "type": "string",
                     "format": "uri"
@@ -2446,6 +2454,66 @@
                           "label": {
                             "type": "string"
                           },
+                          "authentication": {
+                            "type": "string",
+                            "enum": [
+                              "oauth",
+                              "secret"
+                            ]
+                          },
+                          "input_schema": {
+                            "type": "object",
+                            "properties": {
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text",
+                                        "url",
+                                        "string_list"
+                                      ]
+                                    },
+                                    "target": {
+                                      "type": "string",
+                                      "enum": [
+                                        "identity",
+                                        "configuration"
+                                      ]
+                                    },
+                                    "required": {
+                                      "type": "boolean"
+                                    },
+                                    "placeholder": {
+                                      "type": "string"
+                                    },
+                                    "description": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "label",
+                                    "type",
+                                    "target",
+                                    "required"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "fields"
+                            ]
+                          },
                           "configurable": {
                             "type": "boolean"
                           }
@@ -2453,6 +2521,8 @@
                         "required": [
                           "id",
                           "label",
+                          "authentication",
+                          "input_schema",
                           "configurable"
                         ]
                       }
@@ -4291,6 +4361,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
                   "url": {
                     "type": "string",
                     "format": "uri"
@@ -4656,6 +4730,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "configuration": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
                   "url": {
                     "type": "string",
                     "format": "uri"
@@ -6008,6 +6086,66 @@
                           "label": {
                             "type": "string"
                           },
+                          "authentication": {
+                            "type": "string",
+                            "enum": [
+                              "oauth",
+                              "secret"
+                            ]
+                          },
+                          "input_schema": {
+                            "type": "object",
+                            "properties": {
+                              "fields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "text",
+                                        "url",
+                                        "string_list"
+                                      ]
+                                    },
+                                    "target": {
+                                      "type": "string",
+                                      "enum": [
+                                        "identity",
+                                        "configuration"
+                                      ]
+                                    },
+                                    "required": {
+                                      "type": "boolean"
+                                    },
+                                    "placeholder": {
+                                      "type": "string"
+                                    },
+                                    "description": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "label",
+                                    "type",
+                                    "target",
+                                    "required"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "fields"
+                            ]
+                          },
                           "configurable": {
                             "type": "boolean"
                           }
@@ -6015,6 +6153,8 @@
                         "required": [
                           "id",
                           "label",
+                          "authentication",
+                          "input_schema",
                           "configurable"
                         ]
                       }

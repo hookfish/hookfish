@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
+import { isSecretProvider } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import { assertConnectionAccess } from '../oauth/access-token'
@@ -116,10 +117,34 @@ const connectionPathParam = z.object({
 })
 
 const connectionAccessInput = z.object({
+  configuration: z.record(z.string(), z.unknown()).optional(),
+  /** @deprecated Use configuration.resource_url. */
   url: z.url().optional(),
   scopes: z.array(z.string()).optional(),
   return_to: z.url().optional(),
 })
+
+type ConnectionAccessBody = z.infer<typeof connectionAccessInput>
+
+function requestConfiguration(
+  body: ConnectionAccessBody,
+): Record<string, unknown> | undefined {
+  if (body.configuration) return body.configuration
+  if (!body.url) return undefined
+  return { resource_url: body.url, scopes: body.scopes ?? [] }
+}
+
+function requestScopes(body: ConnectionAccessBody): string[] | undefined {
+  if (body.scopes) return body.scopes
+  const configured = body.configuration?.scopes
+  if (
+    Array.isArray(configured) &&
+    configured.every((scope) => typeof scope === 'string')
+  ) {
+    return configured
+  }
+  return undefined
+}
 
 const connectionSchema = z.object({
   path: z.string(),
@@ -171,6 +196,21 @@ const listProvidersRoute = createRoute({
               z.object({
                 id: z.string(),
                 label: z.string(),
+                authentication: z.enum(['oauth', 'secret']),
+                input_schema: z.object({
+                  fields: z.array(
+                    z.object({
+                      name: z.string(),
+                      label: z.string(),
+                      type: z.enum(['text', 'url', 'string_list']),
+                      target: z.enum(['identity', 'configuration']),
+                      required: z.boolean(),
+                      placeholder: z.string().optional(),
+                      description: z.string().optional(),
+                    }),
+                  ),
+                }),
+                /** @deprecated Use input_schema.fields. */
                 configurable: z.boolean(),
               }),
             ),
@@ -502,7 +542,15 @@ export function createConnectionRoutes<Bindings extends object>(
         providers: result.providers.map(({ id, provider }) => ({
           id,
           label: provider.label ?? id,
-          configurable: provider.kind === 'mcp',
+          authentication: isSecretProvider(provider) ? 'secret' : 'oauth',
+          input_schema: {
+            fields: [...(provider.inputSchema?.fields ?? [])],
+          },
+          configurable:
+            provider.kind === 'mcp' ||
+            (provider.inputSchema?.fields ?? []).some(
+              (field) => field.target === 'configuration',
+            ),
         })),
       },
       200,
@@ -523,10 +571,8 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: body.url
-            ? { resource_url: body.url, scopes: body.scopes ?? [] }
-            : undefined,
-          scopes: body.scopes,
+          configuration: requestConfiguration(body),
+          scopes: requestScopes(body),
           returnTo: validateReturnTo(
             body.return_to,
             options.trustedOrigins ?? [],
@@ -587,10 +633,8 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: body.url
-            ? { resource_url: body.url, scopes: body.scopes ?? [] }
-            : undefined,
-          scopes: body.scopes,
+          configuration: requestConfiguration(body),
+          scopes: requestScopes(body),
           returnTo: validateReturnTo(
             body.return_to,
             options.trustedOrigins ?? [],

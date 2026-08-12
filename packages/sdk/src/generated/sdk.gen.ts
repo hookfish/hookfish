@@ -86,12 +86,16 @@ export const adminTokensRevoke = <ThrowOnError extends boolean = false>(paramete
  */
 export const connectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
     connection_path: string;
+    configuration?: {
+        [key: string]: unknown;
+    };
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsAccessResponses, ConnectionsAccessErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'configuration' },
                 { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
@@ -116,12 +120,16 @@ export const connectionsAccess = <ThrowOnError extends boolean = false>(paramete
  */
 export const connectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
     connection_path: string;
+    configuration?: {
+        [key: string]: unknown;
+    };
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<unknown, ConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'configuration' },
                 { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
@@ -324,6 +332,9 @@ export const secretsList = <ThrowOnError extends boolean = false>(parameters?: {
 export const organizationConnectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
     connection_path: string;
+    configuration?: {
+        [key: string]: unknown;
+    };
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
@@ -331,6 +342,7 @@ export const organizationConnectionsAccess = <ThrowOnError extends boolean = fal
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
                 { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'configuration' },
                 { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
@@ -356,6 +368,9 @@ export const organizationConnectionsAccess = <ThrowOnError extends boolean = fal
 export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
     connection_path: string;
+    configuration?: {
+        [key: string]: unknown;
+    };
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
@@ -363,6 +378,7 @@ export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = 
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
                 { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'configuration' },
                 { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }

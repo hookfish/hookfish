@@ -28,8 +28,11 @@ export default defineHookfishConfig({
 | `onEvent` | Unset | Receive best-effort lifecycle events |
 
 There is no provider-management switch. Provider implementations are trusted
-deployment code. Per-connection MCP configuration is supplied through
-`connections.access(path, { url, scopes })`.
+deployment code. Providers declare `oauth` or `secret` authentication plus a
+small input schema for connection identity and non-secret configuration.
+Per-connection MCP configuration can be supplied through
+`connections.access(path, { url, scopes })` or the generic `configuration`
+input.
 
 ## Runtime options
 

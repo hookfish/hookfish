@@ -36,6 +36,7 @@ export type NotionProviderOptions = ProviderCredentials & {
 }
 
 export class NotionProvider implements OAuthProviderTemplate {
+  readonly authentication = 'oauth' as const
   readonly label = 'Notion'
   readonly defaultScopes: readonly string[] = []
   readonly availableScopes: readonly string[] = []

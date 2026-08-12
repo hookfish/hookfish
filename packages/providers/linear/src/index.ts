@@ -31,6 +31,7 @@ export type LinearProviderOptions = ProviderCredentials & {
 }
 
 export class LinearProvider implements OAuthProviderTemplate {
+  readonly authentication = 'oauth' as const
   readonly label = 'Linear'
   readonly defaultScopes = ['read', 'write'] as const
   readonly availableScopes = ['read', 'write'] as const

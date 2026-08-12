@@ -9,7 +9,7 @@ returns a usable secret or reports what the user must authorize.
 
 ## Connection identity
 
-A connection path is `namespace/providerId`:
+A connection path ends with a trusted provider implementation:
 
 ```text
 user/personal/gmail
@@ -17,14 +17,18 @@ user/personal/gmail/mcp
 service/prod/openai/secret
 ```
 
-The final segment always selects a trusted provider implementation. Everything
-before it is the namespace. Provider IDs are slash-free, non-reserved
-lower-camel JavaScript identifiers such as `gmail`, `githubEnterprise`, `mcp`,
-or `secret`.
+Concrete providers can appear directly after an optional namespace, as in
+`user/personal/github`. Generic providers use an identity segment before the
+implementation, as in `user/personal/gmail/mcp` or
+`service/prod/openai/secret`. The final segment always selects trusted code.
 
-Folder names may equal provider names. Their position removes ambiguity. In
-`user/personal/gmail/mcp`, `gmail` is a namespace segment and `mcp` is the
-provider ID.
+Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers
+such as `gmail`, `githubEnterprise`, `mcp`, or `secret`.
+
+Folder and identity names may equal provider names. Their position removes
+ambiguity. Hookfish stores the prefix as the namespace internally; provider
+metadata tells a connection UI whether part of that prefix is a required
+resource identity.
 
 Hookfish stores identity as `(organization, namespace, providerId)` with a
 unique constraint. It does not accept caller-generated opaque IDs, slots,
@@ -68,7 +72,7 @@ not passed.
     different immutable configuration later returns `409`.
   </Step>
   <Step title="Return or acquire a secret">
-    Static providers read an encrypted value set with `setSecret`. OAuth
+    Secret providers read an encrypted value set with `setSecret`. OAuth
     providers refresh when possible, otherwise return `authorization_required`
     with a new URL.
   </Step>
@@ -88,11 +92,17 @@ Each connection owns its non-secret configuration, OAuth client fallback
 credentials when needed, user token, refresh token, and metadata. Hookfish
 does not create shared runtime provider records.
 
-For dynamic MCP connections, the built-in `mcp` provider uses the connection's
+MCP is the resource protocol, not an authentication kind. The built-in `mcp`
+provider acquires credentials with OAuth and uses the connection's
 URL to discover the protected resource and authorization server. It prefers a
 deployment-level Client ID Metadata Document (CIMD) when advertised and uses
 Dynamic Client Registration (DCR) only as a compatibility fallback. Any DCR
 credentials belong to that connection.
+
+The generic `secret` provider acquires a credential supplied by trusted code.
+Both provider types return the usable credential through
+`connections.access()`. A resource that does not require a credential does not
+need a Hookfish connection.
 
 ## Security boundary
 

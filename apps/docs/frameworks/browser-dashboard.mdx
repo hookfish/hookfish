@@ -3,8 +3,8 @@ title: "Dashboard and browser access"
 description: "Use the operator dashboard and build user-facing connection screens through your authenticated application API."
 ---
 
-Hookfish includes a static dashboard for viewing and disconnecting connections.
-Treat it as an operator tool. Build user-facing connection
+Hookfish includes a static dashboard for adding, viewing, and disconnecting
+connections. Treat it as an operator tool. Build user-facing connection
 screens against your own authenticated application API.
 
 ## Run the packaged dashboard
@@ -22,7 +22,14 @@ pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
 ```
 
 The operator dashboard requests a root or scoped broker token and keeps it in
-browser session storage. Connection lists contain metadata only.
+browser session storage. The Add Connection dialog selects a provider first and
+uses its metadata to render the remaining controls. OAuth providers render an
+authorization action, secret providers render a credential input, and the
+input schema renders fields such as an MCP resource name, URL, and scopes.
+
+The dashboard intentionally has no connection-type selector and no generic
+vault entry. Provider metadata is the source of truth. Connection lists contain
+metadata only and never stored credential values.
 
 <Warning>
   Do not expose the packaged dashboard or a root broker key to your
@@ -52,5 +59,7 @@ browser example.
 ## Optional browser facade
 
 Hookfish can mount an allowlisted `/api/client` facade with `includeClient:
-true`. The facade exposes metadata and disconnect, but never connection access,
-secret writes, vault values, callbacks, or administration.
+true`. The facade may expose provider and connection metadata plus disconnect,
+but never connection access, authorization starts, secret writes, vault values,
+callbacks, or administration. Unlike the packaged operator dashboard, it does
+not accept a broker token from the browser to unlock the full API.

@@ -46,6 +46,7 @@ export type GitHubProviderOptions = ProviderCredentials & {
 }
 
 export class GitHubProvider implements OAuthProviderTemplate {
+  readonly authentication = 'oauth' as const
   readonly label = 'GitHub'
   readonly defaultScopes: readonly string[] = []
   readonly availableScopes = [

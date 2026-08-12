@@ -39,8 +39,8 @@ function discoveryResponse(input: string | URL | Request) {
 }
 
 describe('McpProvider', () => {
-  it('identifies itself as an MCP provider', () => {
-    expect(new McpProvider().kind).toBe('mcp')
+  it('acquires credentials with OAuth', () => {
+    expect(new McpProvider().authentication).toBe('oauth')
   })
 
   it('discovers MCP OAuth metadata, registers, and uses PKCE and resource indicators', async () => {

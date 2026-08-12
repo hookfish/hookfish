@@ -1,6 +1,6 @@
 ---
 title: "Trusted providers"
-description: "Configure fixed OAuth, MCP, and static-secret provider implementations."
+description: "Configure OAuth and supplied-secret provider implementations."
 ---
 
 A provider is trusted application code selected by the final segment of a
@@ -51,11 +51,20 @@ https://broker.example.com/api/connections/callback/notion
 Set `OAUTH_REDIRECT_BASE_URL` to the public origin in production. The same
 deployment-level MCP callback ends in `/mcp`.
 
-## Fixed and configurable providers
+## Authentication and provider inputs
 
-Fixed providers such as `github` get their client credentials from deployment
-configuration. The `mcp` provider is configurable per connection: its URL and
-scopes are stored on first access. A later request cannot silently change them.
+`GET /connections/providers` describes two independent properties. The
+`authentication` value is either `oauth` or `secret`. The provider input schema
+describes path identity and non-secret configuration fields.
+
+GitHub uses OAuth and has no connection inputs. The generic `mcp` provider uses
+OAuth and requires a resource name and URL, with optional scopes. The generic
+`secret` provider requires a credential name and a supplied value. The secret
+value is written through `connections.setSecret()` and is never provider
+configuration or listable metadata.
+
+The `mcp` provider stores its URL and scopes on first access. A later request
+cannot silently change them.
 
 A lazy `ProviderSource` remains available for large application-owned catalogs.
 It resolves trusted provider code by ID; it is not a public provider CRUD

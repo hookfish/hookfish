@@ -92,6 +92,21 @@ describe('scaffoldProject', () => {
     expect(brokerApiKey).toMatch(/^[A-Za-z0-9+/]{43}=$/)
     expect(brokerApiKey).not.toBe(encryptionKey)
     expect(brokerApiKey).not.toBe('test')
+
+    const providerFile =
+      backend === 'cloudflare' ? 'src/index.ts' : 'hookfish.config.ts'
+    const providerConfig = readFileSync(
+      path.join(result.directory, providerFile),
+      'utf8',
+    )
+    expect(providerConfig).toContain('mcp: createMcpProvider()')
+    expect(providerConfig).toContain('secret: createSecretProvider()')
+    expect(providerConfig).not.toContain('createGitHubProvider')
+    expect(providerConfig).not.toContain('createLinearProvider')
+    expect(providerConfig).not.toContain('createNotionProvider')
+    expect(environment).not.toContain('GITHUB_CLIENT_ID')
+    expect(environment).not.toContain('LINEAR_CLIENT_ID')
+    expect(environment).not.toContain('NOTION_CLIENT_ID')
   })
 
   it('generates a distinct broker API key for each project', () => {

@@ -192,9 +192,9 @@ function RuntimeStats() {
 }
 ```
 
-The facade only forwards stats, provider metadata, connection metadata,
-authorization starts, and disconnects. OAuth token retrieval, secret-vault
-operations, and administration remain server-only. More detail is in
+The facade only forwards stats, provider metadata, connection metadata, and
+disconnects. Authorization starts, credential retrieval and writes,
+secret-vault operations, and administration remain server-only. More detail is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
 catalog with organization-scoped connections, see
 [docs/SMITHERY.md](docs/SMITHERY.md).

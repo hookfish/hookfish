@@ -86,7 +86,32 @@ function stubMcpProvider(stub: OAuthStub): OAuthProviderTemplate {
   const oauth = stubProvider(stub)
   return {
     ...oauth,
-    kind: 'mcp',
+    authentication: 'oauth',
+    inputSchema: {
+      fields: [
+        {
+          name: 'name',
+          label: 'Resource name',
+          type: 'text',
+          target: 'identity',
+          required: true,
+        },
+        {
+          name: 'resource_url',
+          label: 'MCP server URL',
+          type: 'url',
+          target: 'configuration',
+          required: true,
+        },
+        {
+          name: 'scopes',
+          label: 'Scopes',
+          type: 'string_list',
+          target: 'configuration',
+          required: false,
+        },
+      ],
+    },
     normalizeConfiguration(configuration) {
       if (typeof configuration.resource_url !== 'string') {
         throw new ProviderConfigurationError('MCP resource URL is required.')

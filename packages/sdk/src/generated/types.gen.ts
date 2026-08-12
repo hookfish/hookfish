@@ -249,6 +249,9 @@ export type AdminTokensRevokeResponse = AdminTokensRevokeResponses[keyof AdminTo
 
 export type ConnectionsAccessData = {
     body?: {
+        configuration?: {
+            [key: string]: unknown;
+        };
         url?: string;
         scopes?: Array<string>;
         return_to?: string;
@@ -366,6 +369,9 @@ export type ConnectionsAccessResponse = ConnectionsAccessResponses[keyof Connect
 
 export type ConnectionsAuthorizeData = {
     body?: {
+        configuration?: {
+            [key: string]: unknown;
+        };
         url?: string;
         scopes?: Array<string>;
         return_to?: string;
@@ -940,6 +946,18 @@ export type ConnectionsProvidersResponses = {
         providers: Array<{
             id: string;
             label: string;
+            authentication: 'oauth' | 'secret';
+            input_schema: {
+                fields: Array<{
+                    name: string;
+                    label: string;
+                    type: 'text' | 'url' | 'string_list';
+                    target: 'identity' | 'configuration';
+                    required: boolean;
+                    placeholder?: string;
+                    description?: string;
+                }>;
+            };
             configurable: boolean;
         }>;
     };
@@ -1480,6 +1498,9 @@ export type SecretsListResponse = SecretsListResponses[keyof SecretsListResponse
 
 export type OrganizationConnectionsAccessData = {
     body?: {
+        configuration?: {
+            [key: string]: unknown;
+        };
         url?: string;
         scopes?: Array<string>;
         return_to?: string;
@@ -1601,6 +1622,9 @@ export type OrganizationConnectionsAccessResponse = OrganizationConnectionsAcces
 
 export type OrganizationConnectionsAuthorizeData = {
     body?: {
+        configuration?: {
+            [key: string]: unknown;
+        };
         url?: string;
         scopes?: Array<string>;
         return_to?: string;
@@ -2173,6 +2197,18 @@ export type OrganizationConnectionsProvidersResponses = {
         providers: Array<{
             id: string;
             label: string;
+            authentication: 'oauth' | 'secret';
+            input_schema: {
+                fields: Array<{
+                    name: string;
+                    label: string;
+                    type: 'text' | 'url' | 'string_list';
+                    target: 'identity' | 'configuration';
+                    required: boolean;
+                    placeholder?: string;
+                    description?: string;
+                }>;
+            };
             configurable: boolean;
         }>;
     };

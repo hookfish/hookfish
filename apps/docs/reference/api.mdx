@@ -30,16 +30,57 @@ An access body may contain:
 
 ```json
 {
-  "url": "https://gmail.run.tools",
-  "scopes": [],
+  "configuration": {
+    "resource_url": "https://gmail.run.tools",
+    "scopes": []
+  },
   "return_to": "https://app.example.com/integrations"
 }
 ```
 
-`url` is accepted by the trusted `mcp` provider. Provider selection always
-comes from the final path segment, never the body.
+`configuration` contains non-secret input accepted by the trusted provider.
+The older `url` field remains accepted as shorthand for an MCP
+`resource_url`. Provider selection always comes from the final path segment,
+never the body.
 
-## Broker administration and generic vault
+The provider list describes credential acquisition and input controls:
+
+```json
+{
+  "providers": [
+    {
+      "id": "mcp",
+      "label": "MCP server",
+      "authentication": "oauth",
+      "input_schema": {
+        "fields": [
+          {
+            "name": "name",
+            "label": "Resource name",
+            "type": "text",
+            "target": "identity",
+            "required": true
+          },
+          {
+            "name": "resource_url",
+            "label": "MCP server URL",
+            "type": "url",
+            "target": "configuration",
+            "required": true
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Authentication is `oauth` or `secret`. Identity fields become path segments;
+configuration fields become immutable, non-secret connection configuration.
+The deprecated `configurable` boolean remains in responses for compatibility;
+new clients should render `input_schema.fields` instead.
+
+## Broker administration and legacy generic vault
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -50,6 +91,12 @@ comes from the final path segment, never the body.
 | `PUT` | `/api/secrets/{secret_path}` | Store a generic encrypted value |
 | `GET` | `/api/secrets/{secret_path}` | Retrieve a generic encrypted value |
 | `DELETE` | `/api/secrets/{secret_path}` | Delete a generic encrypted value |
+
+<Note>
+  The generic vault remains available for compatibility but is no longer
+  exposed in the packaged dashboard. Prefer the generic `secret` connection
+  provider so every credential is consumed with `connections.access()`.
+</Note>
 
 ## Browser facade
 
