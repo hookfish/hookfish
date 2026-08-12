@@ -1,0 +1,96 @@
+---
+title: "Remote MCP servers"
+description: "Use protected-resource discovery, PKCE, and client registration to connect remote MCP servers."
+---
+
+The MCP provider turns a remote Streamable HTTP MCP endpoint into a Hookfish
+OAuth provider. It discovers the protected resource and authorization server,
+requires PKCE S256, and can register a client when the authorization server
+supports it.
+
+## Add the MCP template
+
+Register the reusable template in `hookfish.config.ts`:
+
+```ts
+import { defineHookfishConfig } from '@hookfish/api'
+import { createMcpProvider } from '@hookfish/providers'
+
+export default defineHookfishConfig({
+  db,
+  providerManagement: true,
+  providers: {
+    mcp: createMcpProvider(),
+  },
+})
+```
+
+The template itself is not configured for one endpoint. It creates dynamic
+provider instances that supply a `resource_url`.
+
+## Create an MCP provider
+
+Use automatic registration when the authorization server advertises dynamic
+client registration or HTTPS client-ID metadata documents.
+
+```bash
+curl --request PUT http://127.0.0.1:8787/api/admin/providers/notion-mcp \
+  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "template": "mcp",
+    "label": "Notion MCP",
+    "configuration": {
+      "resource_url": "https://mcp.notion.com/mcp",
+      "scopes": []
+    },
+    "credentials": { "mode": "register" }
+  }'
+```
+
+Hookfish stores any registered client secret in its internal vault. The secret
+is write-only and never appears in provider responses.
+
+If automatic registration is unavailable, register the callback URL with the
+server yourself and use custom credentials:
+
+```json
+{
+  "template": "mcp",
+  "configuration": {
+    "resource_url": "https://mcp.example.com/mcp",
+    "scopes": ["mcp:tools"]
+  },
+  "credentials": {
+    "mode": "custom",
+    "client_id": "hookfish-production",
+    "client_secret": "<client-secret>"
+  }
+}
+```
+
+## Start the connection
+
+The dynamic provider ID becomes the authorization path:
+
+```bash
+curl --request POST http://127.0.0.1:8787/api/oauth/authorize/notion-mcp \
+  --header "Authorization: Bearer $BROKER_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{"connection_id":"personal/notion"}'
+```
+
+After consent, give the connection ID to an MCP client or retrieve its token
+from trusted server code. The [Hookfish inspector](/operations/inspector)
+handles this flow interactively.
+
+## Discovery requirements
+
+The remote server must expose OAuth protected-resource metadata that names at
+least one authorization server. The authorization server must advertise an
+authorization endpoint, token endpoint, issuer, and PKCE S256 support.
+
+<Info>
+  Hookfish reads advertised scopes from the OAuth challenge or metadata when
+  the dynamic provider does not configure explicit scopes.
+</Info>

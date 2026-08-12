@@ -1,59 +1,135 @@
 ---
 title: "Application authentication"
-description: "Protect the Hookfish browser facade with your application's existing identity provider."
+description: "Authenticate users in your application, then call Hookfish from trusted server code with Hono RPC."
 ---
 
-Hookfish does not replace your application's authentication system. Connect Auth.js, Clerk, Auth0, Supabase Auth, or another identity provider through `authorizeBrowserRequest`.
+Hookfish does not authenticate your users. Keep Auth.js, Clerk, Auth0,
+Supabase Auth, or your existing session system in your application. After your
+application authorizes a request, call Hookfish from the server with a scoped
+broker credential.
 
-## Authorization contract
+```text
+Browser
+  → your application API
+  → session authentication and permission checks
+  → server-side Hono RPC client
+  → Hookfish /api
+```
 
-The authorizer receives the browser request and the current runtime bindings. Return `undefined` to continue or return a `Response` to stop the request.
+This keeps application sessions out of Hookfish and broker credentials out of
+the browser.
+
+## Protect an application route
+
+Use your auth provider's server middleware before the route handler. Retain the
+user and tenant identifiers your authorization policy needs.
 
 ```ts
-import { Hookfish } from '@hookfish/api'
-import config from './hookfish.config'
-import { authenticateRequest } from './auth'
+import { Hono } from 'hono'
+import { createMiddleware } from 'hono/factory'
 
-const hookfish = await Hookfish.init(config, {
-  authorizeBrowserRequest: async (request) => {
-    const identity = await authenticateRequest(request)
+type AuthVariables = {
+  user: {
+    id: string
+    organizationId: string
+  }
+}
 
-    if (!identity) {
-      return Response.json(
-        { error: { code: 'unauthenticated', message: 'Sign in required.' } },
-        { status: 401 },
-      )
+const requireUser = createMiddleware<{ Variables: AuthVariables }>(
+  async (context, next) => {
+    const user = await authenticateRequest(context.req.raw)
+
+    if (!user) {
+      return context.json({ error: 'Sign in required.' }, 401)
     }
 
-    if (!identity.canManageConnections) {
-      return Response.json(
-        { error: { code: 'forbidden', message: 'Connection access denied.' } },
-        { status: 403 },
-      )
-    }
+    context.set('user', user)
+    await next()
+  },
+)
 
-    return undefined
+const app = new Hono<{ Variables: AuthVariables }>()
+
+app.use('/integrations/*', requireUser)
+```
+
+Keep provider-specific session verification inside `authenticateRequest`. Test
+signed-in, signed-out, expired-session, and wrong-tenant cases.
+
+| Application auth provider | Server-side check | Identity to retain |
+| --- | --- | --- |
+| Auth.js | Resolve and validate the current server session | User and tenant IDs |
+| Clerk | Verify the request and resolve its auth context | User and organization IDs |
+| Auth0 | Validate the application session or access token | Subject and organization claim |
+| Supabase Auth | Resolve the user from a server client | User and application tenant IDs |
+
+## Call Hookfish after authorization
+
+Create the Hookfish Hono RPC client inside trusted server code. Select a broker
+token whose resource scope matches the current user or organization.
+
+```ts
+import type { AppType as HookfishAppType } from '@hookfish/api'
+import { hc } from 'hono/client'
+
+const hookfishUrl =
+  process.env.HOOKFISH_URL ?? 'http://127.0.0.1:8787'
+
+function hookfishFor(brokerToken: string) {
+  return hc<HookfishAppType>(`${hookfishUrl}/api`, {
+    headers: {
+      Authorization: `Bearer ${brokerToken}`,
+    },
+  })
+}
+
+app.get('/integrations/connections', async (context) => {
+  const user = context.get('user')
+  const brokerToken = await scopedBrokerTokenFor(user.organizationId)
+  const hookfish = hookfishFor(brokerToken)
+
+  const response = await hookfish.oauth.connections.$get({
+    query: {
+      connection_id_prefix: user.organizationId,
+    },
+  })
+
+  if (!response.ok) {
+    return context.json({ error: 'Could not load connections.' }, 502)
+  }
+
+  return context.json(await response.json())
+})
+```
+
+Use the same pattern to start authorization, disconnect an account, retrieve a
+provider token, or access a vault secret. Return only the data the browser
+needs. Provider tokens and decrypted secrets should remain in server code.
+
+## Expose your application API to the browser
+
+Export your application route type and create a separate Hono RPC client in
+the browser. That client sends the user's normal application session. It does
+not send a Hookfish credential.
+
+```ts
+// server.ts
+export type ApplicationApi = typeof app
+```
+
+```ts
+// browser.ts
+import type { ApplicationApi } from './server'
+import { hc } from 'hono/client'
+
+export const api = hc<ApplicationApi>('/api', {
+  init: {
+    credentials: 'include',
   },
 })
 ```
 
-Adapt `authenticateRequest` to the server-side verifier supplied by your auth provider:
-
-| Application auth provider | Verify on the server | Identity to retain |
-| --- | --- | --- |
-| Auth.js | Resolve the current server session | User ID and tenant or organization ID |
-| Clerk | Verify the request and resolve its auth context | User ID and organization ID |
-| Auth0 | Validate the application session or access token | Subject and organization claim |
-| Supabase Auth | Resolve the authenticated user from the server client | User ID and application tenant ID |
-
-Provider SDK APIs change independently of Hookfish. Keep the provider-specific verification in `authenticateRequest` and test it with both signed-in and signed-out requests.
-
-## Browser facade limits
-
-The facade allows provider discovery, connection listing and details, authorization starts, and disconnects. It does not allow provider-token retrieval, secret-vault operations, or administrative operations.
-
-`authorizeBrowserRequest` decides whether a request may use the facade. It does not replace the broker credential injected by the facade.
-
 <Warning>
-  If different users or tenants require different Hookfish resource scopes, call the raw API from your own server with the correct scoped broker token. Do not expose one shared root-backed browser facade as tenant isolation.
+  Never return a root key or scoped broker token to the browser. Application
+  authentication does not replace Hookfish resource scopes; enforce both.
 </Warning>

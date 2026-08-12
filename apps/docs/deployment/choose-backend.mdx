@@ -1,0 +1,52 @@
+---
+title: "Choose a deployment backend"
+description: "Compare Hookfish deployment targets, databases, and production tradeoffs."
+---
+
+`hookfish init` can scaffold five runtime targets. Choose the runtime that fits
+your existing infrastructure, then choose production storage independently
+where the target supports it.
+
+| Backend | Local storage | Recommended production storage | Best fit |
+| --- | --- | --- | --- |
+| `node` | PGlite | PostgreSQL | Long-running Node.js service |
+| `bun` | PGlite | PostgreSQL | Long-running Bun service |
+| `docker` | PGlite volume | PostgreSQL or a backed-up persistent volume | Container platform |
+| `vercel` | PGlite | PostgreSQL | Vercel-managed application |
+| `cloudflare` | PostgreSQL or experimental Durable Objects | PostgreSQL through Hyperdrive | Cloudflare Workers |
+
+Create a project with an explicit target:
+
+```bash
+pnpm dlx hookfish init my-broker --backend <backend>
+```
+
+Every scaffold provides:
+
+- `pnpm dev` for the backend and packaged dashboard
+- `pnpm dev:server` for only the runtime-native backend
+- `hookfish.config.ts` or an equivalent Worker entrypoint
+- A gitignored local environment file with an encryption key and development
+  broker key
+
+## Choose storage deliberately
+
+PGlite is a good local default and can serve a single persistent process. Use
+PostgreSQL when the runtime has an ephemeral filesystem, runs multiple
+instances, or needs established backup and recovery tooling.
+
+On Cloudflare Workers, use Hyperdrive for PostgreSQL connections. The
+SQLite-backed Durable Objects adapter is experimental and is not the advised
+production storage path.
+
+## Separate the dashboard from the backend
+
+The dashboard is static. You can serve it with `hookfish serve` and proxy `/api`
+to the broker, or deploy it separately by setting `VITE_BACKEND_URL` during the
+frontend build. Cross-origin deployments must also configure
+`HOOKFISH_FRONTEND_URL` and the corresponding trusted origin.
+
+<Tip>
+  Keep the operator dashboard and backend on one origin when possible. This
+  reduces the CORS configuration needed for administrative requests.
+</Tip>

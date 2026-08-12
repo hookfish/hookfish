@@ -9,46 +9,90 @@
   },
   "favicon": "/favicon.svg",
   "navigation": {
-    "pages": [
+    "tabs": [
       {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart",
-          "concepts/how-it-works",
-          "concepts/scopes"
+        "tab": "Guides",
+        "icon": "book-open",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "quickstart",
+              "concepts/how-it-works",
+              "concepts/scopes"
+            ]
+          },
+          {
+            "group": "Connect providers",
+            "pages": [
+              "authentication/oauth-providers",
+              "providers/remote-mcp",
+              "providers/dynamic",
+              "providers/custom"
+            ]
+          },
+          {
+            "group": "Integrate",
+            "pages": [
+              "frameworks/hono",
+              "frameworks/nextjs",
+              "frameworks/express",
+              "frameworks/browser-dashboard",
+              "frameworks/react-hooks"
+            ]
+          },
+          {
+            "group": "Deploy",
+            "pages": [
+              "deployment/choose-backend",
+              "deployment/vercel",
+              "deployment/bun",
+              "deployment/docker",
+              "frameworks/cloudflare-workers"
+            ]
+          },
+          {
+            "group": "Secure and scale",
+            "pages": [
+              "authentication/application-auth",
+              "authorization/token-scoping",
+              "authorization/organization-routing",
+              "authorization/secret-vault"
+            ]
+          },
+          {
+            "group": "Operate",
+            "pages": [
+              "operations/cli",
+              "operations/inspector",
+              "operations/databases",
+              "operations/events",
+              "operations/troubleshooting"
+            ]
+          }
         ]
       },
       {
-        "group": "Framework guides",
-        "pages": [
-          "frameworks/hono",
-          "frameworks/nextjs",
-          "frameworks/express",
-          "frameworks/cloudflare-workers"
-        ]
-      },
-      {
-        "group": "Authentication",
-        "pages": [
-          "authentication/application-auth",
-          "authentication/oauth-providers"
-        ]
-      },
-      {
-        "group": "Authorization",
-        "pages": [
-          "authorization/token-scoping",
-          "authorization/organization-routing",
-          "authorization/secret-vault"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/configuration",
-          "reference/api",
-          "reference/security"
+        "tab": "Reference",
+        "icon": "brackets-curly",
+        "groups": [
+          {
+            "group": "Configuration",
+            "pages": [
+              "reference/configuration",
+              "reference/environment",
+              "reference/packages"
+            ]
+          },
+          {
+            "group": "HTTP API",
+            "pages": ["reference/api", "reference/errors"]
+          },
+          {
+            "group": "Security",
+            "pages": ["reference/security"]
+          }
         ]
       }
     ],
@@ -91,5 +135,8 @@
     "socials": {
       "github": "https://github.com/kamath/hookfish"
     }
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs"
   }
 }

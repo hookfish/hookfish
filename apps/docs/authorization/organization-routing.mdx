@@ -1,9 +1,10 @@
 ---
 title: "Organization routing"
-description: "Partition Hookfish resources with organization-aware API routes and database context."
+description: "Add an explicit tenant namespace to Hookfish routes and database resolution."
 ---
 
-Enable organization routing when each tenant needs an explicit API namespace and storage context.
+Enable organization routing when each tenant needs an explicit request path
+and database context in addition to resource-scoped credentials.
 
 ```ts
 export default defineHookfishConfig({
@@ -13,31 +14,51 @@ export default defineHookfishConfig({
 })
 ```
 
-OAuth management routes then include the organization segment.
+## Route changes
+
+OAuth management routes move below the organization:
 
 ```text
+/api/organization/acme/oauth/providers
 /api/organization/acme/oauth/connections
 /api/organization/acme/oauth/authorize/github
 /api/organization/acme/secrets
 /api/organization/acme/admin/providers
 ```
 
-Provider callbacks remain global:
+Provider callbacks and MCP client metadata remain global:
 
 ```text
 /api/oauth/callback/github
+/api/oauth/client-metadata/mcp
 ```
 
-Hookfish stores the validated organization separately on authorization state and connection rows. It also requires explicit connection IDs and prefixes to remain below the organization's resource path.
+Stats and broker-token administration also remain deployment-wide.
 
-## Database context
+## Enforce the namespace
 
-Request-aware database adapters receive the validated organization in their binding context. A shared Postgres adapter can apply row-level connection context, while a partitioned adapter can select an isolated database.
+The organization must be 1–128 characters using letters, numbers, dots,
+underscores, or hyphens. Hookfish stores the validated organization separately
+on authorization state and connection records.
+
+Explicit connection IDs, connection prefixes, provider paths, and vault paths
+must remain at or below the organization's resource path. For organization
+`acme`, `acme/engineering/github` is valid and `other/github` is rejected.
+
+Use both controls:
+
+- Organization routing supplies an authenticated tenant context to the
+  database adapter.
+- Broker scopes restrict what the calling credential can access.
+
+## Resolve tenant storage
+
+Request-aware database adapters receive `{ organization }` as their context. A
+shared PostgreSQL adapter can retain the organization as a row-level key. A
+partitioned adapter can select a separate store.
 
 <Note>
-  Organization routing and resource scoping reinforce each other but solve different problems. Organization routing supplies an authenticated tenant context; broker scopes limit what a credential can access.
+  The built-in browser facade exposes only global OAuth-management paths. Proxy
+  organization operations through your authenticated application server and
+  call Hookfish with the tenant's scoped broker token.
 </Note>
-
-## Browser integration
-
-The current browser facade allowlist covers the non-organization OAuth paths. For organization-routed applications, proxy the required operations through your authenticated server and call Hookfish with the tenant's scoped broker token.

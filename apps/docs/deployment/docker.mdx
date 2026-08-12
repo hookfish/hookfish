@@ -1,0 +1,37 @@
+---
+title: "Docker"
+description: "Run Hookfish in Docker Compose with a persistent PGlite volume."
+---
+
+The Docker scaffold packages the Node.js handler and mounts PGlite at
+`/data/hookfish` in a named Compose volume.
+
+## Create and run the project
+
+```bash
+pnpm dlx hookfish init my-broker --backend docker
+cd my-broker
+pnpm dev
+```
+
+The generated `compose.yaml` publishes port `8787`, reads `.env`, and persists
+the `hookfish-data` volume. The dashboard runs separately and proxies `/api` to
+the container.
+
+## Start the service in the background
+
+```bash
+pnpm deploy
+```
+
+Set `OAUTH_REDIRECT_BASE_URL` and `HOOKFISH_FRONTEND_URL` to public origins in
+the deployment environment. Do not rely on the local defaults in production.
+
+## Back up storage
+
+Treat the named volume as production data. Back it up before upgrades and test
+restoration regularly. The encryption key must be backed up separately; the
+database cannot decrypt stored credentials without it.
+
+Use PostgreSQL instead of the volume when your container platform reschedules
+instances without stable storage or runs more than one replica.

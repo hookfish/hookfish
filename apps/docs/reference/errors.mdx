@@ -1,0 +1,62 @@
+---
+title: "Errors"
+description: "Handle stable Hookfish error codes across HTTP, OAuth callbacks, and the typed client."
+---
+
+Failed JSON requests return a stable code and human-readable message:
+
+```json
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "This broker access token cannot access connection \"acme/finance/github\"."
+  }
+}
+```
+
+Branch on `error.code`, not the message text.
+
+## Common codes
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | `invalid_connection_id` | Connection path is structurally invalid |
+| `400` | `invalid_return_to` | Callback destination is not an absolute HTTP(S) URL |
+| `401` | `unauthorized` | Broker credential is missing or incorrect |
+| `401` | `invalid_access_token` | Scoped token is malformed, expired, or revoked |
+| `401` | `reauthorization_required` | Provider credentials cannot be refreshed |
+| `403` | `insufficient_scope` | Credential does not cover the resource path |
+| `403` | `root_access_required` | Operation requires `BROKER_API_KEY` |
+| `403` | `untrusted_return_to` | Destination origin is not allowlisted |
+| `403` | `untrusted_browser_origin` | Browser origin is not allowlisted |
+| `404` | `not_connected` | Connection ID does not exist |
+| `404` | `unknown_provider` | Provider path cannot be resolved |
+| `409` | `connection_id_in_use` | Another provider already owns the connection ID |
+| `409` | `token_name_in_use` | A named broker token already exists |
+| `413` | `request_too_large` | Browser-facade POST body exceeds its limit |
+| `500` | `missing_configuration` | Required broker or provider configuration is absent |
+| `502` | `token_exchange_failed` | Upstream token exchange failed |
+
+Provider-management operations also return specific configuration,
+registration, disabled-provider, in-use, and organization-mismatch codes.
+
+## OAuth callback errors
+
+When `returnTo` or `return_to` is configured, failed callbacks redirect with:
+
+```text
+hookfish_status=error&error=<stable-code>
+```
+
+Do not display the code as the only explanation to an end user. Map expected
+codes to application-specific recovery actions and keep diagnostic detail in
+server logs.
+
+## Typed client errors
+
+The Hono client returns a Fetch-compatible `Response`. Check `response.ok`,
+then parse the Hookfish error body and translate it into an application-level
+response. Do not forward provider details or credentials to the browser.
+
+`@hookfish/hooks`, when used with the optional browser facade, throws
+`HookfishApiError` from its queries and mutations.

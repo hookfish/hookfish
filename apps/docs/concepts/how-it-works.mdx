@@ -1,54 +1,99 @@
 ---
 title: "How Hookfish works"
-description: "Understand the connection lifecycle, API surfaces, and runtime responsibilities."
+description: "Understand Hookfish connections, request surfaces, callbacks, and credential boundaries."
 ---
 
-Hookfish sits between your application and OAuth providers. Your application refers to a linked account by a stable connection ID instead of storing provider credentials itself.
+Hookfish sits between your application and OAuth providers. Your application
+refers to one linked account by a stable connection ID. Hookfish stores and
+refreshes the credentials behind that ID.
+
+## Core objects
+
+| Object | Meaning |
+| --- | --- |
+| OAuth provider | Protocol implementation and client configuration for a service |
+| Connection | One authorized provider account identified by a resource path |
+| Broker access token | Credential used to call Hookfish |
+| Provider access token | Upstream credential returned only to trusted server code |
+| Vault secret | Non-OAuth credential encrypted under a resource path |
+
+A provider can have many connections. Reauthorizing the same connection ID for
+the same provider replaces its stored credentials. Reusing that ID for a
+different provider returns `409`.
 
 ## Connection lifecycle
 
 <Steps>
   <Step title="Start authorization">
-    Trusted server code calls `POST /api/oauth/authorize/{provider}` with a connection ID or connection ID prefix.
+    Trusted code calls `POST /api/oauth/authorize/{provider_path}` with an
+    explicit `connection_id` or a `connection_id_prefix`. Hookfish generates an
+    ID when only a prefix is supplied.
   </Step>
   <Step title="Collect consent">
-    Hookfish returns an `authorize_url`. Your application redirects the user to that URL.
+    Hookfish creates single-use state and returns an `authorize_url`. Your
+    application redirects the user to that URL.
   </Step>
   <Step title="Complete the callback">
-    The provider redirects to Hookfish. Hookfish validates the single-use state, exchanges the code, and encrypts the returned tokens.
+    The provider sends the browser to Hookfish. Hookfish claims the state,
+    validates the provider response, exchanges the code, and encrypts the
+    returned credentials.
   </Step>
   <Step title="Use the connection">
-    Trusted server code calls `GET /api/oauth/tokens/{connection_id}`. Hookfish refreshes the token when necessary before returning it.
+    Trusted server code calls `GET /api/oauth/tokens/{connection_id}`. Hookfish
+    refreshes an expiring token when the provider supports refresh.
   </Step>
   <Step title="Disconnect">
-    Hookfish asks the provider to revoke access when supported, then removes the local connection.
+    Hookfish requests upstream revocation when supported, then deletes the
+    local connection.
   </Step>
 </Steps>
 
-Reauthorizing the same connection ID for the same provider replaces its stored credentials. Reusing the ID for a different provider returns `409`.
+## Callback destinations
 
-## API surfaces
+Set `returnTo` in `hookfish.config.ts` for a fixed post-callback destination.
+An authorization request can override it with `return_to` when that URL's
+origin appears in `trustedOrigins`.
 
-| Surface | Audience | Contains secrets |
+Successful redirects include `hookfish_status=connected`, `provider`, and
+`connection_id`. Failed flows include `hookfish_status=error` and a stable
+`error` code. When no destination is configured, Hookfish renders a development
+completion page.
+
+Provider callbacks do not use a broker token. Their encrypted, single-use OAuth
+state authenticates the flow and expires after ten minutes. Runtime stats,
+Swagger UI, the OpenAPI document, and MCP client metadata are also public.
+
+## Application API and Hookfish API
+
+| Surface | Purpose | Authentication |
 | --- | --- | --- |
-| `/api/*` | Trusted server code | Yes. Includes provider-token retrieval, secret storage, and administration. |
-| `/api/client/*` | Authenticated browser clients | No. Only allowlisted connection-management operations are forwarded. |
-| `/api` | Developers | Swagger UI for the configured API surface. |
-| `/api/openapi.json` | Tools and generated clients | OpenAPI document for the configured API surface. |
+| Your application API | User-facing connection operations | Your application session and permissions |
+| Hookfish `/api/*` | Complete broker API | Root or scoped broker credential |
+| `/api` | Swagger UI | Visibility controlled by `includeSwagger` |
+| `/api/openapi.json` | OpenAPI 3.1 document | Visibility controlled by `includeSwagger` |
 
-The browser facade replaces the browser's headers with a server-side broker credential. Configure `authorizeBrowserRequest` before using it in production.
+Authenticate browser requests in your application. The authorized route
+handler can then use a typed Hono RPC client to call Hookfish with the correct
+scoped broker token. Keep provider-token retrieval, vault values, and broker
+administration inside trusted server code.
 
-<Warning>
-  The browser facade is not an identity system. Your application must authenticate the request and decide whether the caller may manage connections.
-</Warning>
+Hookfish also includes an optional `/api/client` browser facade. It exposes an
+allowlist of connection-management operations, but it uses one configured
+broker credential and does not establish your application's tenant boundary.
+Prefer an authenticated application route when serving your users.
 
-## Portable runtime
+## Portable runtime and storage
 
-`Hookfish.init(config)` returns a Fetch-compatible request handler. Framework adapters only translate their request model into Fetch requests or mount the handler at `/api`.
+`Hookfish.init(config)` returns an object with a Fetch-compatible `fetch`
+handler. Framework adapters translate their request model or mount that handler
+without changing Hookfish's API.
 
-- Hono on Node.js passes Fetch requests directly.
-- Next.js exports the same handler from an App Router catch-all route.
-- Express uses the Hono Node request listener adapter.
-- Cloudflare Workers pass runtime bindings and an execution context to the handler.
+Database adapters follow the same request-aware model:
 
-The database follows the same pattern. The generated Node.js, Bun, and Docker backends use PGlite. Vercel uses PGlite locally and Postgres through `DATABASE_URL` when deployed. Cloudflare Workers use SQLite Durable Objects.
+- PGlite persists to a local directory and applies bundled migrations lazily.
+- Postgres accepts a URL or a resolver that reads request bindings.
+- The experimental SQLite Durable Objects adapter selects a storage object from
+  the validated organization context.
+
+Continue with [resource and provider scopes](/concepts/scopes), or inspect all
+[configuration options](/reference/configuration).

@@ -1,11 +1,12 @@
 ---
 title: "Configuration"
-description: "Reference the Hookfish config, runtime options, and environment variables."
+description: "Reference Hookfish config fields and runtime-specific options."
 ---
 
-Define shared broker behavior in `hookfish.config.ts`. Pass runtime-specific behavior as the second argument to `Hookfish.init`.
+Define shared broker behavior in `hookfish.config.ts`. Pass host-specific
+behavior as the second argument to `Hookfish.init`.
 
-## Hookfish config
+## Broker configuration
 
 ```ts
 import { defineHookfishConfig } from '@hookfish/api'
@@ -13,7 +14,6 @@ import { defineHookfishConfig } from '@hookfish/api'
 export default defineHookfishConfig({
   db,
   providers,
-  includeClient: true,
   includeSwagger: true,
   returnTo: 'https://app.example.com/settings/integrations',
   trustedOrigins: ['https://app.example.com'],
@@ -23,50 +23,60 @@ export default defineHookfishConfig({
 })
 ```
 
-| Option | Purpose | Default |
-| --- | --- | --- |
-| `db` | Database or request-aware database binding | Required |
-| `providers` | Provider map, registry, or request-aware provider factory | Required |
-| `includeClient` | Mount the browser facade at `/api/client` | `false` |
-| `includeSwagger` | Include server-only operations in the OpenAPI document | `true` |
-| `returnTo` | Fixed destination after an OAuth callback | Development completion page |
-| `trustedOrigins` | Origins allowed by per-flow `return_to` values and browser CORS | `[]` |
-| `organizationRouting` | Prefix management routes with an organization path | `false` |
-| `providerManagement` | Enable dynamic-provider administration | `false` |
-| `onEvent` | Best-effort lifecycle and audit event handler | Unset |
+| Option | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `db` | `DatabaseInput` | Required | Ready, promised, or request-aware database |
+| `providers` | Map, registry, source, or factory | Required | Resolve OAuth providers |
+| `includeClient` | `boolean` | `false` | Mount the optional `/api/client` facade |
+| `includeSwagger` | `boolean` | `true` | Include server-only routes in the OpenAPI document |
+| `returnTo` | Absolute HTTP(S) URL | Development completion page | Fixed callback destination |
+| `trustedOrigins` | URL array | `[]` | Allow per-flow returns and cross-origin browser calls |
+| `organizationRouting` | `boolean` | `false` | Move management routes under an organization path |
+| `providerManagement` | `boolean` | `false` | Enable dynamic-provider CRUD |
+| `onEvent` | Event handler | Unset | Export best-effort lifecycle events |
+
+`includeSwagger: false` does not remove server routes. It filters the generated
+document to browser-safe operations and advertises `/api/client` as its server.
+
+For user-facing applications, keep `includeClient` at its default. Authenticate
+requests on your application API, then use a server-side Hono RPC client to
+call Hookfish with a scoped broker token.
 
 ## Runtime options
 
 ```ts
 const hookfish = await Hookfish.init(config, {
   runtime: 'node',
-  browserOrigins: ['https://app.example.com'],
-  brokerApiKey: (env) => env.BROKER_API_KEY,
-  authorizeBrowserRequest: authenticateBrowserRequest,
 })
 ```
 
 | Option | Purpose |
 | --- | --- |
 | `runtime` | Label returned by `/api/client/health` |
-| `browserOrigins` | Runtime-specific override for the browser origin allowlist |
-| `brokerApiKey` | Root or scoped credential injected by the browser facade |
-| `authorizeBrowserRequest` | Application session and authorization check for browser requests |
+| `browserOrigins` | Override the config's browser CORS allowlist |
+| `brokerApiKey` | Resolve the credential injected by the browser facade |
+| `authorizeBrowserRequest` | Apply application authentication and authorization |
 
-## Conventional environment variables
+`runtime`, `browserOrigins`, and `brokerApiKey` can resolve values from the
+current runtime bindings.
 
-| Variable | Purpose |
-| --- | --- |
-| `OAUTH_ENCRYPTION_KEY` | Encrypts provider tokens and secret values at rest |
-| `BROKER_API_KEY` | Root credential for the Hookfish API and scoped-token signatures |
-| `OAUTH_REDIRECT_BASE_URL` | Public origin used to derive provider callback URLs |
-| `PGLITE_DATA_DIR` | Local PGlite storage directory |
-| `DATABASE_URL` | Direct Postgres connection for Node deployments and local tooling |
-| `<PROVIDER>_CLIENT_ID` | OAuth client ID for a built-in provider |
-| `<PROVIDER>_CLIENT_SECRET` | OAuth client secret for a built-in provider |
+The last three options apply to the optional browser facade. They are not
+needed when your application authenticates users separately and calls
+Hookfish from trusted server routes.
 
-Production deployments must set `OAUTH_REDIRECT_BASE_URL`. Development and test instances may derive it from the incoming request origin.
+## Provider inputs
 
-<Warning>
-  Rotating `OAUTH_ENCRYPTION_KEY` makes existing encrypted provider tokens and secrets unreadable.
-</Warning>
+`providers` accepts:
+
+- A record of provider IDs to implementations
+- A `ProviderRegistry`
+- A lazy `ProviderSource`
+- A synchronous or asynchronous factory that returns one of those inputs for
+  the current bindings
+
+Use a factory for request-bound secrets. Use `createProviderSource` for a large
+application-owned catalog where resolving one provider should not materialize
+the complete list.
+
+See [Environment variables](/reference/environment) and
+[OAuth providers](/authentication/oauth-providers) for concrete values.

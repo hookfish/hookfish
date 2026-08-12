@@ -1,0 +1,59 @@
+---
+title: "Dashboard and browser access"
+description: "Use the operator dashboard and build user-facing connection screens through your authenticated application API."
+---
+
+Hookfish includes a static dashboard for operating providers, connections, and
+vault entries. Treat it as an operator tool. Build user-facing connection
+screens against your own authenticated application API.
+
+## Run the packaged dashboard
+
+Generated projects start the dashboard and backend together:
+
+```bash
+pnpm dev
+```
+
+For an existing backend, serve the packaged dashboard and proxy `/api`:
+
+```bash
+pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
+```
+
+The operator dashboard requests a root or scoped broker token and keeps it in
+browser session storage. It uses that token for administrative provider and
+vault requests.
+
+<Warning>
+  Do not expose the packaged dashboard or a root broker key to your
+  application's users. Restrict the dashboard to trusted operators.
+</Warning>
+
+## Build a user-facing connection screen
+
+Your application's browser client should call an app-owned route:
+
+```text
+Browser
+  → authenticated application route
+  → scoped server-side Hookfish client
+  → Hookfish API
+```
+
+The application route verifies the user's session and permissions, maps the
+user to a Hookfish resource path, and selects the appropriate scoped broker
+token. It can then use Hono RPC to list connections, start authorization, or
+disconnect an account.
+
+See [Application authentication](/authentication/application-auth) for the
+complete pattern and [React and Hono RPC](/frameworks/react-hooks) for a
+browser example.
+
+## Optional browser facade
+
+Hookfish can mount an allowlisted `/api/client` facade with
+`includeClient: true`. The facade does not expose provider tokens, vault
+values, callbacks, or administration, but it uses one configured broker
+credential. Prefer application-owned routes when users or tenants require
+different resource scopes.

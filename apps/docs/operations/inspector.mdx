@@ -1,0 +1,53 @@
+---
+title: "MCP inspector"
+description: "Discover, authorize, and call remote MCP server capabilities from a local interface."
+---
+
+The Hookfish inspector is a local interface for Streamable HTTP MCP servers. It
+uses Hookfish to broker OAuth and keeps provider tokens on the server side.
+
+## Start the inspector
+
+```bash
+pnpm dlx hookfish inspect
+```
+
+Open `http://localhost:3000`. Set `INSPECTOR_PORT` to choose another port. Set
+`HOOKFISH_INSPECTOR_URL` only when you intentionally place the inspector behind
+a proxy with a different public origin.
+
+## Inspect a server
+
+<Steps>
+  <Step title="Add the endpoint">
+    Enter the remote MCP server's Streamable HTTP URL and save it. Server
+    definitions remain in browser local storage.
+  </Step>
+  <Step title="Connect OAuth when required">
+    Select **Connect OAuth** after the server returns an authentication
+    challenge. Hookfish discovers metadata, runs PKCE and client registration,
+    and stores the resulting credentials encrypted.
+  </Step>
+  <Step title="Explore capabilities">
+    Browse tools, resources, resource templates, prompts, and server metadata.
+    Execute capabilities and inspect their raw results.
+  </Step>
+</Steps>
+
+The client supports form and URL elicitation, URL-completion notifications, and
+manual retry. Per-server switches can disable tools, resources, prompts, or
+elicitation before the client advertises and discovers those features.
+
+## Local storage and secrets
+
+The packaged inspector stores PGlite data in `~/.hookfish/inspector` by default.
+Override it with `PGLITE_DATA_DIR`.
+
+`HOOKFISH_API_KEY` defaults to `test` when unset. If
+`OAUTH_ENCRYPTION_KEY` is missing, the inspector creates a private development
+key in its data directory and reuses it across restarts.
+
+<Warning>
+  The inspector is a local development tool. Do not expose it publicly with its
+  development key or unprotected database.
+</Warning>

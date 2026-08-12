@@ -1,0 +1,49 @@
+---
+title: "Vercel"
+description: "Deploy a Hookfish Hono handler to Vercel with PostgreSQL storage."
+---
+
+The Vercel scaffold exports a Hono application and selects PostgreSQL whenever
+`DATABASE_URL` is present. It falls back to PGlite only for local development.
+
+## Create the project
+
+```bash
+pnpm dlx hookfish init my-broker --backend vercel
+cd my-broker
+pnpm dev
+```
+
+The generated `src/index.ts` forwards every request to the Fetch-compatible
+Hookfish handler. `hookfish.config.ts` fails startup in Vercel preview or
+production when `DATABASE_URL` is missing.
+
+## Configure production
+
+Set these environment variables in the Vercel project:
+
+```text
+DATABASE_URL
+OAUTH_ENCRYPTION_KEY
+BROKER_API_KEY
+OAUTH_REDIRECT_BASE_URL
+HOOKFISH_FRONTEND_URL
+```
+
+Add the client ID and client secret for each fixed OAuth provider you enable.
+Set `OAUTH_REDIRECT_BASE_URL` to the public broker origin, not a preview URL
+that changes between deployments.
+
+## Deploy
+
+```bash
+pnpm deploy
+```
+
+After deployment, request `/api/oauth/providers` with a broker credential and
+register each returned callback URL with its provider.
+
+<Warning>
+  Do not use PGlite on an ephemeral or horizontally scaled Vercel deployment.
+  Configure PostgreSQL before accepting real connections.
+</Warning>

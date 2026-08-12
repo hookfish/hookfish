@@ -1,0 +1,67 @@
+---
+title: "Troubleshooting"
+description: "Diagnose callback, credential, browser, scope, provider, and database failures."
+---
+
+Hookfish returns a stable error code under `error.code`. Start with that code,
+then verify the request path, credential, runtime environment, and provider
+configuration.
+
+## Callback URL mismatch
+
+**Symptoms:** The provider rejects the redirect URI or sends the browser to the
+wrong host.
+
+1. Set `OAUTH_REDIRECT_BASE_URL` to the public broker origin.
+2. Request `GET /api/oauth/providers` with a broker credential.
+3. Copy the returned `callback_url` exactly into the provider console.
+4. Start a new authorization; existing state retains its original callback.
+
+## `missing_configuration`
+
+The operation needs `BROKER_API_KEY`, `OAUTH_ENCRYPTION_KEY`, or provider
+credentials that are not available to the runtime. Confirm that the host passes
+its environment or bindings into `hookfish.fetch`.
+
+## `untrusted_return_to` or `untrusted_browser_origin`
+
+- Add the exact application origin to `trustedOrigins`.
+- Include the scheme and port.
+- Do not add paths to origin entries.
+- Use the runtime `browserOrigins` option when the host must override the shared
+  configuration.
+
+## `insufficient_scope`
+
+Compare the complete connection, provider, or secret path with the token's
+canonical scopes. A scope matches only the exact subtree. It does not perform a
+substring or glob-anywhere match.
+
+When starting authorization with a scoped token, provide `connection_id` or
+`connection_id_prefix` inside its grant.
+
+## `reauthorization_required`
+
+The provider token could not be refreshed or no usable refresh token exists.
+Start authorization again with the same connection ID to replace the stored
+credentials.
+
+## Provider discovery or registration failure
+
+For MCP providers, verify that the resource exposes protected-resource metadata
+and that the authorization server advertises PKCE S256. If it does not support
+automatic client registration, create a client manually and store custom
+credentials.
+
+## Data disappears after restart
+
+- Confirm `PGLITE_DATA_DIR` points to persistent storage.
+- Confirm a Docker volume remains attached.
+- Do not use PGlite on an ephemeral or multi-instance host.
+- On Workers, use PostgreSQL through Hyperdrive for production.
+
+## Inspect the actual API
+
+Open `/api` for Swagger UI or request `/api/openapi.json`. The document reflects
+the configured organization-routing, provider-management, and Swagger settings
+for that deployment.

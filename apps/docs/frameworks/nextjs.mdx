@@ -3,17 +3,24 @@ title: "Next.js"
 description: "Mount Hookfish in a Next.js App Router route handler."
 ---
 
-Mount Hookfish below `/api` with an optional catch-all App Router route. Hookfish currently uses the Node.js runtime because the local database adapter and provider SDKs depend on Node APIs.
+Mount Hookfish below `/api` with an optional catch-all App Router route. The
+handler uses the Node.js runtime so it can use the database adapters and
+provider SDKs included with Hookfish.
 
-## Install
+## Install dependencies
 
 ```bash
 pnpm add @hookfish/api @hookfish/database @hookfish/providers
 ```
 
+Create `hookfish.config.ts` using the same configuration shown in the
+[Hono guide](/frameworks/hono). Use PGlite only for local development or a
+single persistent Node process. Use PostgreSQL for horizontally scaled or
+ephemeral deployments.
+
 ## Create the route handler
 
-Create `app/api/[[...path]]/route.ts`.
+Create `app/api/[[...path]]/route.ts`:
 
 ```ts
 import path from 'node:path'
@@ -25,11 +32,11 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const db = pglite(
-  process.env.PGLITE_DATA_DIR ?? path.resolve(process.cwd(), 'pgdata'),
+  process.env.PGLITE_DATA_DIR ?? path.resolve(process.cwd(), 'hookfish-data'),
 )
 const hookfishPromise = Hookfish.init({ ...config, db })
 
-const handle = async (request: Request) => {
+async function handle(request: Request) {
   const hookfish = await hookfishPromise
   return hookfish.fetch(request, process.env)
 }
@@ -45,12 +52,42 @@ export {
 }
 ```
 
-Adjust the relative import for `hookfish.config.ts` to match your project structure.
+Adjust the relative config import to match your project structure.
 
-## Add application authentication
+## Add authenticated application routes
 
-Pass an `authorizeBrowserRequest` function as the second argument to `Hookfish.init`. Validate your Next.js application session there before allowing `/api/client` requests.
+Keep user authentication in normal Next.js route handlers. After validating
+the session and permissions, use the typed Hono client to call Hookfish from
+the server:
 
-<Note>
-  PGlite is suitable for local development and a single persistent Node process. Use Postgres when your Next.js deployment runs multiple instances or uses ephemeral filesystems.
-</Note>
+```ts
+import type { AppType as HookfishAppType } from '@hookfish/api'
+import { hc } from 'hono/client'
+
+export async function GET(request: Request) {
+  const session = await authenticateNextRequest(request)
+  if (!session) {
+    return Response.json({ error: 'Sign in required.' }, { status: 401 })
+  }
+
+  const brokerToken = await scopedBrokerTokenFor(session.organizationId)
+  const hookfish = hc<HookfishAppType>(`${process.env.HOOKFISH_URL}/api`, {
+    headers: {
+      Authorization: `Bearer ${brokerToken}`,
+    },
+  })
+
+  return hookfish.oauth.connections.$get({
+    query: {
+      connection_id_prefix: session.organizationId,
+    },
+  })
+}
+```
+
+Place this handler at an application-owned path such as
+`/api/integrations/connections`. The browser sends its normal Next.js session
+to that path and never receives the broker token.
+
+See [Application authentication](/authentication/application-auth) for the
+Hono RPC pattern and tenant-isolation guidance.

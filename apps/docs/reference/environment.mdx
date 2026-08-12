@@ -1,0 +1,66 @@
+---
+title: "Environment variables"
+description: "Reference conventional Hookfish, dashboard, database, provider, and inspector variables."
+---
+
+Hookfish reads conventional values from the bindings passed to `fetch`, then
+from the ambient Node.js environment when available. Explicit configuration
+and runtime resolvers can override these conventions.
+
+## Broker variables
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OAUTH_ENCRYPTION_KEY` | For credential operations | Encrypt provider tokens and vault values |
+| `BROKER_API_KEY` | For authenticated API operations | Root API credential and scoped-token signing key |
+| `OAUTH_REDIRECT_BASE_URL` | Production | Public origin used to derive callback URLs |
+| `HOOKFISH_FRONTEND_URL` | When serving a separate dashboard | Browser origin and default callback destination in generated projects |
+
+Generate independent high-entropy values for the encryption key and broker key:
+
+```bash
+openssl rand -base64 32
+```
+
+<Warning>
+  Rotating `OAUTH_ENCRYPTION_KEY` makes existing encrypted values unreadable.
+  Rotating `BROKER_API_KEY` invalidates every scoped broker token.
+</Warning>
+
+## Database variables
+
+| Variable | Purpose |
+| --- | --- |
+| `PGLITE_DATA_DIR` | Directory or PGlite URL for embedded storage |
+| `DATABASE_URL` | Direct PostgreSQL connection for Node hosts and migration jobs |
+| `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` | Local PostgreSQL connection for a Worker `HYPERDRIVE` binding |
+
+## Provider variables
+
+Built-in provider factories use conventional credential names when explicit
+values are not supplied:
+
+```text
+GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET
+LINEAR_CLIENT_ID
+LINEAR_CLIENT_SECRET
+NOTION_CLIENT_ID
+NOTION_CLIENT_SECRET
+```
+
+The MCP template does not require fixed credentials. Dynamic MCP instances can
+register a client or store custom credentials.
+
+## Dashboard and inspector variables
+
+| Variable | Purpose |
+| --- | --- |
+| `HOOKFISH_BACKEND_URL` | Backend proxied by `hookfish serve` |
+| `FRONTEND_HOST` / `FRONTEND_PORT` | Packaged dashboard bind address |
+| `INSPECTOR_HOST` / `INSPECTOR_PORT` | Inspector bind address |
+| `HOOKFISH_INSPECTOR_URL` | Public inspector origin behind an intentional proxy |
+| `HOOKFISH_API_KEY` | Inspector's local broker key; defaults to `test` |
+
+Store production values in the runtime's secret manager. Do not commit `.env`,
+`.dev.vars`, database URLs, or provider credentials.

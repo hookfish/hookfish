@@ -1,13 +1,15 @@
 ---
-title: "Token scoping"
-description: "Create least-privilege broker access tokens for Hookfish resource paths."
+title: "Scoped broker tokens"
+description: "Issue expiring, revocable broker credentials for Hookfish resource subtrees."
 ---
 
-The root `BROKER_API_KEY` can access every Hookfish resource. Replace it with named, expiring broker access tokens when a service needs only one part of the resource tree.
+The root `BROKER_API_KEY` can access every Hookfish resource. Give applications
+and workers named, expiring broker tokens instead of sharing that root key.
 
-## Resource paths
+## Define resource paths
 
-Connection IDs, dynamic provider IDs, and secret paths share one slash-delimited namespace.
+Connections, dynamic providers, and vault secrets share one slash-delimited
+namespace:
 
 ```text
 acme/engineering/github
@@ -15,13 +17,17 @@ acme/engineering/notion
 acme/finance/github
 ```
 
-A submitted scope of `acme/engineering` is canonicalized to `acme/engineering/**`. It includes the exact path and all descendants. It does not include `acme/engineering-tools` or a path where the same text appears later.
+A submitted scope of `acme/engineering` is canonicalized to
+`acme/engineering/**`. It includes the exact path and descendants, but not
+`acme/engineering-tools`. Use `**` only for root access.
 
-Use `**` only when the caller requires root access.
+Paths can be at most 512 characters. They must use canonical NFC Unicode and
+cannot contain empty segments, dot segments, backslashes, control characters,
+or encoded path structure.
 
-## Mint a scoped token
+## Mint a token
 
-Use the root credential to create a named, one-hour token.
+Use a root credential to create a named one-hour token:
 
 ```bash
 curl --request POST http://127.0.0.1:8787/api/admin/tokens \
@@ -44,40 +50,43 @@ curl --request POST http://127.0.0.1:8787/api/admin/tokens \
 }
 ```
 
-The bearer value is returned once. Store it in your service's secret manager.
+The bearer value is returned once. Store it in the consuming service's secret
+manager.
 
-## Use the token
+## Use and delegate the token
 
-Send it through the same `Authorization` header used by the root key.
+Send a scoped token through the same header used by the root key:
 
 ```bash
 curl http://127.0.0.1:8787/api/oauth/connections/acme/engineering/github \
   --header "Authorization: Bearer $HOOKFISH_ACCESS_TOKEN"
 ```
 
-Requests outside every granted scope return `403 insufficient_scope`. A non-root token must supply `connection_id` or `connection_id_prefix` when starting authorization because a root-level generated ID would fall outside its namespace.
+Requests outside every granted scope return `403 insufficient_scope`.
 
-## Delegate access
+A scoped token may create another token with the same or narrower scopes and an
+equal or earlier expiry. Names form a delegation namespace: `acme-worker` may
+mint `acme-worker.eu`, but not `production-api`.
 
-A scoped token may mint another token with the same or narrower resource scopes. It cannot create a token that outlives it.
-
-Token names form a dot-delimited delegation namespace. `acme-worker` may mint `acme-worker.eu`, but it may not mint `production-api`.
-
-- Default lifetime: one hour
-- Maximum lifetime: 30 days
-- Maximum resource scopes per token: 32
+| Limit | Value |
+| --- | --- |
+| Default lifetime | 1 hour |
+| Minimum lifetime | 60 seconds |
+| Maximum lifetime | 30 days |
+| Maximum resource scopes | 32 |
 
 ## Revoke access
-
-Root credentials can list active token names and revoke one immediately.
 
 ```bash
 curl --request DELETE http://127.0.0.1:8787/api/admin/tokens/acme-worker \
   --header "Authorization: Bearer $BROKER_API_KEY"
 ```
 
-Hookfish stores a hash of each token's random identifier. Every request checks the signed token against its authoritative database record, so expiry changes, scope narrowing, and deletion take effect on the next request.
+Hookfish stores a hash of each token's random identifier and checks the
+database record on every request. Deletion, expiry changes, and scope narrowing
+take effect on the next request.
 
 <Warning>
-  Rotating `BROKER_API_KEY` invalidates every scoped token because the root key signs them. Plan root-key rotation as a deployment-wide credential rollover.
+  Rotating `BROKER_API_KEY` invalidates every scoped token because the root key
+  signs them. Treat root-key rotation as a deployment-wide credential rollover.
 </Warning>

@@ -1,37 +1,78 @@
 ---
-title: "Introduction"
-description: "Connect applications to OAuth providers without storing provider tokens in application code."
+title: "Hookfish"
+description: "Manage API keys, OAuth tokens, MCP access tokens, and other secrets for your application's users."
 ---
 
-Hookfish is a portable OAuth and encrypted-secret broker. It runs provider consent flows, encrypts tokens at rest, refreshes expiring credentials, and returns current provider tokens to trusted server code.
+Hookfish helps your application manage secrets for its users. Those secrets can
+be API keys, OAuth tokens, MCP access tokens, or other credentials your app
+needs to keep safe.
 
-Each **connection** represents one linked provider account. You choose a connection ID, or let Hookfish generate one, then organize connections into resource paths such as `acme/payments/github`.
+You manage how users sign in and what they are allowed to do. Hookfish keeps
+track of their secrets and access tokens, encrypts them at rest, and gives your
+backend a consistent way to use them.
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  Scaffold Hookfish and complete your first GitHub connection.
-</Card>
-<Card title="How Hookfish works" icon="diagram-project" href="/concepts/how-it-works">
-  Follow a connection from authorization through refresh and revocation.
-</Card>
-<Card title="Token scoping" icon="key" href="/authorization/token-scoping">
-  Grant services access to specific resource subtrees.
-</Card>
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create a Hookfish project and connect your first account.
+  </Card>
+  <Card title="Add Hookfish to your app" icon="code" href="/frameworks/hono">
+    Add Hookfish to an existing server and use your current application setup.
+  </Card>
+  <Card title="Connect an MCP server" icon="plug" href="/providers/remote-mcp">
+    Connect users to a remote MCP server and keep their access tokens safe.
+  </Card>
+  <Card title="Try the MCP inspector" icon="microscope" href="/operations/inspector">
+    Explore tools, resources, and prompts from a local interface.
+  </Card>
+</Columns>
 
-## What Hookfish owns
+## What Hookfish does for you
 
-- OAuth authorization, callback validation, token exchange, refresh, and revocation
-- AES-GCM encryption for provider tokens and stored secrets
-- Hierarchical broker credentials with delegation and immediate revocation
-- A Fetch-compatible handler for Node.js, Next.js, Express, and Cloudflare Workers
-- A browser-safe facade for connection management
+- Stores API keys and other secrets for your users
+- Runs OAuth and MCP authorization flows
+- Encrypts access tokens, refresh tokens, and stored secrets
+- Refreshes OAuth tokens when they expire
+- Keeps each connected account under a stable connection ID
+- Lets your backend give different services access to different users or
+  resource paths
 
-## What your application owns
+## What stays in your application
 
-- User sessions and application authorization
-- Which Hookfish resource path belongs to each user or tenant
-- Provider application credentials and registered callback URLs
-- The database and runtime used by the Hookfish deployment
+- Signing users in
+- Deciding which users can connect, view, or disconnect accounts
+- Mapping each user or organization to its Hookfish resource path
+- Choosing where Hookfish runs and where its encrypted data is stored
+
+Hookfish works with the authentication system you already use, including
+Auth.js, Clerk, Auth0, Supabase Auth, or your own session system.
+
+## Secrets stay on the server
+
+Your backend can retrieve a user's API key or current provider token when it
+needs to call another service. Your browser calls your application's normal,
+authenticated API. After checking the user, your server calls Hookfish with a
+scoped broker credential.
+
+```text
+Browser → your authenticated API → Hookfish → provider
+```
+
+You can use Hono RPC on both sides of that boundary: one typed client for the
+browser to call your application, and another in server code to call Hookfish.
+Only return connection metadata and other values the browser needs.
 
 <Warning>
-  Provider tokens and secret values are server-only. Never expose `BROKER_API_KEY` or the raw `/api/oauth/tokens/*` routes to browser code.
+  Never put `BROKER_API_KEY`, a scoped broker token, a provider access token, or
+  a decrypted vault value in browser code.
 </Warning>
+
+## Where to start
+
+- Start with the [quickstart](/quickstart) to create a Hookfish project and make
+  your first connection.
+- Follow a [framework guide](/frameworks/hono) to add Hookfish to an existing
+  application.
+- Read [How Hookfish works](/concepts/how-it-works) before designing callbacks,
+  application auth, or multi-tenant routing.
+- Review the [production security checklist](/reference/security) before
+  accepting real provider credentials.

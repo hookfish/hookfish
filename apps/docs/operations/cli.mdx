@@ -1,0 +1,63 @@
+---
+title: "CLI"
+description: "Scaffold, serve, inspect, and migrate Hookfish projects from the command line."
+---
+
+The `hookfish` package provides the project initializer, packaged dashboard,
+MCP inspector, and local migration command. Run it through your package manager
+without a global installation.
+
+## Scaffold a project
+
+```bash
+pnpm dlx hookfish init my-broker --backend node
+```
+
+| Option | Description |
+| --- | --- |
+| `--backend <backend>` | `node`, `bun`, `docker`, `vercel`, or `cloudflare` |
+| `--no-install` | Create files without installing dependencies |
+
+The default backend is `node`. The target directory must be empty, and its name
+must be a lowercase npm-compatible name.
+
+## Serve the dashboard
+
+```bash
+pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
+```
+
+`hookfish dev` is an alias. The command serves the packaged static dashboard
+and proxies `/api` to the backend so browser requests remain same-origin.
+
+| Option | Environment alternative |
+| --- | --- |
+| `--backend-url <url>` | `HOOKFISH_BACKEND_URL` |
+| `--no-open` | None |
+
+Generated projects already combine this command with their runtime-native
+development server under `pnpm dev`.
+
+## Run the MCP inspector
+
+```bash
+pnpm dlx hookfish inspect
+```
+
+`hookfish inspector` is an alias. Set `INSPECTOR_PORT` to override port `3000`.
+See [MCP inspector](/operations/inspector) for storage and authentication
+behavior.
+
+## Run local migrations
+
+```bash
+PGLITE_DATA_DIR=data/hookfish pnpm dlx hookfish migrate
+```
+
+This command applies bundled migrations to the selected local PGlite directory.
+Generated projects already apply PGlite migrations lazily on first use, so an
+explicit local migration is normally unnecessary.
+
+For production PostgreSQL, call `migrateDatabase` from a trusted deployment job
+as described in [Databases and migrations](/operations/databases). Experimental
+Durable Object databases apply their SQLite schema when each object starts.
