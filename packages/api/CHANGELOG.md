@@ -1,5 +1,21 @@
 # @hookfish/api
 
+## 0.5.0
+
+### Minor Changes
+
+- 3602b04: Describe connection providers with OAuth or secret authentication and a small
+  input schema, accept generic non-secret connection configuration, and generate
+  the updated SDK contract. New projects now include only the generic MCP and
+  secret providers by default. Connection configuration and requested OAuth
+  scopes are separate inputs; the legacy MCP `url` shorthand and provider
+  `configurable` metadata are removed.
+
+### Patch Changes
+
+- Updated dependencies [3602b04]
+  - @hookfish/provider@0.4.0
+
 ## 0.4.0
 
 ### Minor Changes

@@ -1,5 +1,16 @@
 # @hookfish/providers
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [3602b04]
+  - @hookfish/provider@0.4.0
+  - @hookfish/provider-mcp@0.3.0
+  - @hookfish/provider-github@0.1.4
+  - @hookfish/provider-linear@0.1.4
+  - @hookfish/provider-notion@0.1.4
+
 ## 0.2.0
 
 ### Minor Changes
