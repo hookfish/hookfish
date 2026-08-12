@@ -1,0 +1,39 @@
+---
+title: "Security"
+description: "Review Hookfish's credential boundaries and production deployment requirements."
+---
+
+Hookfish keeps provider tokens behind a server boundary and gives each deployment explicit encryption, identity, and authorization responsibilities.
+
+## Production checklist
+
+- Generate independent high-entropy values for `OAUTH_ENCRYPTION_KEY` and `BROKER_API_KEY`.
+- Store secrets in the runtime's secret manager, not source control or deployment configuration.
+- Set `OAUTH_REDIRECT_BASE_URL` to the public HTTPS origin.
+- Register callback URLs returned by `GET /api/oauth/providers` instead of constructing them manually.
+- Configure `authorizeBrowserRequest` before enabling the browser facade.
+- Allow only the application origins that need browser access.
+- Issue scoped, expiring broker tokens to services instead of sharing the root key.
+- Keep provider-token retrieval and secret-vault operations server-only.
+- Export `onEvent` activity to an audit or telemetry system when accountability is required.
+- Back up the database and plan encryption-key rotation before production use.
+
+## Stored credentials
+
+Access tokens, refresh tokens, dynamic-provider client secrets, and secret-vault values are encrypted with AES-GCM before database storage. Provider metadata excludes `access_token`, `refresh_token`, and `id_token`.
+
+OAuth state is stored only as a SHA-256 hash and expires after ten minutes. Callback records prevent a completed authorization code from being exchanged twice.
+
+## Broker tokens
+
+Scoped broker tokens are HMAC-signed with `BROKER_API_KEY`. Hookfish stores only a SHA-256 hash of each token's random identifier and checks the authoritative database record on every request.
+
+This design supports immediate revocation and scope narrowing without rotating the root key.
+
+## Response handling
+
+Provider-token and secret responses use `Cache-Control: no-store`. Connection-list responses never include token columns.
+
+<Warning>
+  Browser authentication protects only the browser facade. Keep the raw `/api` server surface inaccessible to untrusted clients even when `/api/client` is authenticated.
+</Warning>

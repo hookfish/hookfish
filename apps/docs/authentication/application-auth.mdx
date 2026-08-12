@@ -1,0 +1,59 @@
+---
+title: "Application authentication"
+description: "Protect the Hookfish browser facade with your application's existing identity provider."
+---
+
+Hookfish does not replace your application's authentication system. Connect Auth.js, Clerk, Auth0, Supabase Auth, or another identity provider through `authorizeBrowserRequest`.
+
+## Authorization contract
+
+The authorizer receives the browser request and the current runtime bindings. Return `undefined` to continue or return a `Response` to stop the request.
+
+```ts
+import { Hookfish } from '@hookfish/api'
+import config from './hookfish.config'
+import { authenticateRequest } from './auth'
+
+const hookfish = await Hookfish.init(config, {
+  authorizeBrowserRequest: async (request) => {
+    const identity = await authenticateRequest(request)
+
+    if (!identity) {
+      return Response.json(
+        { error: { code: 'unauthenticated', message: 'Sign in required.' } },
+        { status: 401 },
+      )
+    }
+
+    if (!identity.canManageConnections) {
+      return Response.json(
+        { error: { code: 'forbidden', message: 'Connection access denied.' } },
+        { status: 403 },
+      )
+    }
+
+    return undefined
+  },
+})
+```
+
+Adapt `authenticateRequest` to the server-side verifier supplied by your auth provider:
+
+| Application auth provider | Verify on the server | Identity to retain |
+| --- | --- | --- |
+| Auth.js | Resolve the current server session | User ID and tenant or organization ID |
+| Clerk | Verify the request and resolve its auth context | User ID and organization ID |
+| Auth0 | Validate the application session or access token | Subject and organization claim |
+| Supabase Auth | Resolve the authenticated user from the server client | User ID and application tenant ID |
+
+Provider SDK APIs change independently of Hookfish. Keep the provider-specific verification in `authenticateRequest` and test it with both signed-in and signed-out requests.
+
+## Browser facade limits
+
+The facade allows provider discovery, connection listing and details, authorization starts, and disconnects. It does not allow provider-token retrieval, secret-vault operations, or administrative operations.
+
+`authorizeBrowserRequest` decides whether a request may use the facade. It does not replace the broker credential injected by the facade.
+
+<Warning>
+  If different users or tenants require different Hookfish resource scopes, call the raw API from your own server with the correct scoped broker token. Do not expose one shared root-backed browser facade as tenant isolation.
+</Warning>

@@ -205,6 +205,7 @@ pnpm dev --no-open
 pnpm dev --backend express
 pnpm dev --backend nextjs
 pnpm dev --backend cloudflare-worker
+pnpm run docs
 pnpm build
 pnpm preview
 pnpm migrate

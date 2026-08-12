@@ -1,0 +1,56 @@
+---
+title: "API reference"
+description: "Discover Hookfish endpoints, authentication rules, and generated OpenAPI documentation."
+---
+
+Hookfish generates its API documentation from the same Hono route schemas used at runtime.
+
+- Swagger UI: `/api`
+- OpenAPI document: `/api/openapi.json`
+- Raw server API: `/api/*`
+- Browser facade: `/api/client/*`
+
+All raw API routes require `Authorization: Bearer <credential>` except OAuth callbacks. A callback is authenticated by its encrypted, single-use state.
+
+## Endpoint groups
+
+| Group | Base path | Purpose |
+| --- | --- | --- |
+| Providers | `/api/oauth/providers` | Discover configured providers and callback URLs |
+| Connections | `/api/oauth/connections` | List, inspect, retrieve tokens for, and disconnect linked accounts |
+| Authorization | `/api/oauth/authorize` | Start provider consent flows |
+| Broker tokens | `/api/admin/tokens` | Create, list, and revoke named broker credentials |
+| Dynamic providers | `/api/admin/providers` | Manage database-backed provider instances |
+| Secrets | `/api/secrets` | Store and retrieve encrypted non-OAuth credentials |
+| Stats | `/api/stats` | Inspect deployment metadata |
+
+## Browser-safe operations
+
+The `/api/client` facade forwards only:
+
+- Provider discovery
+- Connection lists and details
+- Authorization starts
+- Disconnects
+- Runtime health
+
+It does not forward provider-token retrieval, secret-vault operations, callbacks, or administration.
+
+## Error shape
+
+Hookfish returns stable error codes in a JSON object.
+
+```json
+{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "The credential cannot access this resource."
+  }
+}
+```
+
+Common authorization outcomes include `401 reauthorization_required`, `403 insufficient_scope`, and `409` when a connection ID is reused for a different provider.
+
+<Note>
+  Set `includeSwagger: false` to keep server-only operations out of the published OpenAPI document. The runtime routes still exist; this setting controls documentation visibility, not access control.
+</Note>

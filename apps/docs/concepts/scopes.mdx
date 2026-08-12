@@ -1,0 +1,43 @@
+---
+title: "The two kinds of scope"
+description: "Distinguish Hookfish resource scopes from upstream OAuth provider scopes."
+---
+
+Hookfish uses the word “scope” in two different security systems. Keep them separate when designing access policies and naming application types.
+
+## Resource scopes
+
+A Hookfish **resource scope** controls which connection IDs, dynamic providers, and secret paths a broker access token may use.
+
+```text
+acme/**
+acme/payments/**
+acme/support/**
+```
+
+Resource scopes are slash-delimited paths owned by Hookfish. They do not change what an upstream provider token can do.
+
+Read [Token scoping](/authorization/token-scoping) for normalization, delegation, and revocation rules.
+
+## Provider scopes
+
+An OAuth **provider scope** controls the permissions requested from GitHub, Linear, Notion, or another provider during consent.
+
+```json
+{
+  "connection_id": "acme/engineering/github",
+  "scopes": ["read:user", "repo"]
+}
+```
+
+Provider scopes belong to the provider's OAuth protocol. Hookfish passes them to the provider implementation and records the granted values with the connection.
+
+## Apply both layers
+
+Suppose a worker holds a broker token scoped to `acme/engineering/**`. It may retrieve the provider token stored at `acme/engineering/github`, but it cannot access `acme/finance/github`.
+
+The retrieved GitHub token can still perform only the operations allowed by the GitHub scopes approved during consent.
+
+<Note>
+  Restrict both layers. A narrow broker resource scope does not compensate for an overly broad provider scope, and a narrow provider scope does not prevent access to sibling Hookfish connections.
+</Note>
