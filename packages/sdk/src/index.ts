@@ -3,18 +3,18 @@ import {
   adminTokensList,
   adminTokensRevoke,
   connectionsAccess,
+  connectionsAuthorize,
   connectionsDisconnect,
   connectionsGet,
   connectionsList,
   connectionsProviders,
-  connectionsReauthorize,
   connectionsSetSecret,
   organizationConnectionsAccess,
+  organizationConnectionsAuthorize,
   organizationConnectionsDisconnect,
   organizationConnectionsGet,
   organizationConnectionsList,
   organizationConnectionsProviders,
-  organizationConnectionsReauthorize,
   organizationConnectionsSetSecret,
   organizationSecretsDelete,
   organizationSecretsGet,
@@ -93,17 +93,6 @@ export type ConnectionAccessInput = {
   returnTo?: string
 }
 
-export type McpAuthProviderInput = ConnectionAccessInput & {
-  /** Streamable HTTP MCP resource URL stored with this connection. */
-  url: string
-}
-
-/** Structurally compatible with the MCP TypeScript client's AuthProvider. */
-export type McpAuthProvider = {
-  token(): Promise<string | undefined>
-  onUnauthorized(): Promise<void>
-}
-
 export type ConnectionFilter = {
   namespace?: string
   providerId?: string
@@ -135,22 +124,6 @@ export class Hookfish {
     throwOnError: true as const,
   })
 
-  private reauthorizeConnection(path: string, input: ConnectionAccessInput) {
-    const options = this.requestOptions()
-    const parameters = {
-      connection_path: path,
-      url: input.url,
-      scopes: input.scopes,
-      return_to: input.returnTo,
-    }
-    return this.organization
-      ? organizationConnectionsReauthorize(
-          { ...parameters, organization: this.organization },
-          options,
-        )
-      : connectionsReauthorize(parameters, options)
-  }
-
   readonly connections = {
     access: (path: string, input: ConnectionAccessInput = {}) => {
       const options = this.requestOptions()
@@ -167,21 +140,21 @@ export class Hookfish {
           )
         : connectionsAccess(parameters, options)
     },
-    mcpAuthProvider: (
-      path: string,
-      input: McpAuthProviderInput,
-    ): McpAuthProvider => ({
-      token: async () => {
-        const result = await this.connections.access(path, input)
-        if ('secret' in result && typeof result.secret === 'string') {
-          return result.secret
-        }
-        return result.data.secret
-      },
-      onUnauthorized: async () => {
-        await this.reauthorizeConnection(path, input)
-      },
-    }),
+    authorize: (path: string, input: ConnectionAccessInput = {}) => {
+      const options = this.requestOptions()
+      const parameters = {
+        connection_path: path,
+        url: input.url,
+        scopes: input.scopes,
+        return_to: input.returnTo,
+      }
+      return this.organization
+        ? organizationConnectionsAuthorize(
+            { ...parameters, organization: this.organization },
+            options,
+          )
+        : connectionsAuthorize(parameters, options)
+    },
     setSecret: (path: string, secret: string) => {
       const options = this.requestOptions()
       return this.organization

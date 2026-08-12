@@ -14,8 +14,8 @@ connection API. Connection paths now end in a trusted provider ID, OAuth access
 returns a fresh authorization URL whenever authorization is required, static
 secrets use the built-in `secret` provider, and dynamic MCP servers use the
 built-in `mcp` provider with connection-local configuration and client
-credentials. The SDK's `mcpAuthProvider()` integrates connection access and
-upstream MCP reauthorization without route-level authorization catches.
+credentials. The SDK exposes explicit `access()` and `authorize()` operations
+that can be used directly from an MCP client's authentication provider.
 
 Upgrading intentionally drops the legacy `oauth_connections`,
 `oauth_providers`, and pending `oauth_states` data in Postgres, PGlite, and

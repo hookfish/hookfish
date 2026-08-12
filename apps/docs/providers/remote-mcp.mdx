@@ -25,20 +25,30 @@ export default defineHookfishConfig({
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
 const mcpUrl = new URL('https://mcp.notion.com/mcp')
-const authProvider = hookfish.connections.mcpAuthProvider(
-  'user/personal/notion/mcp',
-  {
+const connection = {
+  path: 'user/personal/notion/mcp',
+  input: {
     url: mcpUrl.href,
-    scopes: [],
     returnTo: 'https://app.example.com/integrations',
   },
-)
+}
+
+const authProvider = {
+  token: async () =>
+    (await hookfish.connections.access(connection.path, connection.input))
+      .secret,
+  onUnauthorized: async () => {
+    await hookfish.connections.authorize(connection.path, connection.input)
+  },
+}
 
 const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider })
 ```
 
-The provider calls Hookfish before each MCP request. When the MCP server returns
-`401`, it starts fresh authorization and lets Hookfish's direct
+The MCP client calls `token()` before each request. When initial authorization
+is needed, Hookfish's direct `authorization_required` error bubbles to your
+application error handler. When the MCP server returns `401`, `onUnauthorized`
+starts fresh authorization and lets the same
 `authorization_required` error bubble to your application error handler.
 
 The path ends in `mcp` because `mcp` is the provider implementation. The
@@ -48,6 +58,35 @@ with a fixed Notion connection at `user/personal/notion`, whose provider ID is
 
 The first access stores the normalized URL and scopes. Reusing the path with a
 different URL returns `connection_configuration_conflict`.
+
+## Non-OAuth credentials
+
+The MCP `AuthProvider` sends an `Authorization: Bearer` header. It can return a
+static bearer token from a Hookfish `secret` connection instead of an OAuth
+connection:
+
+```ts
+const authProvider = {
+  token: async () =>
+    (
+      await hookfish.connections.access(
+        'user/personal/notion-api-key/secret',
+      )
+    ).secret,
+}
+```
+
+For a server that expects a different header, access the same secret and inject
+it through the transport request options:
+
+```ts
+const { secret } = await hookfish.connections.access(
+  'user/personal/notion-api-key/secret',
+)
+const transport = new StreamableHTTPClientTransport(mcpUrl, {
+  requestInit: { headers: { 'X-API-Key': secret } },
+})
+```
 
 ## Client identity order
 
@@ -77,7 +116,7 @@ authorization endpoint, token endpoint, and PKCE S256. Hookfish validates a
 callback issuer when it is present.
 
 <Info>
-  Every unready access returns a newly generated authorization URL.
-  `mcpAuthProvider` also handles a credential rejected before its recorded
-  expiration.
+  Every unready access returns a newly generated authorization URL. Call
+  `connections.authorize()` after an upstream rejection to start a fresh flow
+  even when the stored credential has not reached its recorded expiration.
 </Info>

@@ -22,17 +22,25 @@ The database enforces one row per `(organization, namespace, providerId)`.
 
 ```ts
 const mcpUrl = new URL('https://gmail.run.tools')
-const authProvider = hookfish.connections.mcpAuthProvider(
-  'user/personal/gmail/mcp',
-  { url: mcpUrl.href, scopes: [] },
-)
+const connection = {
+  path: 'user/personal/gmail/mcp',
+  input: { url: mcpUrl.href },
+}
+const authProvider = {
+  token: async () =>
+    (await hookfish.connections.access(connection.path, connection.input))
+      .secret,
+  onUnauthorized: async () => {
+    await hookfish.connections.authorize(connection.path, connection.input)
+  },
+}
 ```
 
 When OAuth is required, the SDK throws `HookfishError` with code
 `authorization_required`, plus `authorizeUrl` and `expiresAt`. Each unready
 access creates a fresh URL and supersedes older pending state. For MCP, use
-`connections.mcpAuthProvider()` so an upstream `401` starts fresh authorization
-and lets the direct Hookfish error bubble to your application error handler.
+the client's `onUnauthorized` callback to call `connections.authorize()`. The
+direct Hookfish error then bubbles to your application error handler.
 
 For static credentials, register `createSecretProvider()` and call:
 
@@ -51,7 +59,7 @@ const { secret } = await hookfish.connections.access(
 | Method | Path |
 | --- | --- |
 | `POST` | `/api/connections/access/{connection_path}` |
-| `POST` | `/api/connections/reauthorize/{connection_path}` |
+| `POST` | `/api/connections/authorize/{connection_path}` |
 | `PUT` | `/api/connections/secret/{connection_path}` |
 | `GET` | `/api/connections` |
 | `GET` | `/api/connections/entry/{connection_path}` |

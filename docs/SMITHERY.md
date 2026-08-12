@@ -155,20 +155,35 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
 const mcpUrl = new URL(catalogServer.resourceUrl)
 const transport = new StreamableHTTPClientTransport(mcpUrl, {
-  authProvider: hookfish.connections.mcpAuthProvider(
-    `catalog/${catalogServer.id}/mcp`,
-    {
-      url: mcpUrl.href,
-      scopes: catalogServer.scopes,
-      returnTo: `${APP_URL}/organizations/${organization}/connections`,
+  authProvider: {
+    token: async () =>
+      (
+        await hookfish.connections.access(
+          `catalog/${catalogServer.id}/mcp`,
+          {
+            url: mcpUrl.href,
+            scopes: catalogServer.scopes,
+            returnTo: `${APP_URL}/organizations/${organization}/connections`,
+          },
+        )
+      ).secret,
+    onUnauthorized: async () => {
+      await hookfish.connections.authorize(
+        `catalog/${catalogServer.id}/mcp`,
+        {
+          url: mcpUrl.href,
+          scopes: catalogServer.scopes,
+          returnTo: `${APP_URL}/organizations/${organization}/connections`,
+        },
+      )
     },
-  ),
+  },
 })
 ```
 
-`mcpAuthProvider()` gets a usable token before an MCP request. When the upstream
-server rejects that token, it asks Hookfish to start fresh authorization and
-lets the resulting `HookfishError` bubble to the application error handler.
+The MCP client gets a usable token before each request. When the upstream server
+rejects that token, `onUnauthorized` asks Hookfish to start fresh authorization
+and lets the resulting `HookfishError` bubble to the application error handler.
 
 Hookfish discovers the authorization server and then chooses client identity in
 this order:

@@ -80,7 +80,7 @@ describe('Hookfish', () => {
     })
   })
 
-  it('provides MCP authentication and starts fresh authorization on 401', async () => {
+  it('starts fresh authorization explicitly', async () => {
     const requests: Request[] = []
     const hookfish = new Hookfish({
       apiKey: 'broker-key',
@@ -88,7 +88,7 @@ describe('Hookfish', () => {
       fetch: async (input, init) => {
         const request = new Request(input, init)
         requests.push(request)
-        if (request.url.includes('/reauthorize/')) {
+        if (request.url.includes('/authorize/')) {
           return Response.json(
             {
               error: {
@@ -105,14 +105,11 @@ describe('Hookfish', () => {
       },
     })
 
-    const authProvider = hookfish.connections.mcpAuthProvider(
-      'user/personal/gmail/mcp',
-      { url: 'https://gmail.run.tools', scopes: [] },
-    )
-
-    await expect(authProvider.token()).resolves.toBe('gmail-token')
-    const error: unknown = await authProvider
-      .onUnauthorized()
+    const error: unknown = await hookfish.connections
+      .authorize('user/personal/gmail/mcp', {
+        url: 'https://gmail.run.tools',
+        scopes: [],
+      })
       .catch((value: unknown) => value)
 
     expect(error).toMatchObject({
@@ -121,8 +118,7 @@ describe('Hookfish', () => {
       status: 401,
     })
     expect(requests.map(({ url }) => url)).toEqual([
-      'http://local/api/connections/access/user%2Fpersonal%2Fgmail%2Fmcp',
-      'http://local/api/connections/reauthorize/user%2Fpersonal%2Fgmail%2Fmcp',
+      'http://local/api/connections/authorize/user%2Fpersonal%2Fgmail%2Fmcp',
     ])
   })
 })

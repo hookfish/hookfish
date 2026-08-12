@@ -52,8 +52,9 @@ refreshed }`. For an OAuth-backed connection that is not ready,
 
 Each unready access creates new state, PKCE material when required, and a fresh
 authorization URL. It supersedes earlier pending URLs for that connection.
-For MCP connections, `mcpAuthProvider` reports an upstream `401` to Hookfish,
-which starts fresh authorization even if the stored expiration has not passed.
+Call `connections.authorize()` to start a fresh flow unconditionally, such as
+after an upstream MCP server rejects a credential whose stored expiration has
+not passed.
 
 ## Lifecycle
 

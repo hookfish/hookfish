@@ -383,7 +383,7 @@ export async function authorizeServer(
   returnTo.searchParams.set('oauth', 'complete')
   const response = await handleHookfishRequest(
     new Request(
-      new URL(`/api/connections/reauthorize/${connectionPath}`, origin),
+      new URL(`/api/connections/authorize/${connectionPath}`, origin),
       {
         headers: {
           Authorization: `Bearer ${apiKey()}`,

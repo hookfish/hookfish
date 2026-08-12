@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsReauthorizeErrors, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, OrganizationConnectionsAccessErrors, OrganizationConnectionsAccessResponses, OrganizationConnectionsDisconnectErrors, OrganizationConnectionsDisconnectResponses, OrganizationConnectionsGetErrors, OrganizationConnectionsGetResponses, OrganizationConnectionsListErrors, OrganizationConnectionsListResponses, OrganizationConnectionsProvidersErrors, OrganizationConnectionsProvidersResponses, OrganizationConnectionsReauthorizeErrors, OrganizationConnectionsSetSecretErrors, OrganizationConnectionsSetSecretResponses, OrganizationSecretsDeleteErrors, OrganizationSecretsDeleteResponses, OrganizationSecretsGetErrors, OrganizationSecretsGetResponses, OrganizationSecretsListErrors, OrganizationSecretsListResponses, OrganizationSecretsPutErrors, OrganizationSecretsPutResponses, SecretsDeleteErrors, SecretsDeleteResponses, SecretsGetErrors, SecretsGetResponses, SecretsListErrors, SecretsListResponses, SecretsPutErrors, SecretsPutResponses, StatsGetResponses } from './types.gen';
+import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, OrganizationConnectionsAccessErrors, OrganizationConnectionsAccessResponses, OrganizationConnectionsAuthorizeErrors, OrganizationConnectionsDisconnectErrors, OrganizationConnectionsDisconnectResponses, OrganizationConnectionsGetErrors, OrganizationConnectionsGetResponses, OrganizationConnectionsListErrors, OrganizationConnectionsListResponses, OrganizationConnectionsProvidersErrors, OrganizationConnectionsProvidersResponses, OrganizationConnectionsSetSecretErrors, OrganizationConnectionsSetSecretResponses, OrganizationSecretsDeleteErrors, OrganizationSecretsDeleteResponses, OrganizationSecretsGetErrors, OrganizationSecretsGetResponses, OrganizationSecretsListErrors, OrganizationSecretsListResponses, OrganizationSecretsPutErrors, OrganizationSecretsPutResponses, SecretsDeleteErrors, SecretsDeleteResponses, SecretsGetErrors, SecretsGetResponses, SecretsListErrors, SecretsListResponses, SecretsPutErrors, SecretsPutResponses, StatsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -114,21 +114,21 @@ export const connectionsAccess = <ThrowOnError extends boolean = false>(paramete
  *
  * Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.
  */
-export const connectionsReauthorize = <ThrowOnError extends boolean = false>(parameters: {
+export const connectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
     connection_path: string;
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<unknown, ConnectionsReauthorizeErrors, ThrowOnError> => {
+}, options?: Options<never, ThrowOnError>): RequestResult<unknown, ConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'connection_path' },
                 { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).post<unknown, ConnectionsReauthorizeErrors, ThrowOnError>({
+    return (options?.client ?? client).post<unknown, ConnectionsAuthorizeErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/connections/reauthorize/{connection_path}',
+        url: '/connections/authorize/{connection_path}',
         ...options,
         ...params,
         headers: {
@@ -353,13 +353,13 @@ export const organizationConnectionsAccess = <ThrowOnError extends boolean = fal
  *
  * Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.
  */
-export const organizationConnectionsReauthorize = <ThrowOnError extends boolean = false>(parameters: {
+export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
     connection_path: string;
     url?: string;
     scopes?: Array<string>;
     return_to?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<unknown, OrganizationConnectionsReauthorizeErrors, ThrowOnError> => {
+}, options?: Options<never, ThrowOnError>): RequestResult<unknown, OrganizationConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
                 { in: 'path', key: 'connection_path' },
@@ -367,9 +367,9 @@ export const organizationConnectionsReauthorize = <ThrowOnError extends boolean 
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).post<unknown, OrganizationConnectionsReauthorizeErrors, ThrowOnError>({
+    return (options?.client ?? client).post<unknown, OrganizationConnectionsAuthorizeErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/connections/reauthorize/{connection_path}',
+        url: '/organization/{organization}/connections/authorize/{connection_path}',
         ...options,
         ...params,
         headers: {

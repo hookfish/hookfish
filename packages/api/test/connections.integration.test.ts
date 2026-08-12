@@ -51,7 +51,7 @@ describe('connections', () => {
     })
 
     const forced = await harness.fetch(
-      '/api/connections/reauthorize/user/personal/stub',
+      '/api/connections/authorize/user/personal/stub',
       {
         method: 'POST',
       },
@@ -62,7 +62,7 @@ describe('connections', () => {
     })
   })
 
-  it('reauthorizes when access requests scopes missing from the stored grant', async () => {
+  it('starts fresh authorization when access requests missing scopes', async () => {
     const authorization = await harness.authorize()
     const callbackUrl = new URL(authorization.callbackUrl)
     const callback = await harness.fetch(

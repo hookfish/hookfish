@@ -66,10 +66,21 @@ server's OAuth discovery metadata and supported client-registration mechanism.
       new StreamableHTTPClientTransport(
         new URL('https://gmail.run.tools'),
         {
-          authProvider: hookfish.connections.mcpAuthProvider(
-            'user/personal/gmail/mcp',
-            { url: 'https://gmail.run.tools' },
-          ),
+          authProvider: {
+            token: async () =>
+              (
+                await hookfish.connections.access(
+                  'user/personal/gmail/mcp',
+                  { url: 'https://gmail.run.tools' },
+                )
+              ).secret,
+            onUnauthorized: async () => {
+              await hookfish.connections.authorize(
+                'user/personal/gmail/mcp',
+                { url: 'https://gmail.run.tools' },
+              )
+            },
+          },
         },
       ),
     )
@@ -111,7 +122,7 @@ that supplies a different MCP URL for the same path. A fixed Gmail provider at
 `gmail`.
 
 <Warning>
-  Run this script only in a trusted environment. `mcpAuthProvider()` obtains
+  Run this script only in a trusted environment. The MCP auth provider obtains
   the usable credential and sends it to the configured MCP server.
 </Warning>
 

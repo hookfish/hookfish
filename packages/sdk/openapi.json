@@ -1050,9 +1050,9 @@
         }
       }
     },
-    "/connections/reauthorize/{connection_path}": {
+    "/connections/authorize/{connection_path}": {
       "post": {
-        "operationId": "connections.reauthorize",
+        "operationId": "connections.authorize",
         "summary": "Start fresh authorization for a connection",
         "description": "Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.",
         "security": [
@@ -4627,9 +4627,9 @@
         }
       ]
     },
-    "/organization/{organization}/connections/reauthorize/{connection_path}": {
+    "/organization/{organization}/connections/authorize/{connection_path}": {
       "post": {
-        "operationId": "organization.connections.reauthorize",
+        "operationId": "organization.connections.authorize",
         "summary": "Start fresh authorization for a connection",
         "description": "Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.",
         "security": [

@@ -35,7 +35,7 @@ describe('canonical Hookfish OpenAPI document', () => {
     )
 
     expect(paths).toHaveProperty('/connections/secret/{connection_path}')
-    expect(paths).toHaveProperty('/connections/reauthorize/{connection_path}')
+    expect(paths).toHaveProperty('/connections/authorize/{connection_path}')
     expect(paths).toHaveProperty('/connections/callback/{provider_id}')
     expect(paths).toHaveProperty('/connections/client-metadata.json')
     expect(paths).not.toHaveProperty(

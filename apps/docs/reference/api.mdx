@@ -17,7 +17,7 @@ Authorization: Bearer <broker-credential>
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/connections/access/{connection_path}` | Return a secret or `authorization_required` |
-| `POST` | `/api/connections/reauthorize/{connection_path}` | Start fresh authorization after an upstream rejection |
+| `POST` | `/api/connections/authorize/{connection_path}` | Start fresh authorization unconditionally |
 | `PUT` | `/api/connections/secret/{connection_path}` | Set or rotate a static provider secret |
 | `GET` | `/api/connections` | List metadata |
 | `GET` | `/api/connections/entry/{connection_path}` | Get metadata |

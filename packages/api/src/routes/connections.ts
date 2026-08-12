@@ -4,10 +4,10 @@ import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import { assertConnectionAccess } from '../oauth/access-token'
 import {
   accessConnection,
+  authorizeConnection,
   completeAuthorization,
   disconnectConnection,
   failAuthorization,
-  reauthorizeConnection,
   setConnectionSecret,
 } from '../oauth/broker'
 import {
@@ -220,10 +220,10 @@ const accessRoute = createRoute({
   },
 })
 
-const reauthorizeRoute = createRoute({
+const authorizeRoute = createRoute({
   method: 'post',
-  path: '/reauthorize/{connection_path}',
-  operationId: 'connections.reauthorize',
+  path: '/authorize/{connection_path}',
+  operationId: 'connections.authorize',
   summary: 'Start fresh authorization for a connection',
   description:
     'Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.',
@@ -393,9 +393,9 @@ const accessRuntimeRoute = createRoute({
   path: '/access/:connection_path{.+}',
   hide: true,
 })
-const reauthorizeRuntimeRoute = createRoute({
-  ...reauthorizeRoute,
-  path: '/reauthorize/:connection_path{.+}',
+const authorizeRuntimeRoute = createRoute({
+  ...authorizeRoute,
+  path: '/authorize/:connection_path{.+}',
   hide: true,
 })
 const secretRuntimeRoute = createRoute({
@@ -447,7 +447,7 @@ export function createConnectionRoutes<Bindings extends object>(
 
   routes.use('/providers', connectManagementDatabase, authenticate)
   routes.use('/access/*', connectManagementDatabase, authenticate)
-  routes.use('/reauthorize/*', connectManagementDatabase, authenticate)
+  routes.use('/authorize/*', connectManagementDatabase, authenticate)
   routes.use('/secret/*', connectManagementDatabase, authenticate)
   routes.use('/', connectManagementDatabase, authenticate)
   routes.use('/entry/*', connectManagementDatabase, authenticate)
@@ -455,7 +455,7 @@ export function createConnectionRoutes<Bindings extends object>(
 
   for (const route of [
     accessRoute,
-    reauthorizeRoute,
+    authorizeRoute,
     setSecretRoute,
     getRoute,
     disconnectRoute,
@@ -574,54 +574,51 @@ export function createConnectionRoutes<Bindings extends object>(
     )
   })
 
-  const reauthorizeApi = accessApi.openapi(
-    reauthorizeRuntimeRoute,
-    async (c) => {
-      const parsed = parseConnectionPath(c.req.valid('param').connection_path)
-      assertConnectionAccess(c.get('accessGrant'), parsed.path)
-      const body = c.req.valid('json') ?? {}
-      const config = resolveBrokerConfig(c.env)
-      try {
-        return await reauthorizeConnection(
-          c.get('db'),
-          config,
-          {
-            organization: c.get('databaseContext').organization,
-            namespace: parsed.namespace,
-            providerId: parsed.providerId,
-            configuration: body.url
-              ? { resource_url: body.url, scopes: body.scopes ?? [] }
-              : undefined,
-            scopes: body.scopes,
-            returnTo: validateReturnTo(
-              body.return_to,
-              options.trustedOrigins ?? [],
-            ),
-            redirectUri: resolveConnectionCallbackUri(
-              config,
-              c.req.url,
-              parsed.providerId,
-            ),
-            clientMetadataUrl: resolveClientMetadataUri(config, c.req.url),
-          },
-          await resolveProviders(c.env),
-        )
-      } catch (error) {
-        if (isBrokerError(error) && error.code === 'authorization_required') {
-          await emitHookfishEvent(options.onEvent, {
-            type: 'authorization.started',
-            occurredAt: new Date(),
-            organization: c.get('databaseContext').organization,
-            providerId: parsed.providerId,
-            connectionPath: parsed.path,
-          })
-        }
-        throw error
+  const authorizeApi = accessApi.openapi(authorizeRuntimeRoute, async (c) => {
+    const parsed = parseConnectionPath(c.req.valid('param').connection_path)
+    assertConnectionAccess(c.get('accessGrant'), parsed.path)
+    const body = c.req.valid('json') ?? {}
+    const config = resolveBrokerConfig(c.env)
+    try {
+      return await authorizeConnection(
+        c.get('db'),
+        config,
+        {
+          organization: c.get('databaseContext').organization,
+          namespace: parsed.namespace,
+          providerId: parsed.providerId,
+          configuration: body.url
+            ? { resource_url: body.url, scopes: body.scopes ?? [] }
+            : undefined,
+          scopes: body.scopes,
+          returnTo: validateReturnTo(
+            body.return_to,
+            options.trustedOrigins ?? [],
+          ),
+          redirectUri: resolveConnectionCallbackUri(
+            config,
+            c.req.url,
+            parsed.providerId,
+          ),
+          clientMetadataUrl: resolveClientMetadataUri(config, c.req.url),
+        },
+        await resolveProviders(c.env),
+      )
+    } catch (error) {
+      if (isBrokerError(error) && error.code === 'authorization_required') {
+        await emitHookfishEvent(options.onEvent, {
+          type: 'authorization.started',
+          occurredAt: new Date(),
+          organization: c.get('databaseContext').organization,
+          providerId: parsed.providerId,
+          connectionPath: parsed.path,
+        })
       }
-    },
-  )
+      throw error
+    }
+  })
 
-  const secretApi = reauthorizeApi.openapi(secretRuntimeRoute, async (c) => {
+  const secretApi = authorizeApi.openapi(secretRuntimeRoute, async (c) => {
     const parsed = parseConnectionPath(c.req.valid('param').connection_path)
     assertConnectionAccess(c.get('accessGrant'), parsed.path)
     const body = c.req.valid('json')

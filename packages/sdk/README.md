@@ -12,10 +12,18 @@ const hookfish = new Hookfish({
 })
 
 const mcpUrl = new URL('https://gmail.run.tools')
-const authProvider = hookfish.connections.mcpAuthProvider(
-  'user/personal/gmail/mcp',
-  { url: mcpUrl.href, scopes: [] },
-)
+const connection = {
+  path: 'user/personal/gmail/mcp',
+  input: { url: mcpUrl.href },
+}
+const authProvider = {
+  token: async () =>
+    (await hookfish.connections.access(connection.path, connection.input))
+      .secret,
+  onUnauthorized: async () => {
+    await hookfish.connections.authorize(connection.path, connection.input)
+  },
+}
 const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider })
 ```
 

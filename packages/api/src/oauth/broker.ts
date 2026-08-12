@@ -722,7 +722,7 @@ export async function accessConnection(
   }
 }
 
-export async function reauthorizeConnection(
+export async function authorizeConnection(
   db: Database,
   env: object,
   input: {
@@ -743,7 +743,7 @@ export async function reauthorizeConnection(
     throw new BrokerError(
       400,
       'connection_option_unsupported',
-      'Static-secret connections do not support reauthorization.',
+      'Static-secret connections do not support authorization.',
     )
   }
 

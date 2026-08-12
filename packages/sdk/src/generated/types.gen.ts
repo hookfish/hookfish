@@ -364,7 +364,7 @@ export type ConnectionsAccessResponses = {
 
 export type ConnectionsAccessResponse = ConnectionsAccessResponses[keyof ConnectionsAccessResponses];
 
-export type ConnectionsReauthorizeData = {
+export type ConnectionsAuthorizeData = {
     body?: {
         url?: string;
         scopes?: Array<string>;
@@ -374,10 +374,10 @@ export type ConnectionsReauthorizeData = {
         connection_path: string;
     };
     query?: never;
-    url: '/connections/reauthorize/{connection_path}';
+    url: '/connections/authorize/{connection_path}';
 };
 
-export type ConnectionsReauthorizeErrors = {
+export type ConnectionsAuthorizeErrors = {
     /**
      * Invalid request
      */
@@ -464,7 +464,7 @@ export type ConnectionsReauthorizeErrors = {
     };
 };
 
-export type ConnectionsReauthorizeError = ConnectionsReauthorizeErrors[keyof ConnectionsReauthorizeErrors];
+export type ConnectionsAuthorizeError = ConnectionsAuthorizeErrors[keyof ConnectionsAuthorizeErrors];
 
 export type ConnectionsSetSecretData = {
     body?: {
@@ -1599,7 +1599,7 @@ export type OrganizationConnectionsAccessResponses = {
 
 export type OrganizationConnectionsAccessResponse = OrganizationConnectionsAccessResponses[keyof OrganizationConnectionsAccessResponses];
 
-export type OrganizationConnectionsReauthorizeData = {
+export type OrganizationConnectionsAuthorizeData = {
     body?: {
         url?: string;
         scopes?: Array<string>;
@@ -1613,10 +1613,10 @@ export type OrganizationConnectionsReauthorizeData = {
         connection_path: string;
     };
     query?: never;
-    url: '/organization/{organization}/connections/reauthorize/{connection_path}';
+    url: '/organization/{organization}/connections/authorize/{connection_path}';
 };
 
-export type OrganizationConnectionsReauthorizeErrors = {
+export type OrganizationConnectionsAuthorizeErrors = {
     /**
      * Invalid request
      */
@@ -1703,7 +1703,7 @@ export type OrganizationConnectionsReauthorizeErrors = {
     };
 };
 
-export type OrganizationConnectionsReauthorizeError = OrganizationConnectionsReauthorizeErrors[keyof OrganizationConnectionsReauthorizeErrors];
+export type OrganizationConnectionsAuthorizeError = OrganizationConnectionsAuthorizeErrors[keyof OrganizationConnectionsAuthorizeErrors];
 
 export type OrganizationConnectionsSetSecretData = {
     body?: {
