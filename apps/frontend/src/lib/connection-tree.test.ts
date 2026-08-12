@@ -43,4 +43,19 @@ describe('connection tree', () => {
       'team/support',
     ])
   })
+
+  it('includes empty local folders and folders implied by other resources', () => {
+    const directory = connectionDirectory(
+      [connection('team/accounts/github')],
+      'team',
+      ['team/empty'],
+      ['team/secrets/openai'],
+    )
+
+    expect(directory.folders).toEqual([
+      { name: 'accounts', path: 'team/accounts', itemCount: 1 },
+      { name: 'empty', path: 'team/empty', itemCount: 0 },
+      { name: 'secrets', path: 'team/secrets', itemCount: 1 },
+    ])
+  })
 })

@@ -185,6 +185,24 @@ describe('connections', () => {
     })
   })
 
+  it('stores a connection without a namespace', async () => {
+    const stored = await harness.fetch('/api/connections/secret/secret', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: 'root-secret' }),
+    })
+    expect(stored.status).toBe(200)
+
+    const access = await harness.fetch('/api/connections/access/secret', {
+      method: 'POST',
+    })
+    expect(access.status).toBe(200)
+    await expect(access.json()).resolves.toMatchObject({
+      path: 'secret',
+      secret: 'root-secret',
+    })
+  })
+
   it('returns a fresh authorization URL when refresh is rejected', async () => {
     const authorization = await harness.authorize()
     const callbackUrl = new URL(authorization.callbackUrl)
@@ -234,6 +252,11 @@ describe('connections', () => {
   })
 
   it('treats a fixed provider and dynamic MCP path as different identities', () => {
+    expect(parseConnectionPath('github')).toEqual({
+      path: 'github',
+      namespace: '',
+      providerId: 'github',
+    })
     expect(parseConnectionPath('user/personal/gmail')).toEqual({
       path: 'user/personal/gmail',
       namespace: 'user/personal',

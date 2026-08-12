@@ -491,7 +491,9 @@ export class HookfishDurableObject<Env = object>
       .toArray()
       .map(toConnection)
       .filter((connection) => {
-        const path = `${connection.namespace}/${connection.providerId}`
+        const path = connection.namespace
+          ? `${connection.namespace}/${connection.providerId}`
+          : connection.providerId
         return (
           (!filter.providerId || connection.providerId === filter.providerId) &&
           (!filter.namespace ||

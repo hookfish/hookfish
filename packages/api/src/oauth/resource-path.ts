@@ -23,18 +23,13 @@ export function normalizeProviderId(providerId: string): string {
 export function parseConnectionPath(path: string): ConnectionPath {
   const normalized = normalizeResourcePath(path, 'connection')
   const separator = normalized.lastIndexOf('/')
-  if (separator <= 0 || separator === normalized.length - 1) {
-    throw new BrokerError(
-      400,
-      'invalid_connection_path',
-      'Connection paths must contain a namespace followed by a provider id.',
-    )
-  }
 
   return {
     path: normalized,
-    namespace: normalized.slice(0, separator),
-    providerId: normalizeProviderId(normalized.slice(separator + 1)),
+    namespace: separator === -1 ? '' : normalized.slice(0, separator),
+    providerId: normalizeProviderId(
+      separator === -1 ? normalized : normalized.slice(separator + 1),
+    ),
   }
 }
 
@@ -42,9 +37,11 @@ export function formatConnectionPath(
   namespace: string,
   providerId: string,
 ): string {
-  normalizeResourcePath(namespace, 'namespace')
-  normalizeProviderId(providerId)
-  return parseConnectionPath(`${namespace}/${providerId}`).path
+  const normalizedProviderId = normalizeProviderId(providerId)
+  if (!namespace) return normalizedProviderId
+  return parseConnectionPath(
+    `${normalizeResourcePath(namespace, 'namespace')}/${normalizedProviderId}`,
+  ).path
 }
 
 function hasUnsafePathCharacters(value: string): boolean {

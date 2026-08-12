@@ -60,7 +60,7 @@ permissions before explicitly starting another flow with
 
 | Status | Code | Meaning |
 | --- | --- | --- |
-| `400` | `invalid_connection_path` | Path lacks a namespace and provider ID |
+| `400` | `invalid_connection_path` | Path is empty or is not a canonical resource identifier |
 | `400` | `invalid_provider_id` | Final segment is not an allowed provider ID |
 | `400` | `invalid_connection_configuration` | MCP URL or scopes are invalid |
 | `401` | `authorization_required` | Open the fresh URL to make the connection ready |

@@ -713,7 +713,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -1064,7 +1064,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -1374,7 +1374,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -1702,7 +1702,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -2064,7 +2064,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -4276,7 +4276,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -4641,7 +4641,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -4965,7 +4965,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -5307,7 +5307,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
@@ -5669,7 +5669,7 @@
           {
             "schema": {
               "type": "string",
-              "minLength": 3,
+              "minLength": 1,
               "maxLength": 512
             },
             "required": true,
