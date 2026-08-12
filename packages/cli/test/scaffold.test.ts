@@ -85,9 +85,7 @@ describe('scaffoldProject', () => {
       path.join(result.directory, environmentFile),
       'utf8',
     )
-    const encryptionKey = environment.match(
-      /^OAUTH_ENCRYPTION_KEY=(.+)$/m,
-    )?.[1]
+    const encryptionKey = environment.match(/^OAUTH_ENCRYPTION_KEY=(.+)$/m)?.[1]
     const brokerApiKey = environment.match(/^HOOKFISH_API_KEY=(.+)$/m)?.[1]
 
     expect(encryptionKey).toMatch(/^[A-Za-z0-9+/]{43}=$/)
