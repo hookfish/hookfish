@@ -30,6 +30,18 @@ const connections = hookfish.useConnections({
 })
 ```
 
+Provider listings also accept registry-specific query fields. They are sent as
+strings and included in the React Query cache key, so a registry may implement
+offsets, cursors, or custom filters without changing the hooks package:
+
+```tsx
+const providers = hookfish.useProviderSearch({
+  search: 'notion',
+  limit: 50,
+  offset: 100,
+})
+```
+
 Protected routes accept any headers supported by Hono's RPC client. Prefer a
 browser-safe session token or cookie. Never put `BROKER_API_KEY` in frontend
 code:

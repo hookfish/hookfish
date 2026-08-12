@@ -41,6 +41,24 @@ export default defineHookfishConfig({
   organizationRouting: false, // Use /api/organization/:organization/oauth management routes.
   providerManagement: true,
   // onEvent: async (event) => auditLog.write(event),
+
+  // For a large dynamic registry, replace the provider map below with
+  // `createProviderSource` (imported from `@hookfish/api`). OAuth operations
+  // call only `getProvider(id)`, while explicit listing requests call the
+  // optional `listProviders(query)` callback:
+  //
+  // providers: createProviderSource({
+  //   getProvider: async (id, env) => env.REGISTRY.getProvider(id),
+  //   listProviders: async (query, env) => {
+  //     const offset = Number(query.get('offset') ?? 0)
+  //     const page = await env.REGISTRY.list({ offset, limit: 50 })
+  //     return { providers: page.providers, offset, total: page.total }
+  //   },
+  // }),
+  //
+  // Hookfish passes custom query and result fields through unchanged, so the
+  // registry may instead use cursors or return every provider. See
+  // docs/SMITHERY.md for a complete global-registry, org-connections example.
   providers: (env: typeof process.env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({

@@ -1,9 +1,6 @@
-import {
-  isOAuthProviderTemplate,
-  type OAuthProvider,
-  type ProviderRegistry,
-} from '@hookfish/provider'
+import { isOAuthProviderTemplate, type OAuthProvider } from '@hookfish/provider'
 import type { Database, OAuthProviderRecord } from '../db/types'
+import type { BoundProviderSource } from '../provider-source'
 import { getVaultSecret, organizationKey } from '../vault'
 import { type ProviderConfig, resolveProviderConfig } from './config'
 import { BrokerError } from './errors'
@@ -62,9 +59,9 @@ async function instantiateDynamicProvider(
   db: Database,
   env: object,
   record: OAuthProviderRecord,
-  providers: ProviderRegistry,
+  providers: BoundProviderSource,
 ): Promise<OAuthProvider> {
-  const template = providers.getProvider(record.templateId)
+  const template = await providers.getProvider(record.templateId)
   if (!template || !isOAuthProviderTemplate(template)) {
     throw new BrokerError(
       500,
@@ -126,24 +123,20 @@ export async function resolveRequestProviderConfig(
   db: Database,
   env: object,
   providerId: string,
-  providers: ProviderRegistry,
+  providers: BoundProviderSource,
   organization?: string,
   options: { forNewAuthorization?: boolean } = {},
 ): Promise<ProviderConfig> {
   normalizeProviderId(providerId)
-  const fixed = providers.getProvider(providerId)
-  if (fixed) return resolveProviderConfig(providerId, providers)
+  const fixed = await providers.getProvider(providerId)
+  if (fixed) return resolveProviderConfig(providerId, fixed)
 
   const record = await findDynamicProvider(db, providerId, organization)
   if (!record) {
-    const dynamicIds = (await listDynamicProviders(db, organization)).map(
-      ({ providerId: id }) => id,
-    )
-    const known = [...providers.listProviderIds(), ...dynamicIds]
     throw new BrokerError(
       404,
       'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${known.join(', ')}.`,
+      `Unknown provider "${providerId}".`,
     )
   }
   if (options.forNewAuthorization && !record.enabled) {
@@ -177,27 +170,36 @@ export type ProviderDescriptorFilter = {
   source?: 'fixed' | 'dynamic'
 }
 
-export async function listProviderDescriptors(
+export type ProviderDescriptorListResult = {
+  providers: ProviderDescriptor[]
+  [key: string]: unknown
+}
+
+export async function listProviderDescriptorPage(
   db: Database,
   env: object,
-  providers: ProviderRegistry,
+  providers: BoundProviderSource,
   organization?: string,
   filter: ProviderDescriptorFilter = {},
-): Promise<ProviderDescriptor[]> {
+  query = new URLSearchParams(),
+): Promise<ProviderDescriptorListResult> {
   const search = filter.search?.trim().toLowerCase()
-  const fixed: ProviderDescriptor[] = providers
-    .listProviders()
+  const sourceResult =
+    filter.source === 'dynamic'
+      ? { providers: [] }
+      : await providers.listProviders(query)
+  const { providers: sourceProviders, ...listingMetadata } = sourceResult
+  const fixed: ProviderDescriptor[] = sourceProviders
     .filter(
-      ([id, provider]) =>
-        filter.source !== 'dynamic' &&
-        (!search ||
-          id.toLowerCase().includes(search) ||
-          provider.label?.toLowerCase().includes(search)),
+      ({ id, provider }) =>
+        !search ||
+        id.toLowerCase().includes(search) ||
+        provider.label?.toLowerCase().includes(search),
     )
-    .map(([id, provider]) => ({
+    .map(({ id, provider }) => ({
       id,
       label: provider.label ?? id,
-      configured: providers.isProviderConfigured(id),
+      configured: provider.isConfigured?.() ?? true,
       enabled: true,
       source: 'fixed',
       provider,
@@ -259,7 +261,22 @@ export async function listProviderDescriptors(
       : descriptors.filter(
           (descriptor) => descriptor.configured === filter.configured,
         )
-  return filter.limit
-    ? filteredDescriptors.slice(0, filter.limit)
-    : filteredDescriptors
+  return {
+    ...listingMetadata,
+    providers: filter.limit
+      ? filteredDescriptors.slice(0, filter.limit)
+      : filteredDescriptors,
+  }
+}
+
+export async function listProviderDescriptors(
+  db: Database,
+  env: object,
+  providers: BoundProviderSource,
+  organization?: string,
+  filter: ProviderDescriptorFilter = {},
+): Promise<ProviderDescriptor[]> {
+  return (
+    await listProviderDescriptorPage(db, env, providers, organization, filter)
+  ).providers
 }

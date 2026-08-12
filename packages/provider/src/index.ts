@@ -114,6 +114,67 @@ export interface OAuthProvider {
   revokeToken?(input: RevokeTokenInput): Promise<void>
 }
 
+export type ProviderSourceEntry = {
+  id: string
+  provider: OAuthProvider
+}
+
+/**
+ * A provider listing always contains provider entries, while registry-specific
+ * pagination or result metadata may be returned alongside them.
+ */
+export type ProviderSourceListResult = {
+  providers: ProviderSourceEntry[]
+  [key: string]: unknown
+}
+
+export type ProviderSourceResult<T> = T | Promise<T>
+
+/** The read-only URL query surface passed to provider listings. */
+export interface ProviderSourceQuery {
+  get(name: string): string | null
+  getAll(name: string): string[]
+  has(name: string): boolean
+  toString(): string
+}
+
+/**
+ * Lazily resolves providers from an application-owned registry.
+ *
+ * `getProvider` is the OAuth hot path and should fetch only the requested
+ * provider. `listProviders` is optional and receives the request query string
+ * unchanged, allowing registries to list everything or implement their own
+ * offset, cursor, search, and filtering conventions.
+ */
+export interface ProviderSource<Bindings extends object = object> {
+  getProvider(
+    providerId: string,
+    bindings: Bindings,
+  ): ProviderSourceResult<OAuthProvider | undefined>
+  listProviders?(
+    query: ProviderSourceQuery,
+    bindings: Bindings,
+  ): ProviderSourceResult<ProviderSourceListResult>
+}
+
+/** Define a lazy provider source while preserving its binding types. */
+export function createProviderSource<Bindings extends object = object>(
+  source: ProviderSource<Bindings>,
+): ProviderSource<Bindings> {
+  return source
+}
+
+export function isProviderSource(
+  value: unknown,
+): value is ProviderSource<object> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof Reflect.get(value, 'getProvider') === 'function' &&
+    !isProviderRegistry(value)
+  )
+}
+
 export function isOAuthProviderTemplate(
   provider: OAuthProvider,
 ): provider is OAuthProviderTemplate {
@@ -167,7 +228,9 @@ export function isProviderRegistry(value: unknown): value is ProviderRegistry {
     typeof value === 'object' &&
     value !== null &&
     typeof Reflect.get(value, 'getProvider') === 'function' &&
-    typeof Reflect.get(value, 'listProviders') === 'function'
+    typeof Reflect.get(value, 'listProviders') === 'function' &&
+    typeof Reflect.get(value, 'listProviderIds') === 'function' &&
+    typeof Reflect.get(value, 'isProviderConfigured') === 'function'
   )
 }
 

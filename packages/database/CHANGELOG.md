@@ -1,5 +1,12 @@
 # @hookfish/database
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [397067d]
+  - @hookfish/api@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

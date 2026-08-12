@@ -50,7 +50,7 @@ jobs:
 
       - name: Build canary packages
         if: steps.release-plan.outputs.publish == 'true'
-        run: pnpm build
+        run: pnpm build:publish
 
       - name: Publish canary packages
         if: steps.release-plan.outputs.publish == 'true'

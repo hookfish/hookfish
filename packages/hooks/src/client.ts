@@ -37,12 +37,13 @@ type DisconnectEndpoint =
 
 export type StatsResponse = InferResponseType<StatsEndpoint, 200>
 export type ProvidersResponse = InferResponseType<ProvidersEndpoint, 200>
+export type ProviderListQueryValue = string | number | boolean | undefined
 export type ProvidersFilter = {
   include_unconfigured?: boolean
   search?: string
   limit?: number
   source?: 'fixed' | 'dynamic'
-}
+} & Record<string, ProviderListQueryValue>
 export type ConnectionsResponse = InferResponseType<ConnectionsEndpoint, 200>
 export type ConnectionResponse = InferResponseType<ConnectionEndpoint, 200>
 export type AuthorizeConnectionResponse = InferResponseType<

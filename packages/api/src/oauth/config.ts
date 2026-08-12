@@ -1,4 +1,8 @@
-import type { OAuthProvider, ProviderRegistry } from '@hookfish/provider'
+import {
+  isProviderRegistry,
+  type OAuthProvider,
+  type ProviderRegistry,
+} from '@hookfish/provider'
 import { z } from 'zod'
 import { BrokerError } from './errors'
 import { encodeResourcePath } from './resource-path'
@@ -110,15 +114,20 @@ export type ProviderConfig = {
 
 export function resolveProviderConfig(
   providerId: string,
-  providers: ProviderRegistry,
+  providerOrRegistry: OAuthProvider | ProviderRegistry,
 ): ProviderConfig {
-  const provider = providers.getProvider(providerId)
+  const provider = isProviderRegistry(providerOrRegistry)
+    ? providerOrRegistry.getProvider(providerId)
+    : providerOrRegistry
 
   if (!provider) {
+    const knownProviders = isProviderRegistry(providerOrRegistry)
+      ? ` Known providers: ${providerOrRegistry.listProviderIds().join(', ')}.`
+      : ''
     throw new BrokerError(
       404,
       'unknown_provider',
-      `Unknown provider "${providerId}". Known providers: ${providers.listProviderIds().join(', ')}.`,
+      `Unknown provider "${providerId}".${knownProviders}`,
     )
   }
 
