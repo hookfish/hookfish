@@ -14,10 +14,11 @@ import postgres from 'postgres'
 
 import * as authSchema from '@/lib/auth-schema'
 
-const databaseUrl = process.env.DATABASE_URL?.trim()
+const databaseUrl =
+  process.env.POSTGRES_URL?.trim() || process.env.DATABASE_URL?.trim()
 if (!databaseUrl) {
   throw new Error(
-    'DATABASE_URL is required. Start this example with its dev, build, or start script so the PGlite socket server is available.',
+    'No database URL is available. Use a package script to start PGlite or set POSTGRES_URL.',
   )
 }
 

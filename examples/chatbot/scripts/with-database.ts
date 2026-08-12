@@ -1,10 +1,14 @@
 import { spawn } from 'node:child_process'
 import { PGlite } from '@electric-sql/pglite'
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket'
+import nextEnv from '@next/env'
 
-const mode = process.argv[2]
-if (mode !== 'dev' && mode !== 'build' && mode !== 'start') {
-  throw new Error('Expected one of: dev, build, start.')
+nextEnv.loadEnvConfig(process.cwd())
+
+const action = process.argv[2]
+const supportedActions = ['dev', 'build', 'start', 'db:migrate', 'db:studio']
+if (!action || !supportedActions.includes(action)) {
+  throw new Error(`Expected one of: ${supportedActions.join(', ')}.`)
 }
 
 const configuredPort = Number(process.env.PGLITE_PORT ?? '54329')
@@ -13,25 +17,29 @@ if (!Number.isInteger(configuredPort) || configuredPort < 1) {
 }
 
 const host = '127.0.0.1'
+const postgresUrl = process.env.POSTGRES_URL?.trim()
 const dataDirectory =
-  mode === 'build' ? 'memory://' : (process.env.PGLITE_DATA_DIR ?? './pgdata')
+  action === 'build' ? 'memory://' : (process.env.PGLITE_DATA_DIR ?? './pgdata')
 
-const database = await PGlite.create(dataDirectory)
-const server = new PGLiteSocketServer({
-  db: database,
-  host,
-  port: configuredPort,
-  maxConnections: 20,
-})
+const database = postgresUrl ? undefined : await PGlite.create(dataDirectory)
+const server = database
+  ? new PGLiteSocketServer({
+      db: database,
+      host,
+      port: configuredPort,
+      maxConnections: 20,
+    })
+  : undefined
 
-await server.start()
+await server?.start()
 
-const databaseUrl = `postgresql://postgres:postgres@${host}:${configuredPort}/postgres`
+const databaseUrl =
+  postgresUrl ??
+  `postgresql://postgres:postgres@${host}:${configuredPort}/postgres`
+const script = `${action}:run`
 const packageManager = process.env.npm_execpath
 const command = packageManager ? process.execPath : 'pnpm'
-const args = packageManager
-  ? [packageManager, `${mode}:next`]
-  : [`${mode}:next`]
+const args = packageManager ? [packageManager, script] : [script]
 const child = spawn(command, args, {
   env: { ...process.env, DATABASE_URL: databaseUrl },
   stdio: 'inherit',
@@ -50,8 +58,8 @@ try {
 } finally {
   process.removeListener('SIGINT', forwardSignal)
   process.removeListener('SIGTERM', forwardSignal)
-  await server.stop()
-  await database.close()
+  await server?.stop()
+  await database?.close()
 }
 
 process.exitCode = exitCode

@@ -5,13 +5,17 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "db:migrate": "tsx scripts/migrate.ts",
-    "dev:next": "pnpm db:migrate && next dev --hostname ${HOST:-localhost} --port ${PORT:-3000}",
-    "dev": "tsx scripts/with-pglite.ts dev",
-    "build:next": "pnpm db:migrate && next build",
-    "build": "tsx scripts/with-pglite.ts build",
-    "start:next": "pnpm db:migrate && next start --hostname ${HOST:-localhost} --port ${PORT:-3000}",
-    "start": "tsx scripts/with-pglite.ts start",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate:run": "tsx scripts/migrate.ts",
+    "db:migrate": "tsx scripts/with-database.ts db:migrate",
+    "db:studio:run": "drizzle-kit studio --config drizzle.config.ts",
+    "db:studio": "tsx scripts/with-database.ts db:studio",
+    "dev:run": "pnpm db:migrate:run && next dev --hostname ${HOST:-localhost} --port ${PORT:-3000}",
+    "dev": "tsx scripts/with-database.ts dev",
+    "build:run": "pnpm db:migrate:run && next build",
+    "build": "tsx scripts/with-database.ts build",
+    "start:run": "pnpm db:migrate:run && next start --hostname ${HOST:-localhost} --port ${PORT:-3000}",
+    "start": "tsx scripts/with-database.ts start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,6 +26,7 @@
     "@electric-sql/pglite-socket": "^0.2.7",
     "@hookfish/api": "workspace:*",
     "@hookfish/sdk": "workspace:*",
+    "@next/env": "^16.3.0",
     "@shadcn/react": "^0.3.0",
     "ai": "^7.0.62",
     "better-auth": "^1.6.27",
@@ -46,6 +51,7 @@
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4",
     "typescript": "~5.9.3"
   }

@@ -32,7 +32,19 @@ pnpm --filter @hookfish/example-chatbot dev
 
 Open <http://localhost:3000>, create an email/password account, and add your OpenAI connection in **Settings**.
 
-Use the package scripts instead of invoking `next` directly. They start one PGlite socket server, run migrations, and then start Next.js with an injected `DATABASE_URL`. This prevents Next.js development reloads from opening the same single-connection PGlite data directory more than once.
+PGlite is the default and requires no database configuration. The package scripts start one PGlite socket server, run migrations, and then start Next.js with an internal `DATABASE_URL`. This prevents Next.js development reloads from opening the same single-connection PGlite data directory more than once.
+
+To use Postgres instead, set `POSTGRES_URL` in `.env.local` or your shell. The `dev`, `build`, `start`, and database scripts will connect directly to that database and will not start PGlite.
+
+Database commands can be run from this directory with either backend:
+
+```sh
+pnpm db:generate
+pnpm db:migrate
+pnpm db:studio
+```
+
+`db:generate` creates Better Auth migrations from `lib/auth-schema.ts`. `db:migrate` applies both the bundled Hookfish migrations and this example's Better Auth migrations.
 
 ## How credentials are isolated
 
