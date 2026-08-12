@@ -1,14 +1,14 @@
 # Next.js example
 
 This example mounts Hookfish and its browser facade below `/api` with a Next.js
-App Router optional catch-all route. It uses the PGlite database from the root
-config.
+App Router optional catch-all route. Its local `hookfish.config.ts` stores
+PGlite data in `pgdata` by default.
 
 Next loads local environment variables from this package, so copy the shared
 template before starting it:
 
 ```sh
-cp ../../apps/frontend/.env.example .env.local
+cp ../../../apps/frontend/.env.example .env.local
 pnpm dev
 ```
 

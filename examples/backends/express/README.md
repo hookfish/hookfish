@@ -4,10 +4,12 @@ This example mounts the raw Hookfish API at `/api` and the browser facade at
 `/api/client` in Express 5. The Hono Node adapter translates Express requests to
 the shared Fetch-compatible backend.
 
-It reads `../../apps/frontend/.env`:
+Its local `hookfish.config.ts` stores PGlite data in `pgdata` by default.
+
+It reads `../../../apps/frontend/.env`:
 
 ```sh
-cp ../../apps/frontend/.env.example ../../apps/frontend/.env
+cp ../../../apps/frontend/.env.example ../../../apps/frontend/.env
 pnpm dev
 ```
 

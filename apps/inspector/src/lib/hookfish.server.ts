@@ -2,19 +2,15 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { Hookfish } from '@hookfish/api'
-import { pglite } from '@hookfish/database/pglite'
 import '@tanstack/react-start/server-only'
-import config from '../../../../hookfish.config'
+import config, { dataDirectory } from '../../hookfish.config'
 import { inspectorPublicOrigin } from './public-origin.server'
-
-const inspectorDataDir =
-  process.env.PGLITE_DATA_DIR ?? path.resolve(process.cwd(), 'pgdata')
 
 function localEncryptionKey() {
   const configured = process.env.OAUTH_ENCRYPTION_KEY?.trim()
   if (configured) return configured
 
-  const keyPath = path.join(inspectorDataDir, '.hookfish-oauth-key')
+  const keyPath = path.join(dataDirectory, '.hookfish-oauth-key')
   try {
     const stored = readFileSync(keyPath, 'utf8').trim()
     if (stored) return stored
@@ -22,7 +18,7 @@ function localEncryptionKey() {
     // The first local run creates a key below.
   }
 
-  mkdirSync(inspectorDataDir, { recursive: true })
+  mkdirSync(dataDirectory, { recursive: true })
   const generated = randomBytes(32).toString('base64')
   try {
     writeFileSync(keyPath, `${generated}\n`, { flag: 'wx', mode: 0o600 })
@@ -51,8 +47,6 @@ function inspectorEnvironment(origin: string) {
 
 type InspectorEnvironment = ReturnType<typeof inspectorEnvironment>
 
-const db = pglite<InspectorEnvironment>(inspectorDataDir)
-
 const hookfishByOrigin = new Map<
   string,
   Promise<Hookfish<InspectorEnvironment>>
@@ -65,7 +59,6 @@ function hookfishForOrigin(origin: string) {
   const hookfish = Hookfish.init<InspectorEnvironment>(
     {
       ...config,
-      db,
       includeClient: true,
       returnTo: origin,
       trustedOrigins: [origin],

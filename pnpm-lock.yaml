@@ -159,6 +159,9 @@ importers:
       '@hookfish/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@hookfish/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
@@ -206,17 +209,17 @@ importers:
         specifier: ^8.0.0
         version: 8.0.14(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
 
-  examples/cloudflare-worker:
+  examples/backends/cloudflare-worker:
     dependencies:
       '@hookfish/api':
         specifier: workspace:*
-        version: link:../../packages/api
+        version: link:../../../packages/api
       '@hookfish/database':
         specifier: workspace:*
-        version: link:../../packages/database
+        version: link:../../../packages/database
       '@hookfish/providers':
         specifier: workspace:*
-        version: link:../../packages/providers
+        version: link:../../../packages/providers
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: 0.12.19
@@ -234,20 +237,20 @@ importers:
         specifier: ^4.118.0
         version: 4.118.0
 
-  examples/express:
+  examples/backends/express:
     dependencies:
       '@hono/node-server':
         specifier: ^2.0.12
         version: 2.0.12(hono@4.13.0)
       '@hookfish/api':
         specifier: workspace:*
-        version: link:../../packages/api
+        version: link:../../../packages/api
       '@hookfish/database':
         specifier: workspace:*
-        version: link:../../packages/database
+        version: link:../../../packages/database
       '@hookfish/providers':
         specifier: workspace:*
-        version: link:../../packages/providers
+        version: link:../../../packages/providers
       express:
         specifier: ^5.2.1
         version: 5.2.1
@@ -265,20 +268,20 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  examples/hono-node:
+  examples/backends/hono-node:
     dependencies:
       '@hono/node-server':
         specifier: ^2.0.12
         version: 2.0.12(hono@4.13.0)
       '@hookfish/api':
         specifier: workspace:*
-        version: link:../../packages/api
+        version: link:../../../packages/api
       '@hookfish/database':
         specifier: workspace:*
-        version: link:../../packages/database
+        version: link:../../../packages/database
       '@hookfish/providers':
         specifier: workspace:*
-        version: link:../../packages/providers
+        version: link:../../../packages/providers
     devDependencies:
       '@types/node':
         specifier: ^24.12.3
@@ -290,17 +293,17 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  examples/nextjs:
+  examples/backends/nextjs:
     dependencies:
       '@hookfish/api':
         specifier: workspace:*
-        version: link:../../packages/api
+        version: link:../../../packages/api
       '@hookfish/database':
         specifier: workspace:*
-        version: link:../../packages/database
+        version: link:../../../packages/database
       '@hookfish/providers':
         specifier: workspace:*
-        version: link:../../packages/providers
+        version: link:../../../packages/providers
       next:
         specifier: ^16.3.0
         version: 16.3.0(@types/node@24.12.4)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

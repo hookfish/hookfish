@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --env-file ../../apps/frontend/.env --port ${PORT:-8787}",
+    "dev": "wrangler dev --env-file ../../../apps/frontend/.env --port ${PORT:-8787}",
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "test": "vitest run",

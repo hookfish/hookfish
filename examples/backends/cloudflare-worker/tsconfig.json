@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "../../node_modules/.tmp/example-cloudflare-worker.tsbuildinfo",
+    "tsBuildInfoFile": "../../../node_modules/.tmp/example-cloudflare-worker.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023"],
     "module": "esnext",

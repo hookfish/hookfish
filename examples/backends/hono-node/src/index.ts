@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server'
 import { Hookfish } from '@hookfish/api'
-import config from '../../../hookfish.config'
+import config from '../hookfish.config'
 
 const hookfish = await Hookfish.init(config)
 const providers = await hookfish.getProviders(process.env)

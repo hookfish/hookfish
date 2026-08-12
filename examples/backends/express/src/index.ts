@@ -1,7 +1,7 @@
 import { getRequestListener } from '@hono/node-server'
 import { Hookfish } from '@hookfish/api'
 import express from 'express'
-import config from '../../../hookfish.config'
+import config from '../hookfish.config'
 
 const hookfish = await Hookfish.init(config)
 const handleHookfish = getRequestListener((request) =>
