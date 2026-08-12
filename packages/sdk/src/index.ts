@@ -89,8 +89,6 @@ export class HookfishError extends Error {
 export type ConnectionAccessInput = {
   /** Provider-specific, non-secret connection configuration. */
   configuration?: Record<string, unknown>
-  /** Dynamic MCP resource URL. Required when creating an MCP connection. */
-  url?: string
   scopes?: string[]
   returnTo?: string
 }
@@ -132,7 +130,6 @@ export class Hookfish {
       const parameters = {
         connection_path: path,
         configuration: input.configuration,
-        url: input.url,
         scopes: input.scopes,
         return_to: input.returnTo,
       }
@@ -148,7 +145,6 @@ export class Hookfish {
       const parameters = {
         connection_path: path,
         configuration: input.configuration,
-        url: input.url,
         scopes: input.scopes,
         return_to: input.returnTo,
       }

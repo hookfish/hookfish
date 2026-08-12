@@ -118,7 +118,6 @@ function stubMcpProvider(stub: OAuthStub): OAuthProviderTemplate {
       }
       return {
         resource_url: new URL(configuration.resource_url).toString(),
-        scopes: Array.isArray(configuration.scopes) ? configuration.scopes : [],
       }
     },
     async registerClient() {

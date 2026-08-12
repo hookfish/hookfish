@@ -30,9 +30,8 @@ export default defineHookfishConfig({
 There is no provider-management switch. Provider implementations are trusted
 deployment code. Providers declare `oauth` or `secret` authentication plus a
 small input schema for connection identity and non-secret configuration.
-Per-connection MCP configuration can be supplied through
-`connections.access(path, { url, scopes })` or the generic `configuration`
-input.
+Per-connection MCP configuration and requested scopes are supplied through
+`connections.access(path, { configuration, scopes })`.
 
 ## Runtime options
 

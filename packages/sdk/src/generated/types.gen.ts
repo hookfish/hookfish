@@ -252,7 +252,6 @@ export type ConnectionsAccessData = {
         configuration?: {
             [key: string]: unknown;
         };
-        url?: string;
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -372,7 +371,6 @@ export type ConnectionsAuthorizeData = {
         configuration?: {
             [key: string]: unknown;
         };
-        url?: string;
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -958,7 +956,6 @@ export type ConnectionsProvidersResponses = {
                     description?: string;
                 }>;
             };
-            configurable: boolean;
         }>;
     };
 };
@@ -1501,7 +1498,6 @@ export type OrganizationConnectionsAccessData = {
         configuration?: {
             [key: string]: unknown;
         };
-        url?: string;
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -1625,7 +1621,6 @@ export type OrganizationConnectionsAuthorizeData = {
         configuration?: {
             [key: string]: unknown;
         };
-        url?: string;
         scopes?: Array<string>;
         return_to?: string;
     };
@@ -2209,7 +2204,6 @@ export type OrganizationConnectionsProvidersResponses = {
                     description?: string;
                 }>;
             };
-            configurable: boolean;
         }>;
     };
 };

@@ -21,7 +21,6 @@ const httpUrlSchema = z.url().refine((value) => {
 
 const mcpConfigurationSchema = z.object({
   resource_url: httpUrlSchema,
-  scopes: z.array(z.string().trim().min(1).max(512)).max(128).default([]),
 })
 
 const protectedResourceMetadataSchema = z.looseObject({
@@ -333,7 +332,7 @@ export class McpProvider implements OAuthProviderTemplate {
       ...this.credentials,
       ...credentials,
       resourceUrl: normalized.resource_url,
-      scopes: normalized.scopes,
+      scopes: this.defaultScopes,
       fetch: this.fetcher,
     })
   }
@@ -344,7 +343,7 @@ export class McpProvider implements OAuthProviderTemplate {
     const parsed = mcpConfigurationSchema.safeParse(configuration)
     if (!parsed.success) {
       throw new ProviderConfigurationError(
-        'MCP configuration requires an absolute resource_url and an optional list of scopes.',
+        'MCP configuration requires an absolute resource_url.',
       )
     }
     return parsed.data

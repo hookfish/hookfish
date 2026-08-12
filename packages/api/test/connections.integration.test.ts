@@ -269,7 +269,7 @@ describe('connections', () => {
     })
   })
 
-  it('describes OAuth, configurable OAuth, and secret provider inputs', async () => {
+  it('describes OAuth and secret provider inputs', async () => {
     const response = await harness.fetch('/api/connections/providers')
 
     expect(response.status).toBe(200)
@@ -280,7 +280,6 @@ describe('connections', () => {
           label: 'Stub OAuth',
           authentication: 'oauth',
           input_schema: { fields: [] },
-          configurable: false,
         },
         {
           id: 'mcp',
@@ -311,7 +310,6 @@ describe('connections', () => {
               },
             ],
           },
-          configurable: true,
         },
         {
           id: 'secret',
@@ -329,10 +327,25 @@ describe('connections', () => {
               },
             ],
           },
-          configurable: false,
         },
       ],
     })
+  })
+
+  it('accepts empty provider configuration with requested scopes', async () => {
+    const response = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ configuration: {}, scopes: ['read'] }),
+      },
+    )
+
+    expect(response.status).toBe(401)
+    await expect(
+      harness.db.getConnection('', 'user/personal', 'stub'),
+    ).resolves.toMatchObject({ configuration: {} })
   })
 
   it('stores MCP configuration on the connection and rejects changes', async () => {
@@ -341,27 +354,17 @@ describe('connections', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        url: 'https://mcp.example.com/one',
+        configuration: { resource_url: 'https://mcp.example.com/one' },
         scopes: ['read'],
       }),
     })
     expect(first.status).toBe(401)
 
-    const migrated = await harness.fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        configuration: { resource_url: 'https://mcp.example.com/one' },
-        scopes: ['read'],
-      }),
-    })
-    expect(migrated.status).toBe(401)
-
     const conflict = await harness.fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        url: 'https://mcp.example.com/two',
+        configuration: { resource_url: 'https://mcp.example.com/two' },
         scopes: ['read'],
       }),
     })
@@ -378,10 +381,8 @@ describe('connections', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          configuration: {
-            resource_url: 'https://mcp.example.com/slack',
-            scopes: ['read'],
-          },
+          configuration: { resource_url: 'https://mcp.example.com/slack' },
+          scopes: ['read'],
         }),
       },
     )
@@ -392,7 +393,6 @@ describe('connections', () => {
     ).resolves.toMatchObject({
       configuration: {
         resource_url: 'https://mcp.example.com/slack',
-        scopes: ['read'],
       },
     })
   })

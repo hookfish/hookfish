@@ -57,7 +57,8 @@ The path ends in `mcp` because `mcp` is the provider implementation.
 generic provider. This cannot collide with a concrete Notion connection at
 `user/personal/notion`, whose provider ID is `notion`.
 
-The first access stores the normalized URL and scopes. Reusing the path with a
+The first access stores the normalized URL as immutable configuration and
+tracks requested and granted scopes separately. Reusing the path with a
 different URL returns `connection_configuration_conflict`.
 
 If the authorization server grants fewer scopes than requested, access that

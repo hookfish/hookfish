@@ -78,8 +78,8 @@ export default defineHookfishConfig({
 
 There is no provider-management flag, runtime provider record, template in the
 request body, or `/admin/providers` setup step. The first access stores the
-catalog server's normalized URL and scopes on that connection. Reusing the same
-path with different configuration returns
+catalog server's normalized URL as immutable configuration and tracks OAuth
+scopes separately. Reusing the same path with different configuration returns
 `409 connection_configuration_conflict`.
 
 Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers up

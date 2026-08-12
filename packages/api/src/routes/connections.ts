@@ -118,37 +118,9 @@ const connectionPathParam = z.object({
 
 const connectionAccessInput = z.object({
   configuration: z.record(z.string(), z.unknown()).optional(),
-  /** @deprecated Use configuration.resource_url. */
-  url: z.url().optional(),
   scopes: z.array(z.string()).optional(),
   return_to: z.url().optional(),
 })
-
-type ConnectionAccessBody = z.infer<typeof connectionAccessInput>
-
-function requestConfiguration(
-  body: ConnectionAccessBody,
-): Record<string, unknown> | undefined {
-  if (body.configuration) {
-    return body.scopes === undefined
-      ? body.configuration
-      : { ...body.configuration, scopes: body.scopes }
-  }
-  if (!body.url) return undefined
-  return { resource_url: body.url, scopes: body.scopes ?? [] }
-}
-
-function requestScopes(body: ConnectionAccessBody): string[] | undefined {
-  if (body.scopes) return body.scopes
-  const configured = body.configuration?.scopes
-  if (
-    Array.isArray(configured) &&
-    configured.every((scope) => typeof scope === 'string')
-  ) {
-    return configured
-  }
-  return undefined
-}
 
 const connectionSchema = z.object({
   path: z.string(),
@@ -214,8 +186,6 @@ const listProvidersRoute = createRoute({
                     }),
                   ),
                 }),
-                /** @deprecated Use input_schema.fields. */
-                configurable: z.boolean(),
               }),
             ),
           }),
@@ -550,11 +520,6 @@ export function createConnectionRoutes<Bindings extends object>(
           input_schema: {
             fields: [...(provider.inputSchema?.fields ?? [])],
           },
-          configurable:
-            provider.kind === 'mcp' ||
-            (provider.inputSchema?.fields ?? []).some(
-              (field) => field.target === 'configuration',
-            ),
         })),
       },
       200,
@@ -575,8 +540,8 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: requestConfiguration(body),
-          scopes: requestScopes(body),
+          configuration: body.configuration,
+          scopes: body.scopes,
           returnTo: validateReturnTo(
             body.return_to,
             options.trustedOrigins ?? [],
@@ -637,8 +602,8 @@ export function createConnectionRoutes<Bindings extends object>(
           organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
-          configuration: requestConfiguration(body),
-          scopes: requestScopes(body),
+          configuration: body.configuration,
+          scopes: body.scopes,
           returnTo: validateReturnTo(
             body.return_to,
             options.trustedOrigins ?? [],

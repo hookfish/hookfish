@@ -89,14 +89,12 @@ export const connectionsAccess = <ThrowOnError extends boolean = false>(paramete
     configuration?: {
         [key: string]: unknown;
     };
-    url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsAccessResponses, ConnectionsAccessErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'connection_path' },
                 { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
@@ -123,14 +121,12 @@ export const connectionsAuthorize = <ThrowOnError extends boolean = false>(param
     configuration?: {
         [key: string]: unknown;
     };
-    url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<unknown, ConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'connection_path' },
                 { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
@@ -335,7 +331,6 @@ export const organizationConnectionsAccess = <ThrowOnError extends boolean = fal
     configuration?: {
         [key: string]: unknown;
     };
-    url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsAccessResponses, OrganizationConnectionsAccessErrors, ThrowOnError> => {
@@ -343,7 +338,6 @@ export const organizationConnectionsAccess = <ThrowOnError extends boolean = fal
                 { in: 'path', key: 'organization' },
                 { in: 'path', key: 'connection_path' },
                 { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
@@ -371,7 +365,6 @@ export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = 
     configuration?: {
         [key: string]: unknown;
     };
-    url?: string;
     scopes?: Array<string>;
     return_to?: string;
 }, options?: Options<never, ThrowOnError>): RequestResult<unknown, OrganizationConnectionsAuthorizeErrors, ThrowOnError> => {
@@ -379,7 +372,6 @@ export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = 
                 { in: 'path', key: 'organization' },
                 { in: 'path', key: 'connection_path' },
                 { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);

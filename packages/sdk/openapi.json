@@ -732,10 +732,6 @@
                     "type": "object",
                     "additionalProperties": {}
                   },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
                   "scopes": {
                     "type": "array",
                     "items": {
@@ -1086,10 +1082,6 @@
                   "configuration": {
                     "type": "object",
                     "additionalProperties": {}
-                  },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
                   },
                   "scopes": {
                     "type": "array",
@@ -2514,17 +2506,13 @@
                             "required": [
                               "fields"
                             ]
-                          },
-                          "configurable": {
-                            "type": "boolean"
                           }
                         },
                         "required": [
                           "id",
                           "label",
                           "authentication",
-                          "input_schema",
-                          "configurable"
+                          "input_schema"
                         ]
                       }
                     }
@@ -4366,10 +4354,6 @@
                     "type": "object",
                     "additionalProperties": {}
                   },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
                   "scopes": {
                     "type": "array",
                     "items": {
@@ -4734,10 +4718,6 @@
                   "configuration": {
                     "type": "object",
                     "additionalProperties": {}
-                  },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
                   },
                   "scopes": {
                     "type": "array",
@@ -6147,17 +6127,13 @@
                             "required": [
                               "fields"
                             ]
-                          },
-                          "configurable": {
-                            "type": "boolean"
                           }
                         },
                         "required": [
                           "id",
                           "label",
                           "authentication",
-                          "input_schema",
-                          "configurable"
+                          "input_schema"
                         ]
                       }
                     }

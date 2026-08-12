@@ -53,18 +53,22 @@ deployment-level MCP callback ends in `/mcp`.
 
 ## Authentication and provider inputs
 
-`GET /connections/providers` describes two independent properties. The
-`authentication` value is either `oauth` or `secret`. The provider input schema
-describes path identity and non-secret configuration fields.
+`GET /connections/providers` describes credential acquisition and provider
+inputs. The `authentication` value is either `oauth` or `secret`. Each input
+field declares how its value is used: `identity` adds a path segment,
+`configuration` supplies immutable non-secret connection configuration, and
+`scopes` requests OAuth scopes.
 
-GitHub uses OAuth and has no connection inputs. The generic `mcp` provider uses
-OAuth and requires a resource name and URL, with optional scopes. The generic
-`secret` provider requires a credential name and a supplied value. The secret
-value is written through `connections.setSecret()` and is never provider
-configuration or listable metadata.
+GitHub, Linear, and Notion use OAuth and expose an optional scopes input but no
+connection-specific configuration. The generic `mcp` provider uses OAuth and
+requires a resource name and URL, with optional scopes. The generic `secret`
+provider requires a credential name and a supplied value. The secret value is
+written through `connections.setSecret()` and is never provider configuration
+or listable metadata.
 
-The `mcp` provider stores its URL and scopes on first access. A later request
-cannot silently change them.
+The `mcp` provider stores its URL as immutable connection configuration.
+Requested and granted OAuth scopes are tracked separately and can change only
+through the authorization lifecycle.
 
 A lazy `ProviderSource` remains available for large application-owned catalogs.
 It resolves trusted provider code by ID; it is not a public provider CRUD

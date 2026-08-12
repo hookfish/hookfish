@@ -82,10 +82,11 @@ are distinct.
 ## MCP client registration
 
 MCP is the resource protocol, not an authentication kind. The trusted `mcp`
-provider acquires OAuth credentials and stores the MCP URL and scopes on the connection. It
-discovers OAuth metadata, requires PKCE S256, prefers the deployment HTTPS
-Client ID Metadata Document, and uses Dynamic Client Registration only as a
-fallback. DCR credentials are encrypted and owned by that connection.
+provider acquires OAuth credentials, stores the MCP URL as immutable
+configuration, and tracks requested and granted scopes separately. It discovers
+OAuth metadata, requires PKCE S256, prefers the deployment HTTPS Client ID
+Metadata Document, and uses Dynamic Client Registration only as a fallback. DCR
+credentials are encrypted and owned by that connection.
 
 ## Security
 

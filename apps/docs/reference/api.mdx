@@ -31,17 +31,15 @@ An access body may contain:
 ```json
 {
   "configuration": {
-    "resource_url": "https://gmail.run.tools",
-    "scopes": []
+    "resource_url": "https://gmail.run.tools"
   },
+  "scopes": [],
   "return_to": "https://app.example.com/integrations"
 }
 ```
 
 `configuration` contains non-secret input accepted by the trusted provider.
-The older `url` field remains accepted as shorthand for an MCP
-`resource_url`. Provider selection always comes from the final path segment,
-never the body.
+Provider selection always comes from the final path segment, never the body.
 
 The provider list describes credential acquisition and input controls:
 
@@ -85,8 +83,7 @@ The provider list describes credential acquisition and input controls:
 Authentication is `oauth` or `secret`. Identity fields become path segments;
 configuration fields become immutable, non-secret connection configuration;
 scope fields become requested OAuth scopes.
-The deprecated `configurable` boolean remains in responses for compatibility;
-new clients should render `input_schema.fields` instead.
+Clients should render `input_schema.fields`.
 
 ## Broker administration and legacy generic vault
 

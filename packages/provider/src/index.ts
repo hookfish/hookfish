@@ -145,8 +145,6 @@ export type ProviderTokenResponse = {
  */
 export interface OAuthProvider {
   readonly authentication?: 'oauth'
-  /** @deprecated Authentication and inputSchema describe provider behavior. */
-  readonly kind?: 'oauth' | 'mcp'
   readonly label?: string
   readonly inputSchema?: ProviderInputSchema
   readonly defaultScopes?: readonly string[]
@@ -169,7 +167,7 @@ export type ConnectionProvider = OAuthProvider | SecretProvider
 export function isSecretProvider(
   provider: ConnectionProvider,
 ): provider is SecretProvider {
-  return provider.kind === 'secret'
+  return Reflect.get(provider, 'kind') === 'secret'
 }
 
 export type ProviderSourceEntry = {

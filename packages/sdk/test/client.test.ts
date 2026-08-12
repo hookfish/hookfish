@@ -42,17 +42,15 @@ describe('Hookfish', () => {
     })
 
     await hookfish.connections.access('user/personal/gmail/mcp', {
-      configuration: {
-        resource_url: 'https://gmail.run.tools',
-        scopes: ['read'],
-      },
+      configuration: { resource_url: 'https://gmail.run.tools' },
+      scopes: ['read'],
     })
 
     await expect(request?.json()).resolves.toMatchObject({
       configuration: {
         resource_url: 'https://gmail.run.tools',
-        scopes: ['read'],
       },
+      scopes: ['read'],
     })
   })
 
@@ -133,7 +131,7 @@ describe('Hookfish', () => {
 
     const error: unknown = await hookfish.connections
       .authorize('user/personal/gmail/mcp', {
-        url: 'https://gmail.run.tools',
+        configuration: { resource_url: 'https://gmail.run.tools' },
         scopes: [],
       })
       .catch((value: unknown) => value)
