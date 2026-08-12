@@ -1,0 +1,76 @@
+---
+title: "Databases and migrations"
+description: "Configure PGlite, PostgreSQL, or the experimental Durable Objects adapter."
+---
+
+Hookfish accepts a ready database, a promise, or a request-aware database
+binding. The published database package includes PGlite, PostgreSQL, and an
+experimental SQLite Durable Objects adapter.
+
+## PGlite
+
+Use PGlite for local development or one process with persistent disk:
+
+```ts
+import { pglite } from '@hookfish/database/pglite'
+
+const db = pglite(process.env.PGLITE_DATA_DIR ?? 'data/hookfish')
+```
+
+The adapter opens the database lazily and applies bundled migrations once on
+first use. Set `migrationsFolder: false` only when another system owns schema
+application.
+
+## PostgreSQL
+
+Use PostgreSQL for multiple instances, ephemeral runtimes, managed backups, or
+established operational tooling:
+
+```ts
+import { postgres } from '@hookfish/database/postgres'
+
+const db = postgres(process.env.DATABASE_URL ?? '')
+```
+
+The first argument can also be a resolver called with runtime bindings. On
+Cloudflare Workers, resolve `env.HYPERDRIVE.connectionString` and set
+`cache: false`; see [Cloudflare Workers](/frameworks/cloudflare-workers).
+
+## Run PostgreSQL migrations
+
+Run migrations before the new application version accepts traffic:
+
+```ts
+import { migrateDatabase } from '@hookfish/database'
+import { postgres } from '@hookfish/database/postgres'
+
+const db = postgres(process.env.DATABASE_URL ?? '')
+await migrateDatabase(db, process.env)
+```
+
+Execute this script from CI or another trusted environment with direct database
+access. Do not put the database URL in source control.
+
+## Durable Objects
+
+The SQLite Durable Objects adapter partitions storage by a selected object and
+applies its schema lazily when the object starts. This adapter is experimental.
+For production Workers deployments, use PostgreSQL through Hyperdrive.
+
+## Implement a custom adapter
+
+Use `defineDatabase` when your host owns the storage implementation or needs to
+resolve a partition at request time:
+
+```ts
+import { defineDatabase } from '@hookfish/database'
+
+const db = defineDatabase(
+  (bindings, context) =>
+    bindings.databases.forOrganization(context.organization),
+  (bindings) => bindings.databases.migrate(),
+)
+```
+
+The returned database must implement Hookfish's exported `Database` persistence
+contract.

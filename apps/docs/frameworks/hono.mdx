@@ -1,54 +1,137 @@
 ---
 title: "Hono on Node.js"
-description: "Mount Hookfish in a Node.js server with the Hono Fetch adapter."
+description: "Add Hookfish to a Hono application and call it after your application authorizes the user."
 ---
 
-Hono on Node.js is the smallest Hookfish host. Use this guide to add Hookfish to an existing Hono application. For a standalone broker, start with [`hookfish init`](/quickstart), which creates this server and its local configuration for you.
+Use this guide when Hookfish should run inside an existing Node.js service. For
+a separate broker service, the [quickstart](/quickstart) generates the broker
+host for you.
 
-## Install
+## Install dependencies
 
 ```bash
-pnpm add @hookfish/api @hookfish/database @hookfish/providers @hono/node-server
+pnpm add @hookfish/api @hookfish/database @hookfish/providers @hono/node-server hono
 pnpm add --save-dev tsx typescript
+```
+
+## Configure Hookfish
+
+Create `hookfish.config.ts` at your project root.
+
+```ts
+import path from 'node:path'
+import { defineHookfishConfig } from '@hookfish/api'
+import { pglite } from '@hookfish/database/pglite'
+import { createGitHubProvider } from '@hookfish/providers'
+
+const applicationUrl =
+  process.env.APPLICATION_URL ?? 'http://127.0.0.1:3000'
+
+export default defineHookfishConfig({
+  db: pglite(process.env.PGLITE_DATA_DIR ?? path.resolve('hookfish-data')),
+  includeSwagger: true,
+  returnTo: `${applicationUrl}/settings/integrations`,
+  trustedOrigins: [applicationUrl],
+  providers: (env: typeof process.env) => ({
+    github: createGitHubProvider({
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+    }),
+  }),
+})
 ```
 
 ## Create the server
 
+Mount Hookfish at `/api`. Keep your user-facing application routes under a
+separate prefix.
+
 ```ts
 import { serve } from '@hono/node-server'
+import type { AppType as HookfishAppType } from '@hookfish/api'
 import { Hookfish } from '@hookfish/api'
-import config from './hookfish.config'
+import { Hono } from 'hono'
+import { hc } from 'hono/client'
+import config from '../hookfish.config'
+import { requireUser } from './auth'
+import { scopedBrokerTokenFor } from './broker-tokens'
 
 const hookfish = await Hookfish.init(config)
+const app = new Hono()
+const applicationUrl =
+  process.env.APPLICATION_URL ?? 'http://127.0.0.1:3000'
+
+function hookfishFor(brokerToken: string) {
+  return hc<HookfishAppType>(`${applicationUrl}/api`, {
+    headers: {
+      Authorization: `Bearer ${brokerToken}`,
+    },
+    fetch: (input, init) =>
+      hookfish.fetch(new Request(input, init), process.env),
+  })
+}
+
+const applicationRoutes = app
+  .get('/rpc/integrations/connections', requireUser, async (context) => {
+    const user = context.get('user')
+    const brokerToken = await scopedBrokerTokenFor(user.organizationId)
+    const hookfishClient = hookfishFor(brokerToken)
+
+    const response = await hookfishClient.oauth.connections.$get({
+      query: {
+        connection_id_prefix: user.organizationId,
+      },
+    })
+
+    if (!response.ok) {
+      return context.json({ error: 'Could not load connections.' }, 502)
+    }
+
+    return context.json(await response.json())
+  })
+
+app.all('/api', (context) => hookfish.fetch(context.req.raw, process.env))
+app.all('/api/*', (context) => hookfish.fetch(context.req.raw, process.env))
 
 serve({
-  fetch: (request) => hookfish.fetch(request, process.env),
+  fetch: app.fetch,
   hostname: process.env.HOST ?? '127.0.0.1',
-  port: Number(process.env.PORT ?? 8787),
+  port: Number(process.env.PORT ?? 3000),
 })
+
+export type ApplicationApi = typeof applicationRoutes
 ```
 
-Initialize Hookfish once during process startup. Provider factories still receive the current bindings for each request that needs a provider.
+`requireUser` authenticates the application's session and enforces its
+permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
+for the authorized organization. Neither concern belongs in Hookfish itself.
 
-## Load local environment variables
+The custom `fetch` function lets the typed Hono client call the embedded
+Hookfish handler without making a network request. Use the broker's HTTPS URL
+instead when Hookfish runs as a separate service.
 
-Node.js can load the development environment without adding a runtime dependency.
+## Call your application from the browser
 
-```json
-{
-  "scripts": {
-    "dev": "node --watch --env-file=.env --import tsx src/server.ts"
-  }
-}
+Share `ApplicationApi` with your frontend and create a Hono RPC client for your
+application routes.
+
+```ts
+import type { ApplicationApi } from '../server'
+import { hc } from 'hono/client'
+
+export const api = hc<ApplicationApi>('/', {
+  init: {
+    credentials: 'include',
+  },
+})
+
+const response = await api.rpc.integrations.connections.$get()
+const { connections } = await response.json()
 ```
 
-Run the server and open its API documentation.
+Use this same server-side pattern for authorization starts, disconnects,
+provider-token retrieval, and vault access. Return provider tokens or decrypted
+secrets only to trusted server consumers.
 
-```bash
-pnpm dev
-open http://127.0.0.1:8787/api
-```
-
-<Warning>
-  Before exposing `/api/client` in production, configure [application authentication](/authentication/application-auth). Keep raw `/api/*` routes behind trusted server boundaries.
-</Warning>
+Continue with [application authentication](/authentication/application-auth)
+for the complete security boundary.

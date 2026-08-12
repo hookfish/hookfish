@@ -1,0 +1,50 @@
+---
+title: "Events and audit logs"
+description: "Export Hookfish lifecycle events to your telemetry or audit system."
+---
+
+Set `onEvent` to receive best-effort lifecycle events. An unavailable event
+sink does not turn a completed OAuth exchange or secret operation into a failed
+request.
+
+```ts
+import { defineHookfishConfig } from '@hookfish/api'
+
+export default defineHookfishConfig({
+  db,
+  providers,
+  onEvent: async (event) => {
+    await auditLog.write({
+      ...event,
+      occurredAt: event.occurredAt.toISOString(),
+    })
+  },
+})
+```
+
+## Event types
+
+| Area | Events |
+| --- | --- |
+| Authorization | `authorization.started`, `authorization.connected`, `authorization.failed` |
+| Connections | `connection.token_retrieved`, `connection.disconnected` |
+| Broker tokens | `broker_token.created`, `broker_token.revoked` |
+| Providers | `provider.created`, `provider.updated`, `provider.deleted` |
+| Secrets | `secret.stored`, `secret.retrieved`, `secret.deleted` |
+
+Events can include an organization, provider, connection ID, token name,
+secret path, error code, refresh flag, or replay flag depending on the
+operation. They do not include access tokens, refresh tokens, client secrets,
+or vault values.
+
+## Delivery behavior
+
+Hookfish awaits the handler during the operation but catches and logs handler
+errors. Treat delivery as best effort. If your audit requirements demand
+durable delivery, make the handler write to a reliable local queue or durable
+outbox and process the external export separately.
+
+<Warning>
+  Keep event payloads free of application session tokens and request bodies
+  when enriching them in your own adapter.
+</Warning>

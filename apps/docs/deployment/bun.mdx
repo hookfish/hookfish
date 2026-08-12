@@ -1,0 +1,42 @@
+---
+title: "Bun"
+description: "Run a standalone Hookfish broker with Bun and persistent storage."
+---
+
+The Bun scaffold mounts the Hookfish Fetch handler directly in `Bun.serve`.
+
+## Create and run the project
+
+```bash
+pnpm dlx hookfish init my-broker --backend bun
+cd my-broker
+pnpm dev
+```
+
+The generated backend listens on port `8787` by default and uses PGlite under
+`data/hookfish`. `pnpm dev` also starts the packaged dashboard; use
+`pnpm dev:server` for the backend alone.
+
+## Deploy
+
+Deploy `src/index.ts` with a persistent Bun-compatible host. Set:
+
+```text
+OAUTH_ENCRYPTION_KEY
+BROKER_API_KEY
+OAUTH_REDIRECT_BASE_URL
+HOOKFISH_FRONTEND_URL
+```
+
+Set `PGLITE_DATA_DIR` to a persistent mounted path when using PGlite. For
+multiple instances, replace the database in `hookfish.config.ts` with the
+PostgreSQL adapter.
+
+```ts
+import { postgres } from '@hookfish/database/postgres'
+
+const db = postgres(process.env.DATABASE_URL ?? '')
+```
+
+Run migrations from a trusted deployment job before starting a new release.
+See [Databases and migrations](/operations/databases).

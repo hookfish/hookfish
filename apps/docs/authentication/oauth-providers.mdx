@@ -1,13 +1,16 @@
 ---
 title: "OAuth providers"
-description: "Configure built-in, remote MCP, dynamic, and custom OAuth providers."
+description: "Configure GitHub, Linear, Notion, MCP, and application-owned provider registries."
 ---
 
-An OAuth provider owns protocol details such as authorization parameters, provider scopes, token parsing, refresh, and revocation. Your Hookfish configuration assigns each provider a resource path.
+An OAuth provider owns one service's authorization URLs, provider scopes, token
+exchange, refresh behavior, revocation, and public metadata. Hookfish resolves a
+provider by its ID when an authorization or token operation runs.
 
-## Built-in providers
+## Configure built-in providers
 
-Hookfish includes provider packages for GitHub, Linear, Notion, and remote MCP servers.
+`@hookfish/providers` exports provider factories for GitHub, Linear, Notion,
+and remote MCP servers.
 
 ```ts
 import { defineHookfishConfig } from '@hookfish/api'
@@ -38,11 +41,32 @@ export default defineHookfishConfig({
 })
 ```
 
-`GET /api/oauth/providers` reports which providers are configured, the exact callback URL to register, default provider scopes, available provider scopes, and refresh or revocation support.
+Provider factories run with the bindings passed to `hookfish.fetch`. This lets
+a Worker read provider credentials from request bindings without capturing
+stale values in its module scope.
+
+## Register callback URLs
+
+Ask the running broker for the exact callback URL for each provider:
+
+```bash
+curl http://127.0.0.1:8787/api/oauth/providers \
+  --header "Authorization: Bearer $BROKER_API_KEY"
+```
+
+The response also reports whether each provider is configured, its default and
+available provider scopes, and whether it supports refresh or revocation. Copy
+the returned `callback_url` into the provider's developer console.
+
+<Warning>
+  Do not construct callback URLs from forwarded host headers. Set
+  `OAUTH_REDIRECT_BASE_URL` to the public HTTPS origin in production.
+</Warning>
 
 ## Select provider scopes
 
-Pass `scopes` when starting an authorization to override a provider's defaults for that connection.
+Pass `scopes` when starting an authorization to override the provider's
+defaults for that connection.
 
 ```json
 {
@@ -51,16 +75,17 @@ Pass `scopes` when starting an authorization to override a provider's defaults f
 }
 ```
 
-These are upstream provider permissions, not Hookfish [resource scopes](/concepts/scopes).
+These are upstream permissions, not Hookfish [resource scopes](/concepts/scopes).
 
-## Dynamic providers
+## Choose a provider model
 
-Set `providerManagement: true` to create database-backed provider instances from trusted templates. Use dynamic providers when different tenants need separate OAuth applications or remote MCP endpoints.
+| Model | Use it when |
+| --- | --- |
+| Fixed provider map | The deployment has a small, known set of OAuth applications |
+| Dynamic provider | Operators or tenants create configurations at runtime |
+| Lazy provider source | An application-owned catalog contains many provider definitions |
+| Custom provider | A service's OAuth dialect is not included in Hookfish |
 
-Dynamic provider secrets are encrypted in Hookfish's internal vault and are never returned through the API.
-
-## Custom providers
-
-Implement `OAuthProvider` from `@hookfish/provider` when a service is not built in. A provider must create authorization URLs and exchange authorization codes. Refresh and revocation are optional capabilities.
-
-Keep provider-specific URL formats, client authentication, PKCE behavior, and token response parsing inside the provider package.
+Continue with [remote MCP providers](/providers/remote-mcp),
+[dynamic providers](/providers/dynamic), or
+[custom providers](/providers/custom).

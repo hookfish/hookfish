@@ -1,0 +1,59 @@
+---
+title: "Packages"
+description: "Choose the published Hookfish package and import path for each integration layer."
+---
+
+Hookfish separates the broker API, storage adapters, provider contracts,
+provider implementations, React integration, and CLI into published packages.
+
+| Package | Use it for |
+| --- | --- |
+| `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
+| `@hookfish/api` | `Hookfish`, config types, events, database contract, and route types |
+| `@hookfish/database` | Shared database types and migration helper |
+| `@hookfish/providers` | GitHub, Linear, Notion, and MCP factories |
+| `@hookfish/provider` | Custom provider and registry contracts |
+| `@hookfish/hooks` | Typed client and React hooks for the optional browser facade |
+| `@hookfish/backend` | Lower-level raw API and browser-facade composition |
+
+## Database import paths
+
+```ts
+import { migrateDatabase } from '@hookfish/database'
+import { pglite } from '@hookfish/database/pglite'
+import { postgres } from '@hookfish/database/postgres'
+import {
+  durableObjects,
+  HookfishDurableObject,
+} from '@hookfish/database/durable-object'
+```
+
+The Durable Objects exports are experimental. Use the PostgreSQL adapter with
+Hyperdrive for production Workers deployments.
+
+## API import paths
+
+```ts
+import { Hookfish, defineHookfishConfig } from '@hookfish/api'
+import { createHookfishBackend } from '@hookfish/api/client'
+import {
+  defineDatabase,
+  migrateDatabase,
+} from '@hookfish/api/database'
+```
+
+For user-facing applications, import `AppType` from `@hookfish/api` and create
+a server-side client with `hc` from `hono/client`. Import the migration helper
+from `@hookfish/database`. The API subpaths are available for lower-level
+composition.
+
+## Individual provider packages
+
+`@hookfish/providers` re-exports all built-in factories. Install an individual
+package such as `@hookfish/provider-github` or `@hookfish/provider-mcp` when you
+want to keep the dependency surface narrow.
+
+<Note>
+  Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
+  handler yourself. `Hookfish.init(...).fetch` already applies that layer.
+</Note>

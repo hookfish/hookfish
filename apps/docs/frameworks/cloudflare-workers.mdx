@@ -1,35 +1,62 @@
 ---
 title: "Cloudflare Workers"
-description: "Run Hookfish on Cloudflare Workers with SQLite Durable Objects."
+description: "Deploy Hookfish on Workers with PostgreSQL through Hyperdrive."
 ---
 
-The Cloudflare scaffold stores encrypted credentials in a SQLite-backed Durable Object. It does not require an external database or a separate migration command.
+For production on Cloudflare Workers, use PostgreSQL through a Hyperdrive
+binding. Hyperdrive supplies the connection string consumed by Hookfish's
+PostgreSQL adapter and manages the underlying connection pool.
 
-## Create the project
+<Warning>
+  The SQLite Durable Objects database adapter and the current
+  `--backend cloudflare` scaffold are experimental. Use them for evaluation,
+  not as the advised production storage path. Prefer Hyperdrive with
+  PostgreSQL.
+</Warning>
+
+## Create the Worker
+
+Start from the Cloudflare scaffold, then replace its Durable Objects database
+configuration with Hyperdrive:
 
 ```bash
 pnpm dlx hookfish init my-broker --backend cloudflare
 cd my-broker
 ```
 
-The initializer creates `.dev.vars` with a unique local encryption key and `BROKER_API_KEY=test`. Add provider credentials to that file, then start the Worker and packaged dashboard.
+Create a Hyperdrive configuration for your PostgreSQL database in the
+Cloudflare dashboard, then add its ID to `wrangler.jsonc`:
 
-```bash
-pnpm dev
+```jsonc
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "my-broker",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "<hyperdrive-id>"
+    }
+  ]
+}
 ```
 
-Wrangler persists local Durable Object state automatically. Run only the Worker with `pnpm dev:server`.
+Remove the `durable_objects`, `exports`, and Durable Object migration entries
+from the generated configuration.
 
-## Understand the generated Worker
+## Configure the database binding
 
-The generated Worker exports the Durable Object class and selects an object by Hookfish organization. Routes without an organization use the reserved global object.
+Replace `src/index.ts` with a Worker that resolves the Hyperdrive binding for
+each request:
 
 ```ts
 import { Hookfish } from '@hookfish/api'
-import {
-  durableObjects,
-  HookfishDurableObject,
-} from '@hookfish/database/durable-object'
+import { postgres } from '@hookfish/database/postgres'
 import {
   createGitHubProvider,
   createLinearProvider,
@@ -37,20 +64,21 @@ import {
   createNotionProvider,
 } from '@hookfish/providers'
 
-export { HookfishDurableObject }
-
-const db = durableObjects<Env>((bindings, context) =>
-  bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
+const db = postgres<Env>(
+  (env) => env.HYPERDRIVE.connectionString,
+  {
+    cache: false,
+    fetchTypes: false,
+    max: 5,
+    prepare: true,
+  },
 )
-const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
 const hookfish = await Hookfish.init<Env>({
   db,
-  includeClient: true,
   includeSwagger: true,
-  returnTo: frontendUrl,
-  trustedOrigins: [frontendUrl],
-  organizationRouting: false,
+  returnTo: 'https://dashboard.example.com',
+  trustedOrigins: ['https://dashboard.example.com'],
   providerManagement: true,
   providers: (env) => ({
     github: createGitHubProvider({
@@ -76,56 +104,52 @@ export default {
 } satisfies ExportedHandler<Env>
 ```
 
-The generated `wrangler.jsonc` declares the binding and its SQLite storage.
+`cache: false` prevents the adapter from retaining request-owned database
+clients in module state. Hyperdrive manages the underlying pool. `max: 5`
+stays below the Worker request's concurrent external-connection limit.
 
-```jsonc
-{
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "my-broker",
-  "main": "./src/index.ts",
-  "compatibility_date": "2026-08-11",
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true
-  },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "HOOKFISH_DB",
-        "class_name": "HookfishDurableObject"
-      }
-    ]
-  },
-  "exports": {
-    "HookfishDurableObject": {
-      "type": "durable-object",
-      "storage": "sqlite"
-    }
-  }
-}
-```
+## Configure local PostgreSQL
 
-## Generate binding types
-
-Generate `Env` from the Wrangler configuration instead of maintaining a handwritten binding interface.
+Set the local connection string for the `HYPERDRIVE` binding, then generate
+types and start Wrangler:
 
 ```bash
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgres://user:password@127.0.0.1:5432/hookfish"
 pnpm typegen
-pnpm typecheck
+pnpm dev
 ```
 
-The generated `wrangler-typegen.env` contains variable names without secret values. Rerun `pnpm typegen` whenever a binding changes.
+Keep the real connection string out of source control and shell history. Local
+Wrangler connects directly to PostgreSQL; Hyperdrive caching does not run in
+local mode.
+
+## Run migrations
+
+Run Hookfish's bundled PostgreSQL migrations from CI or another trusted
+environment that can connect directly to the database:
+
+```ts
+import { migrateDatabase } from '@hookfish/database'
+import { postgres } from '@hookfish/database/postgres'
+
+const db = postgres(process.env.DATABASE_URL ?? '')
+await migrateDatabase(db, process.env)
+```
+
+Do not run schema migrations through a user request or on every Worker startup.
 
 ## Store secrets and deploy
 
-Set production credentials through interactive Wrangler prompts.
+Use Wrangler's interactive secret prompts:
 
 ```bash
 pnpm exec wrangler secret put OAUTH_ENCRYPTION_KEY
 pnpm exec wrangler secret put BROKER_API_KEY
 pnpm exec wrangler secret put GITHUB_CLIENT_ID
 pnpm exec wrangler secret put GITHUB_CLIENT_SECRET
+pnpm typecheck
 pnpm deploy
 ```
 
-Never place secret values in `wrangler.jsonc` or `wrangler-typegen.env`.
+After deployment, set `OAUTH_REDIRECT_BASE_URL` to the Worker's public HTTPS
+origin and register the callback URLs reported by Hookfish.

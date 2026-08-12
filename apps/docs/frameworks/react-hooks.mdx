@@ -1,0 +1,74 @@
+---
+title: "React and Hono RPC"
+description: "Call your authenticated application API from React without exposing Hookfish credentials."
+---
+
+Build user-facing React screens against your application's API. Your server
+authenticates the user, selects a scoped broker token, and calls Hookfish. The
+browser receives connection metadata, never the broker credential.
+
+## Install dependencies
+
+```bash
+pnpm add @tanstack/react-query hono react
+```
+
+## Create the application client
+
+Import the Hono route type exported by your application server. Include
+credentials when your application uses cookie sessions.
+
+```ts
+import type { ApplicationApi } from '../server'
+import { hc } from 'hono/client'
+
+export const api = hc<ApplicationApi>('/', {
+  init: {
+    credentials: 'include',
+  },
+})
+```
+
+If your application uses bearer sessions, add the application session token to
+this client. Never add a Hookfish broker credential.
+
+## Query connections
+
+Use the typed application endpoint in a TanStack Query function.
+
+```tsx
+import { useQuery } from '@tanstack/react-query'
+import { api } from './api'
+
+function GitHubConnections() {
+  const connections = useQuery({
+    queryKey: ['integrations', 'connections'],
+    queryFn: async () => {
+      const response = await api.rpc.integrations.connections.$get()
+      if (!response.ok) throw new Error('Could not load connections.')
+      return response.json()
+    },
+  })
+
+  if (connections.isPending) return <p>Loading connections…</p>
+  if (connections.isError) return <p>{connections.error.message}</p>
+
+  return (
+    <ul>
+      {connections.data.connections.map((connection) => (
+        <li key={connection.connection_id}>{connection.connection_id}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+Create application endpoints for authorization starts and disconnects, then
+call them with `useMutation`. Keep provider-token retrieval and vault-value
+access in trusted server code.
+
+<Note>
+  `@hookfish/hooks` targets Hookfish's optional `/api/client` facade. Prefer
+  your own Hono route type for user-facing applications so authentication and
+  tenant authorization stay in your application.
+</Note>
