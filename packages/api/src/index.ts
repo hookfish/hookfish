@@ -1,11 +1,6 @@
 import { swaggerUI } from '@hono/swagger-ui'
 import { OpenAPIHono } from '@hono/zod-openapi'
-import {
-  createProviderRegistry,
-  isProviderRegistry,
-  type OAuthProvider,
-  type ProviderRegistry,
-} from '@hookfish/provider'
+import { type OAuthProvider, type ProviderRegistry } from '@hookfish/provider'
 import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
@@ -20,25 +15,25 @@ import type { HookfishEventHandler } from './events'
 import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
 import { ORGANIZATION_PATTERN } from './oauth/organization'
+import {
+  type BoundProviderSource,
+  createProviderResolver,
+  materializeProviderRegistry,
+  type ProviderInput,
+} from './provider-source'
 import { createAdminRoutes } from './routes/admin'
 import { createOAuthRoutes } from './routes/oauth'
 import { createProviderRoutes } from './routes/providers'
 import { createSecretRoutes } from './routes/secrets'
 import { statsRoutes } from './routes/stats'
 
-export type ProviderMap = Record<string, OAuthProvider>
-
-export type ProviderFactory<Bindings extends object> = (
-  bindings: Bindings,
-) => ProviderMap | Promise<ProviderMap>
+export type { ProviderFactory, ProviderMap } from './provider-source'
 
 export type HookfishProviders<Bindings extends object = object> =
-  | ProviderMap
-  | ProviderRegistry
-  | ProviderFactory<Bindings>
+  ProviderInput<Bindings>
 
 export type HookfishConfig<Bindings extends object = object> = {
-  /** Fixed providers or a request-aware factory resolved from runtime bindings. */
+  /** Fixed providers, a lazy provider source, or a request-aware factory. */
   providers: HookfishProviders<Bindings>
   /** Default database binding. A runtime host may override it in `Hookfish.init`. */
   db: DatabaseInput<Bindings>
@@ -56,21 +51,6 @@ export type HookfishConfig<Bindings extends object = object> = {
   providerManagement?: boolean
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
-}
-
-function normalizeProviders(providers: ProviderMap | ProviderRegistry) {
-  return isProviderRegistry(providers)
-    ? providers
-    : createProviderRegistry(providers)
-}
-
-async function resolveProviderSource<Bindings extends object>(
-  source: HookfishProviders<Bindings>,
-  bindings: Bindings,
-): Promise<ProviderRegistry> {
-  const providers =
-    typeof source === 'function' ? await source(bindings) : source
-  return normalizeProviders(providers)
 }
 
 export function defineHookfishConfig<Bindings extends object = object>(
@@ -102,7 +82,7 @@ function validateHookfishOptions(
 }
 
 function createApiRoutes<Bindings extends object>(
-  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
+  resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
@@ -318,7 +298,7 @@ export class Hookfish<Bindings extends object = object> {
   readonly returnTo: string | undefined
   private readonly resolveProviders: (
     bindings: Bindings,
-  ) => Promise<ProviderRegistry>
+  ) => Promise<BoundProviderSource>
   private readonly app: {
     fetch(
       request: Request,
@@ -330,7 +310,7 @@ export class Hookfish<Bindings extends object = object> {
   private constructor(
     options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings>,
-    resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
+    resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   ) {
     this.resolveProviders = resolveProviders
     this.db = options.db
@@ -364,14 +344,7 @@ export class Hookfish<Bindings extends object = object> {
     runtime: HookfishRuntime<Bindings> = {},
   ): Promise<Hookfish<Bindings>> {
     validateHookfishOptions(options)
-    const staticProviders =
-      typeof options.providers === 'function'
-        ? undefined
-        : normalizeProviders(options.providers)
-    const resolveProviders = staticProviders
-      ? async () => staticProviders
-      : (bindings: Bindings) =>
-          resolveProviderSource(options.providers, bindings)
+    const resolveProviders = createProviderResolver(options.providers)
     return new Hookfish(options, runtime, resolveProviders)
   }
 
@@ -383,9 +356,19 @@ export class Hookfish<Bindings extends object = object> {
     return this.app.fetch(request, bindings ?? {}, executionContext)
   }
 
-  /** Resolve the provider registry for one runtime binding set. */
-  readonly getProviders = (bindings: Bindings): Promise<ProviderRegistry> => {
-    return this.resolveProviders(bindings)
+  /** Resolve one provider without listing a lazy source. */
+  readonly getProvider = async (
+    providerId: string,
+    bindings: Bindings,
+  ): Promise<OAuthProvider | undefined> => {
+    return (await this.resolveProviders(bindings)).getProvider(providerId)
+  }
+
+  /** Materialize the configured provider listing as an in-memory registry. */
+  readonly getProviders = async (
+    bindings: Bindings,
+  ): Promise<ProviderRegistry> => {
+    return materializeProviderRegistry(await this.resolveProviders(bindings))
   }
 
   readonly migrate = (bindings: Bindings): Promise<void> => {
@@ -403,6 +386,13 @@ export function isHookfish(value: unknown): value is Hookfish<object> {
 }
 
 export { z } from 'zod'
+export {
+  createProviderSource,
+  type ProviderSource,
+  type ProviderSourceEntry,
+  type ProviderSourceListResult,
+  type ProviderSourceQuery,
+} from '@hookfish/provider'
 export type { HookfishEvent, HookfishEventHandler } from './events'
 export {
   type DatabaseBinding,

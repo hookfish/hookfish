@@ -5,7 +5,6 @@ import {
   ProviderRequestError,
   type OAuthProviderTemplate,
   type ProviderConfiguration,
-  type ProviderRegistry,
 } from '@hookfish/provider'
 import { createMiddleware } from 'hono/factory'
 import type { DatabaseInput } from '../db/binding'
@@ -17,6 +16,7 @@ import {
 import { resolveBrokerConfig, resolveRedirectUri } from '../oauth/config'
 import {
   findDynamicProvider,
+  listProviderDescriptorPage,
   listProviderDescriptors,
   normalizeProviderId,
   normalizeProviderLabel,
@@ -31,6 +31,7 @@ import {
 } from '../oauth/middleware'
 import { ORGANIZATION_PATTERN } from '../oauth/organization'
 import { assertOrganizationResourcePath } from '../oauth/resource-path'
+import type { BoundProviderSource } from '../provider-source'
 import {
   deleteVaultSecret,
   organizationKey,
@@ -129,12 +130,15 @@ const listRoute = createRoute({
   path: '/providers',
   summary: 'List fixed and dynamic providers',
   security: brokerAuth,
+  request: { query: z.object({}).catchall(z.coerce.string().optional()) },
   responses: {
     200: {
       description: 'Provider configurations',
       content: {
         'application/json': {
-          schema: z.object({ providers: z.array(providerResponseSchema) }),
+          schema: z
+            .object({ providers: z.array(providerResponseSchema) })
+            .catchall(z.unknown()),
         },
       },
     },
@@ -314,8 +318,11 @@ function requestOrganization(
   return organization
 }
 
-function requireTemplate(providers: ProviderRegistry, templateId: string) {
-  const template = providers.getProvider(templateId)
+async function requireTemplate(
+  providers: BoundProviderSource,
+  templateId: string,
+) {
+  const template = await providers.getProvider(templateId)
   if (!template || !isOAuthProviderTemplate(template)) {
     throw new BrokerError(
       400,
@@ -460,7 +467,7 @@ function serializeProvider(
 }
 
 export function createProviderRoutes<Bindings extends object>(
-  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
+  resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   database: DatabaseInput<Bindings>,
   options: ProviderRouteOptions,
 ) {
@@ -493,14 +500,16 @@ export function createProviderRoutes<Bindings extends object>(
     const { organization } = c.get('databaseContext')
     const providers = await resolveProviders(c.env)
     const grant = c.get('accessGrant')
-    const descriptors = (
-      await listProviderDescriptors(
-        c.get('db'),
-        resolveBrokerConfig(c.env),
-        providers,
-        organization,
-      )
-    ).filter(
+    const page = await listProviderDescriptorPage(
+      c.get('db'),
+      resolveBrokerConfig(c.env),
+      providers,
+      organization,
+      {},
+      new URL(c.req.url).searchParams,
+    )
+    const { providers: listedProviders, ...listingMetadata } = page
+    const descriptors = listedProviders.filter(
       ({ id, source }) =>
         source === 'fixed' || scopesAllowResource(grant.scopes, id),
     )
@@ -513,6 +522,7 @@ export function createProviderRoutes<Bindings extends object>(
     )
     return c.json(
       {
+        ...listingMetadata,
         providers: descriptors.map((descriptor, index) =>
           serializeProvider(
             descriptor,
@@ -533,7 +543,7 @@ export function createProviderRoutes<Bindings extends object>(
     const providerId = normalizeProviderId(c.req.valid('param').provider_path)
     const { organization } = c.get('databaseContext')
     const providers = await resolveProviders(c.env)
-    if (!providers.getProvider(providerId)) {
+    if (!(await providers.getProvider(providerId))) {
       assertOrganizationProvider(organization, providerId)
       assertProviderAccess(c.get('accessGrant'), providerId)
     }
@@ -571,7 +581,7 @@ export function createProviderRoutes<Bindings extends object>(
   const putApi = getApi.openapi(putRuntimeRoute, async (c) => {
     const providerId = normalizeProviderId(c.req.valid('param').provider_path)
     const providers = await resolveProviders(c.env)
-    if (providers.getProvider(providerId)) {
+    if (await providers.getProvider(providerId)) {
       throw new BrokerError(
         409,
         'fixed_provider_id',
@@ -583,7 +593,7 @@ export function createProviderRoutes<Bindings extends object>(
     assertProviderAccess(c.get('accessGrant'), providerId)
     const body = c.req.valid('json')
     const templateId = normalizeProviderTemplateId(body.template)
-    const template = requireTemplate(providers, templateId)
+    const template = await requireTemplate(providers, templateId)
     const configuration = normalizeConfiguration(
       template,
       body.configuration ?? {},
@@ -686,7 +696,7 @@ export function createProviderRoutes<Bindings extends object>(
     const templateId = body.template
       ? normalizeProviderTemplateId(body.template)
       : existing.templateId
-    const template = requireTemplate(providers, templateId)
+    const template = await requireTemplate(providers, templateId)
     const configuration = normalizeConfiguration(
       template,
       body.configuration ?? existing.configuration,

@@ -63,18 +63,13 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.providerSearch(filter),
         queryFn: async ({ signal }) => {
+          const query = Object.fromEntries(
+            Object.entries(filter)
+              .filter(([, value]) => value !== undefined)
+              .map(([key, value]) => [key, String(value)]),
+          )
           const response = await client.oauth.providers.$get(
-            {
-              query: {
-                ...filter,
-                include_unconfigured:
-                  filter.include_unconfigured === undefined
-                    ? undefined
-                    : filter.include_unconfigured
-                      ? 'true'
-                      : 'false',
-              },
-            },
+            { query },
             { init: { signal } },
           )
           if (!response.ok) return throwHookfishApiError(response)

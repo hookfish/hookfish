@@ -1,5 +1,4 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import type { ProviderRegistry } from '@hookfish/provider'
 import type { DatabaseInput } from '../db/binding'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
@@ -24,7 +23,7 @@ import {
   resolveRedirectUri,
   validateReturnTo,
 } from '../oauth/config'
-import { listProviderDescriptors } from '../oauth/dynamic-provider'
+import { listProviderDescriptorPage } from '../oauth/dynamic-provider'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
   type BrokerContext,
@@ -34,6 +33,7 @@ import {
 import { ORGANIZATION_PATTERN } from '../oauth/organization'
 import { assertOrganizationResourcePath } from '../oauth/resource-path'
 import { organizationFromAuthorizationState } from '../oauth/state'
+import type { BoundProviderSource } from '../provider-source'
 
 /**
  * References the `brokerApiKey` scheme registered in `src/index.ts`. Attaching
@@ -266,34 +266,38 @@ const listProvidersRoute = createRoute({
     "Returns configured providers by default. Set `include_unconfigured=true` to include providers that cannot start a new authorization. Each `callback_url` is the exact string this deployment will send as `redirect_uri`; paste it into the provider's developer console verbatim.",
   security: brokerAuth,
   request: {
-    query: z.object({
-      search: z.string().trim().max(128).optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional(),
-      source: z.enum(['fixed', 'dynamic']).optional(),
-      include_unconfigured: z.stringbool().optional(),
-    }),
+    query: z
+      .object({
+        search: z.string().trim().max(128).optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+        source: z.enum(['fixed', 'dynamic']).optional(),
+        include_unconfigured: z.stringbool().optional(),
+      })
+      .catchall(z.coerce.string().optional()),
   },
   responses: {
     200: {
       description: 'Provider registry',
       content: {
         'application/json': {
-          schema: z.object({
-            providers: z.array(
-              z.object({
-                id: z.string(),
-                label: z.string(),
-                kind: z.enum(['oauth', 'mcp']),
-                configured: z.boolean(),
-                callback_url: z.string(),
-                scopes: z.array(z.string()),
-                available_scopes: z.array(z.string()),
-                supports_refresh: z.boolean(),
-                supports_revocation: z.boolean(),
-                uses_pkce: z.boolean(),
-              }),
-            ),
-          }),
+          schema: z
+            .object({
+              providers: z.array(
+                z.object({
+                  id: z.string(),
+                  label: z.string(),
+                  kind: z.enum(['oauth', 'mcp']),
+                  configured: z.boolean(),
+                  callback_url: z.string(),
+                  scopes: z.array(z.string()),
+                  available_scopes: z.array(z.string()),
+                  supports_refresh: z.boolean(),
+                  supports_revocation: z.boolean(),
+                  uses_pkce: z.boolean(),
+                }),
+              ),
+            })
+            .catchall(z.unknown()),
         },
       },
     },
@@ -564,7 +568,7 @@ const clientMetadataRuntimeRoute = createRoute({
 // ---------------------------------------------------------------------------
 
 export function createOAuthRoutes<Bindings extends object>(
-  resolveProviders: (bindings: Bindings) => Promise<ProviderRegistry>,
+  resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   database: DatabaseInput<Bindings>,
   options: OAuthRouteOptions,
 ) {
@@ -648,41 +652,48 @@ export function createOAuthRoutes<Bindings extends object>(
       const providers = await resolveProviders(c.env)
       const grant = c.get('accessGrant')
       const { limit, ...providerFilter } = filter
-      const descriptors = (
-        await listProviderDescriptors(
-          c.get('db'),
-          config,
-          providers,
-          organization,
-          {
-            ...providerFilter,
-            ...(includeUnconfigured ? {} : { configured: true }),
+      const page = await listProviderDescriptorPage(
+        c.get('db'),
+        config,
+        providers,
+        organization,
+        {
+          ...providerFilter,
+          ...(includeUnconfigured ? {} : { configured: true }),
+        },
+        new URL(c.req.url).searchParams,
+      )
+      const { providers: listedProviders, ...listingMetadata } = page
+      const descriptors = listedProviders.filter(({ id }) =>
+        scopesAllowResource(grant.scopes, id),
+      )
+      const serializedProviders = await Promise.all(
+        (limit ? descriptors.slice(0, limit) : descriptors).map(
+          async ({ id: slug, label, configured, provider, templateId }) => {
+            const template = templateId
+              ? await providers.getProvider(templateId)
+              : undefined
+            return {
+              id: slug,
+              label,
+              kind: provider?.kind ?? template?.kind ?? 'oauth',
+              configured,
+              // Derived from this request, so it stays correct across branches,
+              // `pnpm dev` vs. `server dev`, and deployed environments.
+              callback_url: resolveRedirectUri(config, c.req.url, slug),
+              scopes: [...(provider?.defaultScopes ?? [])],
+              available_scopes: [...(provider?.availableScopes ?? [])],
+              supports_refresh: provider?.refreshToken !== undefined,
+              supports_revocation: provider?.revokeToken !== undefined,
+              uses_pkce: provider?.usesPkce ?? false,
+            }
           },
-        )
-      ).filter(({ id }) => scopesAllowResource(grant.scopes, id))
+        ),
+      )
       return c.json(
         {
-          providers: (limit ? descriptors.slice(0, limit) : descriptors).map(
-            ({ id: slug, label, configured, provider, templateId }) => {
-              const template = templateId
-                ? providers.getProvider(templateId)
-                : undefined
-              return {
-                id: slug,
-                label,
-                kind: provider?.kind ?? template?.kind ?? 'oauth',
-                configured,
-                // Derived from this request, so it stays correct across branches,
-                // `pnpm dev` vs. `server dev`, and deployed environments.
-                callback_url: resolveRedirectUri(config, c.req.url, slug),
-                scopes: [...(provider?.defaultScopes ?? [])],
-                available_scopes: [...(provider?.availableScopes ?? [])],
-                supports_refresh: provider?.refreshToken !== undefined,
-                supports_revocation: provider?.revokeToken !== undefined,
-                uses_pkce: provider?.usesPkce ?? false,
-              }
-            },
-          ),
+          ...listingMetadata,
+          providers: serializedProviders,
         },
         200,
       )
@@ -697,7 +708,7 @@ export function createOAuthRoutes<Bindings extends object>(
       const config = resolveBrokerConfig(c.env)
       const providers = await resolveProviders(c.env)
       const { organization } = c.get('databaseContext')
-      if (!providers.getProvider(provider)) {
+      if (!(await providers.getProvider(provider))) {
         assertOrganizationResourcePath(organization, provider, 'provider')
       } else {
         assertOrganizationResourcePath(undefined, provider, 'provider')

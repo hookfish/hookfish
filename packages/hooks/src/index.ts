@@ -42,6 +42,7 @@ export {
   type DisconnectConnectionResponse,
   type HookfishClient,
   type HookfishClientOptions,
+  type ProviderListQueryValue,
   type ProvidersResponse,
   type ProvidersFilter,
   type StatsResponse,

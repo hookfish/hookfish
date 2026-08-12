@@ -15,7 +15,12 @@ import {
   oauthStates,
   vaultSecrets,
 } from '../src/db/schema'
-import { type DatabaseContext, defineDatabase, Hookfish } from '../src/index'
+import {
+  type DatabaseContext,
+  defineDatabase,
+  createProviderSource,
+  Hookfish,
+} from '../src/index'
 import { mintAccessToken } from '../src/oauth/access-token'
 import { listConnections, purgeExpiredStates } from '../src/oauth/broker'
 import {
@@ -1945,6 +1950,111 @@ describe('OAuth broker integration', () => {
       rotatedBindings,
       firstBindings,
     ])
+  })
+
+  it('resolves one lazy provider and passes custom listing metadata through', async () => {
+    const provider = h.providers.getProvider(h.providerId)
+    if (!provider) throw new Error('Stub provider is missing.')
+
+    const resolvedIds: string[] = []
+    const listingQueries: string[] = []
+    const hookfish = await Hookfish.init<typeof h.env>({
+      db: h.db,
+      providerManagement: true,
+      providers: createProviderSource({
+        async getProvider(providerId) {
+          resolvedIds.push(providerId)
+          return providerId === 'registry-stub' ? provider : undefined
+        },
+        async listProviders(query) {
+          listingQueries.push(query.toString())
+          const offset = Number(query.get('offset') ?? 0)
+          return {
+            providers: [{ id: 'registry-stub', provider }],
+            offset,
+            total: 250,
+            next_offset: offset + 1,
+          }
+        },
+      }),
+    })
+    const request = (path: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', 'Bearer test')
+      return hookfish.fetch(
+        new Request(`${API_ORIGIN}${path}`, { ...init, headers }),
+        h.env,
+      )
+    }
+
+    const listed = await request(
+      '/api/oauth/providers?limit=1&offset=20&sort=popular',
+    )
+    expect(listed.status).toBe(200)
+    expect(await listed.json()).toMatchObject({
+      providers: [expect.objectContaining({ id: 'registry-stub' })],
+      offset: 20,
+      total: 250,
+      next_offset: 21,
+    })
+    expect(listingQueries).toEqual(['limit=1&offset=20&sort=popular'])
+    expect(resolvedIds).toEqual([])
+
+    const managed = await request('/api/admin/providers?offset=30')
+    expect(managed.status).toBe(200)
+    expect(await managed.json()).toMatchObject({
+      providers: [expect.objectContaining({ id: 'registry-stub' })],
+      offset: 30,
+      total: 250,
+      next_offset: 31,
+    })
+    expect(listingQueries).toEqual([
+      'limit=1&offset=20&sort=popular',
+      'offset=30',
+    ])
+
+    const authorize = await request('/api/oauth/authorize/registry-stub', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: 'lazy/registry-stub' }),
+    })
+    expect(authorize.status).toBe(200)
+    expect(resolvedIds).toEqual(['registry-stub'])
+    expect(listingQueries).toHaveLength(2)
+  })
+
+  it('allows a lazy provider source to omit listing', async () => {
+    const provider = h.providers.getProvider(h.providerId)
+    if (!provider) throw new Error('Stub provider is missing.')
+
+    const hookfish = await Hookfish.init<typeof h.env>({
+      db: h.db,
+      providers: createProviderSource({
+        getProvider: async (providerId) =>
+          providerId === 'unlisted-stub' ? provider : undefined,
+      }),
+    })
+    const request = (path: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', 'Bearer test')
+      return hookfish.fetch(
+        new Request(`${API_ORIGIN}${path}`, { ...init, headers }),
+        h.env,
+      )
+    }
+
+    expect(await (await request('/api/oauth/providers')).json()).toEqual({
+      providers: [],
+    })
+    expect(
+      (
+        await request('/api/oauth/authorize/unlisted-stub', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ connection_id: 'lazy/unlisted-stub' }),
+        })
+      ).status,
+    ).toBe(200)
   })
 
   it('resolves a request-aware database binding and exposes a bound fetch', async () => {

@@ -11,12 +11,11 @@ export function createHookfishKeys(scope: string) {
       [
         ...root,
         'providers',
-        {
-          includeUnconfigured: filter.include_unconfigured ?? null,
-          limit: filter.limit ?? null,
-          search: filter.search ?? null,
-          source: filter.source ?? null,
-        },
+        Object.fromEntries(
+          Object.entries(filter)
+            .filter(([, value]) => value !== undefined)
+            .sort(([left], [right]) => left.localeCompare(right)),
+        ),
       ] as const,
     connectionsRoot: () => [...root, 'connections'] as const,
     connections: (filter: ConnectionsFilter = {}) =>

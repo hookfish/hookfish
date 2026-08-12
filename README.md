@@ -162,6 +162,13 @@ to the selected backend. Before exposing the dashboard in production, pass an
 `authorizeBrowserRequest` runtime option to `Hookfish.init` and enforce the
 application's session/authentication policy.
 
+The bundled dashboard currently shows global routes only. It has no
+organization selector, and `/connections/acme` means the `acme` resource
+folder rather than the `acme` organization. An organization-aware product
+should expose its own authenticated route, such as
+`/organizations/acme/connections`, and call Hookfish's organization API from
+its server. See [docs/SMITHERY.md](docs/SMITHERY.md#frontend-organization-views).
+
 ## Frontend hooks
 
 `@hookfish/hooks` consumes the browser facade using the raw API's inferred
@@ -183,7 +190,9 @@ function RuntimeStats() {
 The facade only forwards stats, provider metadata, connection metadata,
 authorization starts, and disconnects. OAuth token retrieval, secret-vault
 operations, and administration remain server-only. More detail is in
-[packages/api/OAUTH.md](packages/api/OAUTH.md).
+[packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
+catalog with organization-scoped connections, see
+[docs/SMITHERY.md](docs/SMITHERY.md).
 
 ## Commands
 

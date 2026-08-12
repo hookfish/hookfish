@@ -167,7 +167,7 @@ export async function listManagedProviders(
   token: string,
 ): Promise<ManagedProvider[]> {
   const response = await managementClient.admin.providers.$get(
-    undefined,
+    { query: {} },
     managementRequestOptions(token),
   )
   if (!response.ok) return throwManagementError(response)
