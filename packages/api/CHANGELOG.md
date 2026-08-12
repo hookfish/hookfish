@@ -1,5 +1,16 @@
 # @hookfish/api
 
+## 0.3.0
+
+### Minor Changes
+
+- 397067d: Add lazy provider sources with per-provider resolution and optional flexible listings that accept arbitrary query parameters and pass pagination metadata through.
+
+### Patch Changes
+
+- Updated dependencies [397067d]
+  - @hookfish/provider@0.2.0
+
 ## 0.2.0
 
 ### Minor Changes
