@@ -112,7 +112,7 @@ const commonErrors = {
 }
 
 const connectionPathParam = z.object({
-  connection_path: z.string().min(3).max(512),
+  connection_path: z.string().min(1).max(512),
 })
 
 const connectionAccessInput = z.object({

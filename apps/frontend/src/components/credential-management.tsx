@@ -1,6 +1,15 @@
 import { KeyRoundIcon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 
@@ -11,19 +20,74 @@ export function BrokerAccess({
   token: string
   onTokenChange: (token: string) => void
 }) {
+  const [draft, setDraft] = useState(token)
+  const [open, setOpen] = useState(false)
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const nextToken = draft.trim()
+    if (!nextToken) return
+    onTokenChange(nextToken)
+    setOpen(false)
+  }
+
+  function clear() {
+    setDraft('')
+    onTokenChange('')
+    setOpen(false)
+  }
+
   return (
-    <Button
-      variant={token ? 'secondary' : 'outline'}
-      size="sm"
-      onClick={() => {
-        if (token) onTokenChange('')
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setDraft(token)
+        setOpen(nextOpen)
       }}
     >
-      <KeyRoundIcon />
-      <span className="hidden sm:inline">
-        {token ? 'Clear access' : 'Broker access'}
-      </span>
-    </Button>
+      <DialogTrigger asChild>
+        <Button variant={token ? 'secondary' : 'outline'} size="sm">
+          <KeyRoundIcon />
+          <span className="hidden sm:inline">
+            {token ? 'Access active' : 'Broker access'}
+          </span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form className="grid gap-8" onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Broker access</DialogTitle>
+            <DialogDescription>
+              Enter a root or scoped broker API key. It is kept for this browser
+              session.
+            </DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="broker-token">Broker API key</FieldLabel>
+            <Input
+              id="broker-token"
+              type="password"
+              value={draft}
+              required
+              autoComplete="off"
+              placeholder="Enter a broker API key…"
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </Field>
+          <DialogFooter>
+            {token ? (
+              <Button type="button" variant="outline" onClick={clear}>
+                Clear access
+              </Button>
+            ) : null}
+            <Button type="submit">
+              <KeyRoundIcon />
+              {token ? 'Update access' : 'Enable access'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

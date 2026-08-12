@@ -29,7 +29,7 @@ function connectionScopeFilter(scopes?: string[]) {
   if (scopes?.includes('**') || !scopes) return undefined
   if (scopes.length === 0) return sql<boolean>`false`
 
-  const path = sql<string>`${connections.namespace} || '/' || ${connections.providerId}`
+  const path = sql<string>`CASE WHEN ${connections.namespace} = '' THEN ${connections.providerId} ELSE ${connections.namespace} || '/' || ${connections.providerId} END`
   return or(
     ...scopes.map((scope) => {
       const root = scope.endsWith('/**') ? scope.slice(0, -3) : scope
