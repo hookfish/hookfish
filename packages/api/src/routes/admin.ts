@@ -52,7 +52,7 @@ const mintTokenRoute = createRoute({
   operationId: 'admin.tokens.create',
   summary: 'Mint a named broker access token',
   description:
-    'Creates an expiring named credential for one or more connection folders. Folder paths are canonicalized to `folder/**`. Tokens may delegate only to folders they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.',
+    'Creates an expiring named credential for exact resource paths or explicit `namespace/**` subtrees. Tokens may delegate only grants they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.',
   security: brokerAuth,
   request: {
     body: {
@@ -71,8 +71,8 @@ const mintTokenRoute = createRoute({
               .max(32)
               .openapi({
                 description:
-                  'Connection folders. Each path is canonicalized to `path/**`.',
-                example: ['team'],
+                  'Exact resource paths or explicit namespace subtrees ending in `/**`.',
+                example: ['team/payments/github', 'team/support/**'],
               }),
             expires_in: z
               .number()

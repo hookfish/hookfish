@@ -1,84 +1,42 @@
 ---
 title: "Configuration"
-description: "Reference Hookfish config fields and runtime-specific options."
+description: "Reference Hookfish broker, provider, callback, and runtime options."
 ---
 
-Define shared broker behavior in `hookfish.config.ts`. Pass host-specific
-behavior as the second argument to `HookfishServer.init`.
-
-## Broker configuration
-
 ```ts
-import { defineHookfishConfig } from '@hookfish/api'
-
 export default defineHookfishConfig({
   db,
   providers,
+  includeClient: false,
   includeSwagger: true,
   returnTo: 'https://app.example.com/settings/integrations',
   trustedOrigins: ['https://app.example.com'],
   organizationRouting: false,
-  providerManagement: false,
   onEvent: async (event) => auditLog.write(event),
 })
 ```
 
-| Option | Type | Default | Purpose |
-| --- | --- | --- | --- |
-| `db` | `DatabaseInput` | Required | Ready, promised, or request-aware database |
-| `providers` | Map, registry, source, or factory | Required | Resolve OAuth providers |
-| `includeClient` | `boolean` | `false` | Mount the optional `/api/client` facade |
-| `includeSwagger` | `boolean` | `true` | Include server-only routes in the OpenAPI document |
-| `returnTo` | Absolute HTTP(S) URL | Development completion page | Fixed callback destination |
-| `trustedOrigins` | URL array | `[]` | Allow per-flow returns and cross-origin browser calls |
-| `organizationRouting` | `boolean` | `false` | Move management routes under an organization path |
-| `providerManagement` | `boolean` | `false` | Enable dynamic-provider CRUD |
-| `onEvent` | Event handler | Unset | Export best-effort lifecycle events |
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `db` | Required | Ready, promised, or request-aware database |
+| `providers` | Required | Trusted provider map, registry, source, or factory |
+| `includeClient` | `false` | Mount the metadata-only `/api/client` facade |
+| `includeSwagger` | `true` | Include server-only operations in OpenAPI |
+| `returnTo` | Completion page | Fixed post-callback destination |
+| `trustedOrigins` | `[]` | Allow per-access `returnTo` destinations and browser CORS |
+| `organizationRouting` | `false` | Add organization-prefixed management routes |
+| `onEvent` | Unset | Receive best-effort lifecycle events |
 
-`includeSwagger: false` does not remove server routes. It filters the generated
-document to browser-safe operations and advertises `/api/client` as its server.
-
-For user-facing applications, keep `includeClient` at its default. Authenticate
-requests on your application API, then use a server-side Hono RPC client to
-call Hookfish with a scoped broker token.
+There is no provider-management switch. Provider implementations are trusted
+deployment code. Per-connection MCP configuration is supplied through
+`connections.access(path, { url, scopes })`.
 
 ## Runtime options
 
-```ts
-import { HookfishServer } from '@hookfish/api'
+The second argument to `HookfishServer.init` accepts `runtime`,
+`browserOrigins`, `brokerApiKey`, and `authorizeBrowserRequest`. These configure
+the optional browser facade; they do not change the raw server API.
 
-const hookfish = await HookfishServer.init(config, {
-  runtime: 'node',
-})
-```
-
-| Option | Purpose |
-| --- | --- |
-| `runtime` | Label returned by `/api/client/health` |
-| `browserOrigins` | Override the config's browser CORS allowlist |
-| `brokerApiKey` | Resolve the credential injected by the browser facade |
-| `authorizeBrowserRequest` | Apply application authentication and authorization |
-
-`runtime`, `browserOrigins`, and `brokerApiKey` can resolve values from the
-current runtime bindings.
-
-The last three options apply to the optional browser facade. They are not
-needed when your application authenticates users separately and calls
-Hookfish from trusted server routes.
-
-## Provider inputs
-
-`providers` accepts:
-
-- A record of provider IDs to implementations
-- A `ProviderRegistry`
-- A lazy `ProviderSource`
-- A synchronous or asynchronous factory that returns one of those inputs for
-  the current bindings
-
-Use a factory for request-bound secrets. Use `createProviderSource` for a large
-application-owned catalog where resolving one provider should not materialize
-the complete list.
-
-See [Environment variables](/reference/environment) and
-[OAuth providers](/authentication/oauth-providers) for concrete values.
+Use a provider factory when credentials come from request bindings. Use a lazy
+`ProviderSource` for a large application-owned catalog while keeping provider
+IDs and implementations trusted.

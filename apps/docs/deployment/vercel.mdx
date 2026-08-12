@@ -40,8 +40,8 @@ that changes between deployments.
 pnpm deploy
 ```
 
-After deployment, request `/api/oauth/providers` with a broker credential and
-register each returned callback URL with its provider.
+After deployment, register each fixed provider callback in the form
+`/api/connections/callback/{providerId}` with its provider.
 
 <Warning>
   Do not use PGlite on an ephemeral or horizontally scaled Vercel deployment.

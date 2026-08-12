@@ -87,10 +87,10 @@ export function connectionDirectory(
   }
 
   for (const connection of connections) {
-    if (currentPath && connection.connection_id === currentPath) continue
-    if (!connection.connection_id.startsWith(prefix)) continue
+    if (currentPath && connection.path === currentPath) continue
+    if (!connection.path.startsWith(prefix)) continue
 
-    const remainder = connection.connection_id.slice(prefix.length)
+    const remainder = connection.path.slice(prefix.length)
     const separatorIndex = remainder.indexOf('/')
 
     if (separatorIndex === -1) {
@@ -138,7 +138,7 @@ export function connectionDirectory(
       left.name.localeCompare(right.name),
     ),
     connections: directConnections.sort((left, right) =>
-      left.connection_id.localeCompare(right.connection_id),
+      left.path.localeCompare(right.path),
     ),
   }
 }

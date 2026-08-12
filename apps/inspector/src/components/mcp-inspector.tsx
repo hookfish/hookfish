@@ -23,7 +23,7 @@ const serverSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.url(),
-  connectionId: z.string().optional(),
+  connectionPath: z.string().optional(),
   features: inspectorFeaturesSchema.optional(),
 })
 const serversSchema = z.array(serverSchema)
@@ -212,8 +212,7 @@ function updateQuery(serverId: string | null, tab: InspectorTab) {
   else url.searchParams.delete('server')
   url.searchParams.set('tab', tab)
   url.searchParams.delete('oauth')
-  url.searchParams.delete('provider')
-  url.searchParams.delete('connection_id')
+  url.searchParams.delete('connection_path')
   url.searchParams.delete('hookfish_status')
   url.searchParams.delete('connected')
   url.searchParams.delete('error')
@@ -246,7 +245,7 @@ function defaultName(url: string) {
 function serverInput(server: SavedServer) {
   return {
     url: server.url,
-    connectionId: server.connectionId,
+    connectionPath: server.connectionPath,
     features: server.features ?? defaultInspectorFeatures,
   }
 }
@@ -305,7 +304,7 @@ export function McpInspector() {
     const initialServers = loadServers()
     const query = readQuery()
     const callbackConnection = new URLSearchParams(window.location.search).get(
-      'connection_id',
+      'connection_path',
     )
     const callbackError = new URLSearchParams(window.location.search).get(
       'error',
@@ -314,7 +313,7 @@ export function McpInspector() {
     const hydrated = callbackConnection
       ? initialServers.map((server) =>
           server.id === pendingId
-            ? { ...server, connectionId: callbackConnection }
+            ? { ...server, connectionPath: callbackConnection }
             : server,
         )
       : initialServers
@@ -355,7 +354,7 @@ export function McpInspector() {
     }
     if (oauthCallbackError) return
     void inspect(selected)
-  }, [selected?.id, selected?.connectionId, oauthCallbackError])
+  }, [selected?.id, selected?.connectionPath, oauthCallbackError])
 
   async function inspect(server: SavedServer) {
     setBusy(true)
@@ -740,9 +739,7 @@ export function McpInspector() {
                       onClick={() => void connectWithHookfish()}
                       className="min-h-11 bg-[#C8102E] px-4 text-sm font-semibold text-white hover:bg-[#a90d26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C8102E] disabled:cursor-wait disabled:opacity-50"
                     >
-                      {selected.connectionId
-                        ? 'Reconnect OAuth'
-                        : 'Connect OAuth'}
+                      {selected.connectionPath ? 'Reconnect' : 'Connect'}
                     </button>
                   </div>
                 </div>

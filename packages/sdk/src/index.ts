@@ -1,29 +1,21 @@
 import {
-  adminProvidersDelete,
-  adminProvidersGet,
-  adminProvidersList,
-  adminProvidersPatch,
-  adminProvidersPut,
   adminTokensCreate,
   adminTokensList,
   adminTokensRevoke,
-  oauthAuthorize,
-  oauthConnectionsDisconnect,
-  oauthConnectionsGet,
-  oauthConnectionsList,
-  oauthProvidersList,
-  oauthTokensGet,
-  organizationAdminProvidersDelete,
-  organizationAdminProvidersGet,
-  organizationAdminProvidersList,
-  organizationAdminProvidersPatch,
-  organizationAdminProvidersPut,
-  organizationOauthAuthorize,
-  organizationOauthConnectionsDisconnect,
-  organizationOauthConnectionsGet,
-  organizationOauthConnectionsList,
-  organizationOauthProvidersList,
-  organizationOauthTokensGet,
+  connectionsAccess,
+  connectionsDisconnect,
+  connectionsGet,
+  connectionsList,
+  connectionsProviders,
+  connectionsReauthorize,
+  connectionsSetSecret,
+  organizationConnectionsAccess,
+  organizationConnectionsDisconnect,
+  organizationConnectionsGet,
+  organizationConnectionsList,
+  organizationConnectionsProviders,
+  organizationConnectionsReauthorize,
+  organizationConnectionsSetSecret,
   organizationSecretsDelete,
   organizationSecretsGet,
   organizationSecretsList,
@@ -48,56 +40,76 @@ export type HookfishOptions = Pick<Config, 'baseUrl' | 'fetch' | 'headers'> & {
   organization?: string
 }
 
+type ErrorDetails = {
+  code?: unknown
+  message?: unknown
+  authorize_url?: unknown
+  expires_at?: unknown
+}
+
+function errorEnvelope(body: unknown): ErrorDetails | undefined {
+  if (typeof body !== 'object' || body === null || !('error' in body)) {
+    return undefined
+  }
+  const error = body.error
+  if (typeof error !== 'object' || error === null) return undefined
+  return {
+    code: 'code' in error ? error.code : undefined,
+    message: 'message' in error ? error.message : undefined,
+    authorize_url: 'authorize_url' in error ? error.authorize_url : undefined,
+    expires_at: 'expires_at' in error ? error.expires_at : undefined,
+  }
+}
+
 export class HookfishError extends Error {
   readonly status: number | undefined
   readonly code: string | undefined
+  readonly authorizeUrl: string | undefined
+  readonly expiresAt: string | undefined
   readonly body: unknown
 
   constructor(response: Response | undefined, body: unknown) {
-    const message =
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof body.error === 'object' &&
-      body.error !== null &&
-      'message' in body.error &&
-      typeof body.error.message === 'string'
-        ? body.error.message
-        : `Hookfish request failed${response ? ` (${response.status})` : ''}.`
-    super(message)
+    const error = errorEnvelope(body)
+    super(
+      typeof error?.message === 'string'
+        ? error.message
+        : `Hookfish request failed${response ? ` (${response.status})` : ''}.`,
+    )
     this.name = 'HookfishError'
     this.status = response?.status
-    this.code =
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof body.error === 'object' &&
-      body.error !== null &&
-      'code' in body.error &&
-      typeof body.error.code === 'string'
-        ? body.error.code
-        : undefined
+    this.code = typeof error?.code === 'string' ? error.code : undefined
+    this.authorizeUrl =
+      typeof error?.authorize_url === 'string' ? error.authorize_url : undefined
+    this.expiresAt =
+      typeof error?.expires_at === 'string' ? error.expires_at : undefined
     this.body = body
   }
 }
 
-type ProviderPutInput = Omit<
-  Parameters<typeof adminProvidersPut>[0],
-  'provider_path'
->
-type ProviderPatchInput = Omit<
-  Parameters<typeof adminProvidersPatch>[0],
-  'provider_path'
->
-type AuthorizeInput = {
-  connectionId?: string
-  connectionIdPrefix?: string
+export type ConnectionAccessInput = {
+  /** Dynamic MCP resource URL. Required when creating an MCP connection. */
+  url?: string
   scopes?: string[]
   returnTo?: string
 }
+
+export type McpAuthProviderInput = ConnectionAccessInput & {
+  /** Streamable HTTP MCP resource URL stored with this connection. */
+  url: string
+}
+
+/** Structurally compatible with the MCP TypeScript client's AuthProvider. */
+export type McpAuthProvider = {
+  token(): Promise<string | undefined>
+  onUnauthorized(): Promise<void>
+}
+
+export type ConnectionFilter = {
+  namespace?: string
+  providerId?: string
+}
+
 type AccessTokenInput = Parameters<typeof adminTokensCreate>[0]
-type ProviderFilter = Parameters<typeof oauthProvidersList>[0]
-type ConnectionFilter = Parameters<typeof oauthConnectionsList>[0]
 type SecretFilter = Parameters<typeof secretsList>[0]
 
 /** End-to-end typed client for a Hookfish broker. */
@@ -123,141 +135,109 @@ export class Hookfish {
     throwOnError: true as const,
   })
 
-  readonly providers = {
-    list: () => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationAdminProvidersList(
-            { organization: this.organization },
-            options,
-          )
-        : adminProvidersList(options)
-    },
-    get: (provider: string) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationAdminProvidersGet(
-            { organization: this.organization, provider_path: provider },
-            options,
-          )
-        : adminProvidersGet({ provider_path: provider }, options)
-    },
-    put: (provider: string, input: ProviderPutInput) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationAdminProvidersPut(
-            {
-              ...input,
-              organization: this.organization,
-              provider_path: provider,
-            },
-            options,
-          )
-        : adminProvidersPut({ ...input, provider_path: provider }, options)
-    },
-    patch: (provider: string, input: ProviderPatchInput) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationAdminProvidersPatch(
-            {
-              ...input,
-              organization: this.organization,
-              provider_path: provider,
-            },
-            options,
-          )
-        : adminProvidersPatch({ ...input, provider_path: provider }, options)
-    },
-    delete: (provider: string) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationAdminProvidersDelete(
-            { organization: this.organization, provider_path: provider },
-            options,
-          )
-        : adminProvidersDelete({ provider_path: provider }, options)
-    },
-  }
-
-  readonly oauth = {
-    providers: (filter?: ProviderFilter) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationOauthProvidersList(
-            { ...filter, organization: this.organization },
-            options,
-          )
-        : oauthProvidersList(filter, options)
-    },
-    authorize: (provider: string, input: AuthorizeInput = {}) => {
-      const options = this.requestOptions()
-      const parameters = {
-        connection_id: input.connectionId,
-        connection_id_prefix: input.connectionIdPrefix,
-        scopes: input.scopes,
-        return_to: input.returnTo,
-        provider_path: provider,
-      }
-      return this.organization
-        ? organizationOauthAuthorize(
-            {
-              ...parameters,
-              organization: this.organization,
-            },
-            options,
-          )
-        : oauthAuthorize(parameters, options)
-    },
-    getToken: (connectionId: string) => {
-      const options = this.requestOptions()
-      return this.organization
-        ? organizationOauthTokensGet(
-            {
-              organization: this.organization,
-              connection_id: connectionId,
-            },
-            options,
-          )
-        : oauthTokensGet({ connection_id: connectionId }, options)
-    },
+  private reauthorizeConnection(path: string, input: ConnectionAccessInput) {
+    const options = this.requestOptions()
+    const parameters = {
+      connection_path: path,
+      url: input.url,
+      scopes: input.scopes,
+      return_to: input.returnTo,
+    }
+    return this.organization
+      ? organizationConnectionsReauthorize(
+          { ...parameters, organization: this.organization },
+          options,
+        )
+      : connectionsReauthorize(parameters, options)
   }
 
   readonly connections = {
-    list: (filter?: ConnectionFilter) => {
+    access: (path: string, input: ConnectionAccessInput = {}) => {
       const options = this.requestOptions()
+      const parameters = {
+        connection_path: path,
+        url: input.url,
+        scopes: input.scopes,
+        return_to: input.returnTo,
+      }
       return this.organization
-        ? organizationOauthConnectionsList(
-            { ...filter, organization: this.organization },
+        ? organizationConnectionsAccess(
+            { ...parameters, organization: this.organization },
             options,
           )
-        : oauthConnectionsList(filter, options)
+        : connectionsAccess(parameters, options)
     },
-    get: (connectionId: string) => {
+    mcpAuthProvider: (
+      path: string,
+      input: McpAuthProviderInput,
+    ): McpAuthProvider => ({
+      token: async () => {
+        const result = await this.connections.access(path, input)
+        if ('secret' in result && typeof result.secret === 'string') {
+          return result.secret
+        }
+        return result.data.secret
+      },
+      onUnauthorized: async () => {
+        await this.reauthorizeConnection(path, input)
+      },
+    }),
+    setSecret: (path: string, secret: string) => {
       const options = this.requestOptions()
       return this.organization
-        ? organizationOauthConnectionsGet(
+        ? organizationConnectionsSetSecret(
             {
               organization: this.organization,
-              connection_id: connectionId,
+              connection_path: path,
+              secret,
             },
             options,
           )
-        : oauthConnectionsGet({ connection_id: connectionId }, options)
+        : connectionsSetSecret({ connection_path: path, secret }, options)
     },
-    disconnect: (connectionId: string) => {
+    list: (filter: ConnectionFilter = {}) => {
       const options = this.requestOptions()
+      const parameters = {
+        namespace: filter.namespace,
+        provider_id: filter.providerId,
+      }
       return this.organization
-        ? organizationOauthConnectionsDisconnect(
-            {
-              organization: this.organization,
-              connection_id: connectionId,
-            },
+        ? organizationConnectionsList(
+            { ...parameters, organization: this.organization },
             options,
           )
-        : oauthConnectionsDisconnect({ connection_id: connectionId }, options)
+        : connectionsList(parameters, options)
+    },
+    get: (path: string) => {
+      const options = this.requestOptions()
+      return this.organization
+        ? organizationConnectionsGet(
+            { organization: this.organization, connection_path: path },
+            options,
+          )
+        : connectionsGet({ connection_path: path }, options)
+    },
+    disconnect: (path: string) => {
+      const options = this.requestOptions()
+      return this.organization
+        ? organizationConnectionsDisconnect(
+            { organization: this.organization, connection_path: path },
+            options,
+          )
+        : connectionsDisconnect({ connection_path: path }, options)
+    },
+    providers: () => {
+      const options = this.requestOptions()
+      return this.organization
+        ? organizationConnectionsProviders(
+            { organization: this.organization },
+            options,
+          )
+        : connectionsProviders(options)
     },
   }
 
+  /** Generic vault secrets, separate from provider-backed connections. */
   readonly secrets = {
     list: (filter?: SecretFilter) => {
       const options = this.requestOptions()

@@ -3,7 +3,7 @@ import type { DatabaseInput } from '../db/binding'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events'
 import {
   assertConnectionAccess,
-  assertConnectionPrefixAccess,
+  assertNamespaceAccess,
 } from '../oauth/access-token'
 import { resolveBrokerConfig } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
@@ -233,7 +233,7 @@ export function createSecretRoutes<Bindings extends object>(
     if (prefix) {
       const normalized = normalizeSecretPath(prefix)
       assertOrganizationSecretPath(organization, normalized)
-      assertConnectionPrefixAccess(c.get('accessGrant'), normalized)
+      assertNamespaceAccess(c.get('accessGrant'), normalized)
     } else if (!c.get('accessGrant').scopes.includes('**')) {
       throw new BrokerError(
         400,

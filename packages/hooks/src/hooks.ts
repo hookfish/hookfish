@@ -8,13 +8,10 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import type {
-  AuthorizeConnectionInput,
-  AuthorizeConnectionResponse,
   ConnectionResponse,
   ConnectionsFilter,
   ConnectionsResponse,
   DisconnectConnectionResponse,
-  ProvidersFilter,
   ProvidersResponse,
   StatsResponse,
 } from './client'
@@ -35,9 +32,9 @@ type MutationOverrides<TData, TVariables> = Omit<
 export async function invalidateDisconnectedConnection(
   queryClient: QueryClient,
   keys: HookfishKeys,
-  connectionId: string,
+  path: string,
 ): Promise<void> {
-  queryClient.removeQueries({ queryKey: keys.connection(connectionId) })
+  queryClient.removeQueries({ queryKey: keys.connection(path) })
   await queryClient.invalidateQueries({ queryKey: keys.connectionsRoot() })
 }
 
@@ -72,22 +69,6 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
     })
   }
 
-  function useProviderSearch<TData = ProvidersResponse>(
-    filter: ProvidersFilter,
-    overrides?: QueryOverrides<
-      ProvidersResponse,
-      TData,
-      ReturnType<HookfishKeys['providerSearch']>
-    >,
-  ) {
-    const query = options.providerSearch(filter)
-    return useQuery({
-      ...overrides,
-      queryKey: query.queryKey,
-      queryFn: query.queryFn,
-    })
-  }
-
   function useConnections<TData = ConnectionsResponse>(
     filter: ConnectionsFilter = {},
     overrides?: QueryOverrides<
@@ -105,28 +86,19 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
   }
 
   function useConnection<TData = ConnectionResponse>(
-    connectionId: string,
+    path: string,
     overrides?: QueryOverrides<
       ConnectionResponse,
       TData,
       ReturnType<HookfishKeys['connection']>
     >,
   ) {
-    const query = options.connection(connectionId)
+    const query = options.connection(path)
     return useQuery({
       ...overrides,
       queryKey: query.queryKey,
       queryFn: query.queryFn,
     })
-  }
-
-  function useAuthorizeConnection(
-    overrides?: MutationOverrides<
-      AuthorizeConnectionResponse,
-      AuthorizeConnectionInput
-    >,
-  ) {
-    return useMutation({ ...options.authorize(), ...overrides })
   }
 
   function useDisconnectConnection(
@@ -138,9 +110,9 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
     return useMutation({
       ...options.disconnect(),
       ...overrides,
-      async onSuccess(data, connectionId, onMutateResult, context) {
-        await invalidateDisconnectedConnection(queryClient, keys, connectionId)
-        await onSuccess?.(data, connectionId, onMutateResult, context)
+      async onSuccess(data, path, onMutateResult, context) {
+        await invalidateDisconnectedConnection(queryClient, keys, path)
+        await onSuccess?.(data, path, onMutateResult, context)
       },
     })
   }
@@ -148,10 +120,8 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
   return {
     useStats,
     useProviders,
-    useProviderSearch,
     useConnections,
     useConnection,
-    useAuthorizeConnection,
     useDisconnectConnection,
   }
 }

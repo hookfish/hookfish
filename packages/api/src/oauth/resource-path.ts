@@ -1,6 +1,106 @@
 import { BrokerError } from './errors'
 
 export const MAX_RESOURCE_PATH_LENGTH = 512
+export const MAX_PROVIDER_ID_LENGTH = 128
+export const PROVIDER_ID_PATTERN = /^[a-z][A-Za-z0-9]*$/
+
+const JAVASCRIPT_RESERVED_WORDS = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+])
+
+export type ConnectionPath = {
+  path: string
+  namespace: string
+  providerId: string
+}
+
+export function normalizeProviderId(providerId: string): string {
+  if (
+    providerId.length === 0 ||
+    providerId.length > MAX_PROVIDER_ID_LENGTH ||
+    !PROVIDER_ID_PATTERN.test(providerId) ||
+    JAVASCRIPT_RESERVED_WORDS.has(providerId)
+  ) {
+    throw new BrokerError(
+      400,
+      'invalid_provider_id',
+      'Provider ids must be lower-camel JavaScript identifiers up to 128 characters and cannot be reserved words.',
+    )
+  }
+  return providerId
+}
+
+export function parseConnectionPath(path: string): ConnectionPath {
+  const normalized = normalizeResourcePath(path, 'connection')
+  const separator = normalized.lastIndexOf('/')
+  if (separator <= 0 || separator === normalized.length - 1) {
+    throw new BrokerError(
+      400,
+      'invalid_connection_path',
+      'Connection paths must contain a namespace followed by a provider id.',
+    )
+  }
+
+  return {
+    path: normalized,
+    namespace: normalized.slice(0, separator),
+    providerId: normalizeProviderId(normalized.slice(separator + 1)),
+  }
+}
+
+export function formatConnectionPath(
+  namespace: string,
+  providerId: string,
+): string {
+  normalizeResourcePath(namespace, 'namespace')
+  normalizeProviderId(providerId)
+  return parseConnectionPath(`${namespace}/${providerId}`).path
+}
 
 function hasUnsafePathCharacters(value: string): boolean {
   for (const character of value) {

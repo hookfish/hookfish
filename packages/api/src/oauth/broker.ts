@@ -1,16 +1,18 @@
 import { z } from '@hono/zod-openapi'
 import {
+  isOAuthProviderTemplate,
+  isSecretProvider,
+  type OAuthProvider,
   ProviderConfigurationError,
   ProviderRequestError,
   type ProviderTokenResponse,
 } from '@hookfish/provider'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import type { Database, OAuthConnection, OAuthState } from '../db/types'
+import type { Connection, Database, OAuthState } from '../db/types'
 import {
   type BoundProviderSource,
   defaultBoundProviderSource,
 } from '../provider-source'
-import { generateConnectionId } from './connection-id'
 import {
   decryptSecret,
   encryptSecret,
@@ -18,14 +20,353 @@ import {
   requireEncryptionKey,
 } from './crypto'
 import { BrokerError } from './errors'
-import { resolveRequestProviderConfig } from './dynamic-provider'
+import { formatConnectionPath } from './resource-path'
 import { createAuthorizationState } from './state'
 
-/** How long a pending authorization stays valid. */
 const STATE_TTL_MS = 10 * 60 * 1000
-
-/** Refresh a little early so a token can't expire mid-flight downstream. */
 const REFRESH_LEEWAY_MS = 60 * 1000
+
+const tokenResponseSchema = z.looseObject({
+  access_token: z.string().min(1),
+  token_type: z.string().optional(),
+  refresh_token: z.string().min(1).optional(),
+  expires_in: z.coerce.number().int().positive().optional(),
+  scope: z.union([z.string(), z.array(z.string())]).optional(),
+})
+
+function parseScopeValue(value: string | string[] | undefined): string[] {
+  if (value === undefined) return []
+  if (Array.isArray(value)) return value
+  return value
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean)
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (typeof value !== 'object' || value === null) return JSON.stringify(value)
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+    .join(',')}}`
+}
+
+async function callProvider<T>(
+  operation: () => T | Promise<T>,
+  requestErrorCode = 'token_exchange_failed',
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw new BrokerError(
+        400,
+        'invalid_connection_configuration',
+        error.message,
+      )
+    }
+    if (error instanceof ProviderRequestError) {
+      throw new BrokerError(502, requestErrorCode, error.message)
+    }
+    throw error
+  }
+}
+
+async function getProvider(providers: BoundProviderSource, providerId: string) {
+  const provider = await providers.getProvider(providerId)
+  if (!provider) {
+    throw new BrokerError(
+      404,
+      'unknown_provider',
+      `Unknown provider "${providerId}".`,
+    )
+  }
+  return provider
+}
+
+function normalizeConfiguration(
+  provider: Awaited<ReturnType<typeof getProvider>>,
+  configuration: Record<string, unknown>,
+): Record<string, unknown> {
+  if (provider.kind !== 'mcp') {
+    if (Object.keys(configuration).length > 0) {
+      throw new BrokerError(
+        400,
+        'connection_configuration_unsupported',
+        `Provider "${provider.label ?? 'unknown'}" does not accept per-connection configuration.`,
+      )
+    }
+    return {}
+  }
+  if (!isOAuthProviderTemplate(provider)) {
+    throw new BrokerError(
+      500,
+      'invalid_provider',
+      'The MCP provider does not support per-connection configuration.',
+    )
+  }
+  try {
+    return provider.normalizeConfiguration?.(configuration) ?? configuration
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      throw new BrokerError(
+        400,
+        'invalid_connection_configuration',
+        error.message,
+      )
+    }
+    throw error
+  }
+}
+
+export async function ensureConnection(
+  db: Database,
+  input: {
+    organization?: string
+    namespace: string
+    providerId: string
+    configuration?: Record<string, unknown>
+  },
+  providers: BoundProviderSource = defaultBoundProviderSource,
+): Promise<Connection> {
+  const organization = input.organization ?? ''
+  const provider = await getProvider(providers, input.providerId)
+  const existing = await db.getConnection(
+    organization,
+    input.namespace,
+    input.providerId,
+  )
+
+  if (existing) {
+    if (input.configuration !== undefined) {
+      const normalized = normalizeConfiguration(provider, input.configuration)
+      if (stableJson(normalized) !== stableJson(existing.configuration)) {
+        throw new BrokerError(
+          409,
+          'connection_configuration_conflict',
+          `Connection "${formatConnectionPath(input.namespace, input.providerId)}" already has different configuration.`,
+        )
+      }
+    }
+    return existing
+  }
+
+  const normalized = normalizeConfiguration(provider, input.configuration ?? {})
+  const stored = await db.putConnection({
+    organization,
+    namespace: input.namespace,
+    providerId: input.providerId,
+    configuration: normalized,
+  })
+
+  if (stableJson(stored.configuration) !== stableJson(normalized)) {
+    throw new BrokerError(
+      409,
+      'connection_configuration_conflict',
+      `Connection "${formatConnectionPath(input.namespace, input.providerId)}" was concurrently created with different configuration.`,
+    )
+  }
+  return stored
+}
+
+const provisioningLocks = new Map<string, Promise<Connection>>()
+
+async function configureOAuthProvider(
+  db: Database,
+  env: object,
+  connection: Connection,
+  providers: BoundProviderSource,
+  redirectUri: string,
+  clientMetadataUrl: string,
+): Promise<{ connection: Connection; provider: OAuthProvider }> {
+  const provider = await getProvider(providers, connection.providerId)
+  if (isSecretProvider(provider)) {
+    throw new BrokerError(
+      409,
+      'secret_provider',
+      'This provider uses a stored secret.',
+    )
+  }
+  if (provider.kind !== 'mcp') return { connection, provider }
+  if (!isOAuthProviderTemplate(provider) || !provider.registerClient) {
+    throw new BrokerError(
+      500,
+      'invalid_provider',
+      'The MCP provider cannot prepare an OAuth client.',
+    )
+  }
+
+  let prepared = connection
+  if (!prepared.oauthClientId) {
+    const lockKey = `${connection.organization}\0${connection.namespace}\0${connection.providerId}`
+    let pending = provisioningLocks.get(lockKey)
+    if (!pending) {
+      pending = (async () => {
+        const latest =
+          (await db.getConnection(
+            connection.organization,
+            connection.namespace,
+            connection.providerId,
+          )) ?? connection
+        if (latest.oauthClientId) return latest
+
+        const registered = await callProvider(
+          () =>
+            provider.registerClient?.({
+              configuration: latest.configuration,
+              redirectUri,
+              clientMetadataUrl,
+            }),
+          'client_registration_failed',
+        )
+        if (!registered) {
+          throw new BrokerError(
+            500,
+            'client_registration_failed',
+            'The MCP provider did not return client credentials.',
+          )
+        }
+        const updated = await db.updateConnection(latest.id, {
+          oauthIssuer: registered.issuer ?? null,
+          oauthClientId: registered.clientId,
+          oauthClientSecret: registered.clientSecret
+            ? await encryptSecret(
+                requireEncryptionKey(env),
+                registered.clientSecret,
+              )
+            : null,
+        })
+        if (!updated)
+          throw new Error('Connection disappeared during provisioning.')
+        return updated
+      })().finally(() => provisioningLocks.delete(lockKey))
+      provisioningLocks.set(lockKey, pending)
+    }
+    prepared = await pending
+  }
+
+  const clientSecret = prepared.oauthClientSecret
+    ? await decryptSecret(requireEncryptionKey(env), prepared.oauthClientSecret)
+    : ''
+  return {
+    connection: prepared,
+    provider: provider.createProvider(
+      { clientId: prepared.oauthClientId!, clientSecret },
+      prepared.configuration,
+    ),
+  }
+}
+
+export type StartAuthorizationResult = {
+  authorizeUrl: string
+  expiresAt: Date
+  connection: Connection
+}
+
+export async function startAuthorization(
+  db: Database,
+  env: object,
+  input: {
+    connection: Connection
+    redirectUri: string
+    clientMetadataUrl: string
+    returnTo?: string
+    scopes?: string[]
+  },
+  providers: BoundProviderSource = defaultBoundProviderSource,
+): Promise<StartAuthorizationResult> {
+  const configured = await configureOAuthProvider(
+    db,
+    env,
+    input.connection,
+    providers,
+    input.redirectUri,
+    input.clientMetadataUrl,
+  )
+  const scopes = input.scopes?.length
+    ? input.scopes
+    : [...(configured.provider.defaultScopes ?? [])]
+  const state = await createAuthorizationState(
+    env,
+    configured.connection.organization || undefined,
+  )
+  const stateHash = await hashToken(state)
+  const expiresAt = new Date(Date.now() + STATE_TTL_MS)
+  const authorization = await callProvider(() =>
+    configured.provider.createAuthorization({
+      redirectUri: input.redirectUri,
+      state,
+      scopes,
+    }),
+  )
+
+  await db.supersedeOAuthStates(
+    configured.connection.organization,
+    configured.connection.namespace,
+    configured.connection.providerId,
+  )
+  await db.createOAuthState({
+    id: stateHash,
+    organization: configured.connection.organization,
+    namespace: configured.connection.namespace,
+    providerId: configured.connection.providerId,
+    codeVerifier: authorization.codeVerifier,
+    redirectUri: input.redirectUri,
+    returnTo: input.returnTo,
+    scopes,
+    issuer: configured.connection.oauthIssuer ?? undefined,
+    expiresAt,
+  })
+
+  return {
+    authorizeUrl: authorization.url,
+    expiresAt,
+    connection: configured.connection,
+  }
+}
+
+type StoredCredentialFields = Pick<
+  Connection,
+  | 'secret'
+  | 'refreshToken'
+  | 'tokenType'
+  | 'scopes'
+  | 'expiresAt'
+  | 'metadata'
+  | 'externalAccountId'
+  | 'externalAccountLabel'
+>
+
+async function toStoredFields(
+  env: object,
+  response: ProviderTokenResponse,
+  fallbackScopes: string[],
+  previousRefreshToken?: string | null,
+): Promise<StoredCredentialFields> {
+  const parsed = tokenResponseSchema.parse(response.payload)
+  const scopes = parseScopeValue(parsed.scope)
+  const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null
+  const metadata: Record<string, unknown> = { ...response.payload }
+  delete metadata.access_token
+  delete metadata.refresh_token
+  delete metadata.id_token
+
+  return {
+    secret: await encryptSecret(requireEncryptionKey(env), parsed.access_token),
+    refreshToken: refreshToken
+      ? await encryptSecret(requireEncryptionKey(env), refreshToken)
+      : null,
+    tokenType: parsed.token_type ?? 'Bearer',
+    scopes: scopes.length > 0 ? scopes : fallbackScopes,
+    expiresAt: parsed.expires_in
+      ? new Date(Date.now() + parsed.expires_in * 1000)
+      : null,
+    metadata,
+    externalAccountId: response.account?.id ?? null,
+    externalAccountLabel: response.account?.label ?? null,
+  }
+}
 
 function storedErrorStatus(status: number | null): ContentfulStatusCode {
   switch (status) {
@@ -42,262 +383,24 @@ function storedErrorStatus(status: number | null): ContentfulStatusCode {
   }
 }
 
-const tokenResponseSchema = z.looseObject({
-  access_token: z.string().min(1),
-  token_type: z.string().optional(),
-  refresh_token: z.string().min(1).optional(),
-  expires_in: z.coerce.number().int().positive().optional(),
-  scope: z.union([z.string(), z.array(z.string())]).optional(),
-})
-
-function parseScopeValue(value: string | string[] | undefined): string[] {
-  if (value === undefined) return []
-  if (Array.isArray(value)) return value
-
-  return (
-    value
-      // Authorization requests may use a different separator than token
-      // responses. GitHub, for example, requests space-delimited scopes but
-      // returns them comma-delimited.
-      .split(/[\s,]+/)
-      .map((scope) => scope.trim())
-      .filter((scope) => scope.length > 0)
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Step 1: build the consent URL
-// ---------------------------------------------------------------------------
-
-export type StartAuthorizationInput = {
-  /** Omit to mint an id that is not yet in use. */
-  connectionId?: string
-  /** Places an automatically minted id below this slash-delimited prefix. */
-  connectionIdPrefix?: string
-  provider: string
-  organization?: string
-  redirectUri: string
-  returnTo?: string
-  /** Overrides the provider's configured scopes for this one flow. */
-  scopes?: string[]
-}
-
-/**
- * A minted id must land on a free row -- reusing one would silently replace
- * somebody else's tokens. The id space is ~2e8, so a collision here means the
- * table is unexpectedly dense rather than that we were unlucky.
- */
-const MINT_ATTEMPTS = 8
-
-async function mintConnectionId(
-  db: Database,
-  prefix?: string,
-  organization?: string,
-): Promise<string> {
-  for (let attempt = 0; attempt < MINT_ATTEMPTS; attempt++) {
-    const generatedId = generateConnectionId()
-    const candidate = prefix ? `${prefix}/${generatedId}` : generatedId
-
-    if (!(await findConnection(db, candidate, organization))) return candidate
-  }
-
-  throw new BrokerError(
-    500,
-    'connection_id_unavailable',
-    `Could not mint an unused connection id in ${MINT_ATTEMPTS} attempts.`,
-  )
-}
-
-/** A connection id is one provider link -- never let a second provider take it. */
-async function assertProviderMatches(
-  db: Database,
-  connectionId: string,
-  provider: string,
-  organization?: string,
-): Promise<void> {
-  const existing = await findConnection(db, connectionId, organization)
-
-  if (existing && existing.provider !== provider) {
-    throw new BrokerError(
-      409,
-      'connection_id_in_use',
-      `Connection "${connectionId}" is already linked to ${existing.provider}. Mint a new id for ${provider}.`,
-    )
-  }
-}
-
-export async function startAuthorization(
-  db: Database,
-  env: object,
-  input: StartAuthorizationInput,
-  providers: BoundProviderSource = defaultBoundProviderSource,
-): Promise<{
-  authorizeUrl: string
-  state: string
-  expiresAt: Date
-  connectionId: string
-}> {
-  const config = await resolveRequestProviderConfig(
-    db,
-    env,
-    input.provider,
-    providers,
-    input.organization,
-    { forNewAuthorization: true },
-  )
-  const { provider } = config
-
-  if (input.connectionId && input.connectionIdPrefix) {
-    throw new BrokerError(
-      400,
-      'invalid_connection_id',
-      'Pass either connection_id or connection_id_prefix, not both.',
-    )
-  }
-
-  // A minted id is already known to be free; a caller-supplied one may be
-  // linked to another provider.
-  const connectionId =
-    input.connectionId ??
-    (await mintConnectionId(db, input.connectionIdPrefix, input.organization))
-
-  if (input.connectionId) {
-    await assertProviderMatches(
-      db,
-      input.connectionId,
-      input.provider,
-      input.organization,
-    )
-  }
-
-  const scopes = input.scopes?.length ? input.scopes : config.scopes
-  const state = await createAuthorizationState(env, input.organization)
-  const stateHash = await hashToken(state)
-  const expiresAt = new Date(Date.now() + STATE_TTL_MS)
-  const authorization = await callProvider(() =>
-    provider.createAuthorization({
-      redirectUri: input.redirectUri,
-      state,
-      scopes,
-    }),
-  )
-
-  await db.createOAuthState({
-    id: stateHash,
-    connectionId,
-    organization: input.organization ?? null,
-    provider: input.provider,
-    codeVerifier: authorization.codeVerifier ?? null,
-    redirectUri: input.redirectUri,
-    returnTo: input.returnTo ?? null,
-    scopes,
-    expiresAt,
-  })
-
-  return {
-    authorizeUrl: authorization.url,
-    state,
-    expiresAt,
-    connectionId,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Token endpoint plumbing
-// ---------------------------------------------------------------------------
-
-async function callProvider<T>(
-  operation: () => T | Promise<T>,
-  requestErrorCode = 'token_exchange_failed',
-): Promise<T> {
-  try {
-    return await operation()
-  } catch (error) {
-    if (error instanceof ProviderConfigurationError) {
-      throw new BrokerError(500, 'missing_configuration', error.message)
-    }
-    if (error instanceof ProviderRequestError) {
-      throw new BrokerError(502, requestErrorCode, error.message)
-    }
-    throw error
-  }
-}
-
-type StoredTokenFields = {
-  accessToken: string
-  refreshToken: string | null
-  tokenType: string
-  scopes: string[]
-  expiresAt: Date | null
-  metadata: Record<string, unknown>
-  externalAccountId: string | null
-  externalAccountLabel: string | null
-}
-
-async function toStoredFields(
-  env: object,
-  response: ProviderTokenResponse,
-  fallbackScopes: string[],
-  previousRefreshToken?: string | null,
-): Promise<StoredTokenFields> {
-  const raw = response.payload
-  const parsed = tokenResponseSchema.parse(raw)
-  const encryptionKey = requireEncryptionKey(env)
-
-  const scopes = parseScopeValue(parsed.scope)
-
-  // Providers commonly omit refresh_token on refresh; keep the one we hold.
-  const refreshToken = parsed.refresh_token ?? previousRefreshToken ?? null
-
-  const account = response.account ?? {}
-
-  // Keep the provider payload, minus anything credential-shaped. Tokens live
-  // in the encrypted columns; `id_token` is a signed identity assertion we
-  // have no reason to retain in plaintext.
-  const metadata: Record<string, unknown> = { ...raw }
-  delete metadata.access_token
-  delete metadata.refresh_token
-  delete metadata.id_token
-
-  return {
-    accessToken: await encryptSecret(encryptionKey, parsed.access_token),
-    refreshToken: refreshToken
-      ? await encryptSecret(encryptionKey, refreshToken)
-      : null,
-    tokenType: parsed.token_type ?? 'Bearer',
-    scopes: scopes.length > 0 ? scopes : fallbackScopes,
-    expiresAt: parsed.expires_in
-      ? new Date(Date.now() + parsed.expires_in * 1000)
-      : null,
-    metadata,
-    externalAccountId: account.id ?? null,
-    externalAccountLabel: account.label ?? null,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Step 2: consume the callback
-// ---------------------------------------------------------------------------
-
 export async function completeAuthorization(
   db: Database,
   env: object,
-  input: { provider: string; code: string; state: string; issuer?: string },
+  input: {
+    providerId: string
+    code: string
+    state: string
+    issuer?: string
+    clientMetadataUrl: string
+  },
   providers: BoundProviderSource = defaultBoundProviderSource,
-): Promise<{
-  connection: OAuthConnection
-  state: OAuthState
-  replayed: boolean
-}> {
+): Promise<{ connection: Connection; state: OAuthState; replayed: boolean }> {
   const stateHash = await hashToken(input.state)
-  // Accept an authorization started immediately before the state-hashing
-  // rollout. New states are never persisted in plaintext.
   const stateIds = [stateHash, input.state]
-  const pending = await db.claimOAuthState(stateIds, input.provider)
+  const pending = await db.claimOAuthState(stateIds, input.providerId)
 
   if (!pending) {
-    const existing = await db.getOAuthState(stateIds, input.provider)
-
+    const existing = await db.getOAuthState(stateIds, input.providerId)
     if (!existing) {
       throw new BrokerError(
         400,
@@ -305,31 +408,24 @@ export async function completeAuthorization(
         'Authorization state is unknown.',
       )
     }
-
     if (existing.status === 'completed') {
-      return {
-        connection: await getConnection(
-          db,
-          existing.connectionId,
-          existing.organization ?? undefined,
-        ),
-        state: existing,
-        replayed: true,
-      }
-    }
-
-    if (existing.status === 'failed') {
-      throw new BrokerError(
-        storedErrorStatus(existing.errorStatus),
-        existing.errorCode ?? 'authorization_failed',
-        existing.errorMessage ?? 'Authorization failed. Start the flow again.',
+      const connection = await db.getConnection(
+        existing.organization,
+        existing.namespace,
+        existing.providerId,
       )
+      if (!connection)
+        throw new BrokerError(
+          404,
+          'connection_not_found',
+          'Connection not found.',
+        )
+      return { connection, state: existing, replayed: true }
     }
-
     throw new BrokerError(
-      409,
-      'callback_in_progress',
-      'This authorization callback is already being processed.',
+      storedErrorStatus(existing.errorStatus),
+      existing.errorCode ?? 'authorization_failed',
+      existing.errorMessage ?? 'Authorization failed. Start the flow again.',
     )
   }
 
@@ -337,61 +433,63 @@ export async function completeAuthorization(
     const error = new BrokerError(
       400,
       'expired_state',
-      'Authorization state expired. Start the flow again.',
+      'Authorization state expired.',
     )
     await markAuthorizationFailed(db, pending.id, error)
     throw error
   }
 
   try {
-    const config = await resolveRequestProviderConfig(
+    if (pending.issuer && input.issuer && pending.issuer !== input.issuer) {
+      throw new BrokerError(
+        400,
+        'issuer_mismatch',
+        'The authorization response issuer does not match the discovered authorization server.',
+      )
+    }
+    const connection = await db.getConnection(
+      pending.organization,
+      pending.namespace,
+      pending.providerId,
+    )
+    if (!connection) {
+      throw new BrokerError(
+        404,
+        'connection_not_found',
+        'Connection not found.',
+      )
+    }
+    const configured = await configureOAuthProvider(
       db,
       env,
-      input.provider,
+      connection,
       providers,
-      pending.organization ?? undefined,
+      pending.redirectUri,
+      input.clientMetadataUrl,
     )
-
-    // The check in `startAuthorization` goes stale as soon as a second flow is
-    // opened on the same id, so re-check before spending the authorization code.
-    await assertProviderMatches(
-      db,
-      pending.connectionId,
-      input.provider,
-      pending.organization ?? undefined,
-    )
-
     const response = await callProvider(() =>
-      config.provider.exchangeCode({
+      configured.provider.exchangeCode({
         code: input.code,
         redirectUri: pending.redirectUri,
         codeVerifier: pending.codeVerifier ?? undefined,
         issuer: input.issuer,
       }),
     )
-    const fields = await toStoredFields(env, response, pending.scopes)
-
-    const connection = await db.upsertOAuthConnection({
-      organization: pending.organization,
-      connectionId: pending.connectionId,
-      provider: input.provider,
-      ...fields,
-    })
-
-    if (!connection) {
+    const updated = await db.updateConnection(
+      configured.connection.id,
+      await toStoredFields(env, response, pending.scopes),
+    )
+    if (!updated)
       throw new BrokerError(
-        409,
-        'connection_id_in_use',
-        `Connection "${pending.connectionId}" was linked to another provider while this flow was in progress. Start again with a new id.`,
+        404,
+        'connection_not_found',
+        'Connection not found.',
       )
-    }
-
     const completed = await db.updateOAuthState(pending.id, {
       status: 'completed',
       completedAt: new Date(),
     })
-
-    return { connection, state: completed ?? pending, replayed: false }
+    return { connection: updated, state: completed ?? pending, replayed: false }
   } catch (error) {
     await markAuthorizationFailed(db, pending.id, error)
     throw error
@@ -407,7 +505,6 @@ async function markAuthorizationFailed(
     error instanceof BrokerError
       ? error
       : new BrokerError(500, 'internal_error', 'Unexpected broker error.')
-
   await db.updateOAuthState(stateId, {
     status: 'failed',
     errorStatus: brokerError.status,
@@ -420,7 +517,7 @@ async function markAuthorizationFailed(
 export async function failAuthorization(
   db: Database,
   input: {
-    provider: string
+    providerId: string
     state: string
     errorCode: string
     errorMessage: string
@@ -428,7 +525,7 @@ export async function failAuthorization(
 ): Promise<{ state: OAuthState; replayed: boolean }> {
   const stateHash = await hashToken(input.state)
   const stateIds = [stateHash, input.state]
-  const pending = await db.claimOAuthState(stateIds, input.provider)
+  const pending = await db.claimOAuthState(stateIds, input.providerId)
   const failed = pending
     ? await db.updateOAuthState(pending.id, {
         status: 'failed',
@@ -438,229 +535,291 @@ export async function failAuthorization(
         completedAt: new Date(),
       })
     : undefined
-
   if (failed) return { state: failed, replayed: false }
-
-  const existing = await db.getOAuthState(stateIds, input.provider)
-
-  if (!existing) {
+  const existing = await db.getOAuthState(stateIds, input.providerId)
+  if (!existing)
     throw new BrokerError(
       400,
       'invalid_state',
       'Authorization state is unknown.',
     )
-  }
-
-  if (existing.status === 'failed') {
-    return { state: existing, replayed: true }
-  }
-
+  if (existing.status === 'failed') return { state: existing, replayed: true }
   throw new BrokerError(
     409,
     'callback_in_progress',
-    'This authorization callback is already being processed or completed.',
+    'Authorization callback is already being processed.',
   )
 }
 
 export async function getAuthorizationState(
   db: Database,
-  provider: string,
+  providerId: string,
   state: string,
 ): Promise<OAuthState | undefined> {
   const stateHash = await hashToken(state)
-  return db.getOAuthState([stateHash, state], provider)
+  return db.getOAuthState([stateHash, state], providerId)
 }
 
-// ---------------------------------------------------------------------------
-// Step 3: hand out a usable access token
-// ---------------------------------------------------------------------------
+function isExpired(connection: Connection): boolean {
+  return Boolean(
+    connection.expiresAt &&
+      connection.expiresAt.getTime() - REFRESH_LEEWAY_MS <= Date.now(),
+  )
+}
 
 async function refreshConnection(
   db: Database,
   env: object,
-  connection: OAuthConnection,
+  connection: Connection,
   providers: BoundProviderSource,
-): Promise<OAuthConnection> {
-  const config = await resolveRequestProviderConfig(
+  redirectUri: string,
+  clientMetadataUrl: string,
+): Promise<Connection> {
+  const configured = await configureOAuthProvider(
     db,
     env,
-    connection.provider,
+    connection,
     providers,
-    connection.organization ?? undefined,
+    redirectUri,
+    clientMetadataUrl,
   )
-  const encryptionKey = requireEncryptionKey(env)
-
-  if (!connection.refreshToken || !config.provider.refreshToken) {
+  if (!connection.refreshToken || !configured.provider.refreshToken) {
     throw new BrokerError(
       401,
       'reauthorization_required',
-      `The ${config.provider.label ?? connection.provider} connection "${connection.connectionId}" expired and has no refresh token. Start the flow again.`,
+      'Authorization is required again.',
     )
   }
-
-  const refresh = config.provider.refreshToken.bind(config.provider)
-
   const refreshToken = await decryptSecret(
-    encryptionKey,
+    requireEncryptionKey(env),
     connection.refreshToken,
   )
-
-  const response = await callProvider(() =>
-    refresh({
-      refreshToken,
-    }),
+  const response = await callProvider(
+    () => configured.provider.refreshToken?.({ refreshToken }),
+    'reauthorization_required',
   )
-
-  const fields = await toStoredFields(
-    env,
-    response,
-    connection.scopes,
-    refreshToken,
-  )
-
-  const updated = await db.updateOAuthConnectionTokens(connection.id, fields)
-
-  return updated ?? connection
-}
-
-function isExpired(connection: OAuthConnection): boolean {
-  if (!connection.expiresAt) return false
-
-  return connection.expiresAt.getTime() - REFRESH_LEEWAY_MS <= Date.now()
-}
-
-export async function findConnection(
-  db: Database,
-  connectionId: string,
-  organization?: string,
-): Promise<OAuthConnection | undefined> {
-  return db.getOAuthConnection(connectionId, organization)
-}
-
-export async function getConnection(
-  db: Database,
-  connectionId: string,
-  organization?: string,
-): Promise<OAuthConnection> {
-  const connection = await findConnection(db, connectionId, organization)
-
-  if (!connection) {
+  if (!response)
     throw new BrokerError(
-      404,
-      'not_connected',
-      `No connection "${connectionId}".`,
+      401,
+      'reauthorization_required',
+      'Authorization is required again.',
     )
-  }
-
-  return connection
+  const updated = await db.updateConnection(
+    connection.id,
+    await toStoredFields(env, response, connection.scopes, refreshToken),
+  )
+  if (!updated)
+    throw new BrokerError(404, 'connection_not_found', 'Connection not found.')
+  return updated
 }
 
-export type AccessTokenResult = {
-  provider: string
-  connectionId: string
-  accessToken: string
-  tokenType: string
-  scopes: string[]
+export type AccessConnectionResult = {
+  path: string
+  secret: string
   expiresAt: Date | null
+  scopes: string[]
   refreshed: boolean
 }
 
-/**
- * The endpoint the rest of your stack actually calls: returns a token that is
- * valid right now, refreshing transparently when it is about to expire.
- */
-export async function getAccessToken(
+export async function accessConnection(
   db: Database,
   env: object,
-  connectionId: string,
+  input: {
+    organization?: string
+    namespace: string
+    providerId: string
+    configuration?: Record<string, unknown>
+    redirectUri: string
+    clientMetadataUrl: string
+    returnTo?: string
+    scopes?: string[]
+  },
   providers: BoundProviderSource = defaultBoundProviderSource,
-  organization?: string,
-): Promise<AccessTokenResult> {
-  const existing = await getConnection(db, connectionId, organization)
+): Promise<AccessConnectionResult> {
+  let connection = await ensureConnection(db, input, providers)
+  const provider = await getProvider(providers, input.providerId)
+  if (isSecretProvider(provider)) {
+    if (!connection.secret) {
+      throw new BrokerError(
+        404,
+        'secret_required',
+        `Connection "${formatConnectionPath(input.namespace, input.providerId)}" needs a secret.`,
+      )
+    }
+    return {
+      path: formatConnectionPath(input.namespace, input.providerId),
+      secret: await decryptSecret(requireEncryptionKey(env), connection.secret),
+      expiresAt: null,
+      scopes: [],
+      refreshed: false,
+    }
+  }
 
-  const refreshed = isExpired(existing)
-  const connection = refreshed
-    ? await refreshConnection(db, env, existing, providers)
-    : existing
+  let refreshed = false
+  if (connection.secret && isExpired(connection)) {
+    try {
+      connection = await refreshConnection(
+        db,
+        env,
+        connection,
+        providers,
+        input.redirectUri,
+        input.clientMetadataUrl,
+      )
+      refreshed = true
+    } catch (error) {
+      if (
+        !(error instanceof BrokerError) ||
+        error.code !== 'reauthorization_required'
+      )
+        throw error
+    }
+  }
+
+  if (!connection.secret || isExpired(connection)) {
+    const authorization = await startAuthorization(
+      db,
+      env,
+      {
+        connection,
+        redirectUri: input.redirectUri,
+        clientMetadataUrl: input.clientMetadataUrl,
+        returnTo: input.returnTo,
+        scopes: input.scopes,
+      },
+      providers,
+    )
+    throw new BrokerError(
+      401,
+      'authorization_required',
+      `Connection "${formatConnectionPath(input.namespace, input.providerId)}" requires authorization.`,
+      {
+        authorize_url: authorization.authorizeUrl,
+        expires_at: authorization.expiresAt.toISOString(),
+      },
+    )
+  }
 
   return {
-    provider: connection.provider,
-    connectionId: connection.connectionId,
-    accessToken: await decryptSecret(
-      requireEncryptionKey(env),
-      connection.accessToken,
-    ),
-    tokenType: connection.tokenType,
-    scopes: connection.scopes,
+    path: formatConnectionPath(input.namespace, input.providerId),
+    secret: await decryptSecret(requireEncryptionKey(env), connection.secret),
     expiresAt: connection.expiresAt,
+    scopes: connection.scopes,
     refreshed,
   }
 }
 
-export async function listConnections(
-  db: Database,
-  options: {
-    provider?: string
-    connectionIdPrefix?: string
-    connectionScopes?: string[]
-    organization?: string
-  } = {},
-) {
-  return db.listOAuthConnections(options)
-}
-
-export type DeleteConnectionResult = {
-  deleted: boolean
-  revocation: 'revoked' | 'unsupported' | 'not_found'
-}
-
-export async function deleteConnection(
+export async function reauthorizeConnection(
   db: Database,
   env: object,
-  connectionId: string,
+  input: {
+    organization?: string
+    namespace: string
+    providerId: string
+    configuration?: Record<string, unknown>
+    redirectUri: string
+    clientMetadataUrl: string
+    returnTo?: string
+    scopes?: string[]
+  },
   providers: BoundProviderSource = defaultBoundProviderSource,
-  organization?: string,
-): Promise<DeleteConnectionResult> {
-  const connection = await findConnection(db, connectionId, organization)
-
-  if (!connection) {
-    return { deleted: false, revocation: 'not_found' }
+): Promise<never> {
+  const connection = await ensureConnection(db, input, providers)
+  const provider = await getProvider(providers, input.providerId)
+  if (isSecretProvider(provider)) {
+    throw new BrokerError(
+      400,
+      'connection_option_unsupported',
+      'Static-secret connections do not support reauthorization.',
+    )
   }
 
-  const provider = (
-    await resolveRequestProviderConfig(
-      db,
-      env,
-      connection.provider,
-      providers,
-      organization,
-    )
-  ).provider
-  const revokeToken = provider?.revokeToken?.bind(provider)
-  let revocation: DeleteConnectionResult['revocation'] = 'unsupported'
-
-  if (revokeToken) {
-    const key = requireEncryptionKey(env)
-    const [accessToken, refreshToken] = await Promise.all([
-      decryptSecret(key, connection.accessToken),
-      connection.refreshToken
-        ? decryptSecret(key, connection.refreshToken)
-        : undefined,
-    ])
-
-    await callProvider(
-      () => revokeToken({ accessToken, refreshToken }),
-      'token_revocation_failed',
-    )
-    revocation = 'revoked'
-  }
-
-  const deleted = await db.deleteOAuthConnection(connection.id)
-
-  return { deleted, revocation }
+  const authorization = await startAuthorization(
+    db,
+    env,
+    {
+      connection,
+      redirectUri: input.redirectUri,
+      clientMetadataUrl: input.clientMetadataUrl,
+      returnTo: input.returnTo,
+      scopes: input.scopes,
+    },
+    providers,
+  )
+  throw new BrokerError(
+    401,
+    'authorization_required',
+    `Connection "${formatConnectionPath(input.namespace, input.providerId)}" requires authorization.`,
+    {
+      authorize_url: authorization.authorizeUrl,
+      expires_at: authorization.expiresAt.toISOString(),
+    },
+  )
 }
 
-/** Housekeeping for abandoned flows. */
-export async function purgeExpiredStates(db: Database): Promise<number> {
-  return db.purgeExpiredOAuthStates(new Date())
+export async function setConnectionSecret(
+  db: Database,
+  env: object,
+  input: {
+    organization?: string
+    namespace: string
+    providerId: string
+    value: string
+  },
+  providers: BoundProviderSource = defaultBoundProviderSource,
+): Promise<Connection> {
+  const provider = await getProvider(providers, input.providerId)
+  if (!isSecretProvider(provider)) {
+    throw new BrokerError(
+      409,
+      'secret_assignment_unsupported',
+      `Provider "${input.providerId}" does not accept a caller-supplied secret.`,
+    )
+  }
+  const connection = await ensureConnection(db, input, providers)
+  const updated = await db.updateConnection(connection.id, {
+    secret: await encryptSecret(requireEncryptionKey(env), input.value),
+  })
+  if (!updated)
+    throw new BrokerError(404, 'connection_not_found', 'Connection not found.')
+  return updated
+}
+
+export async function disconnectConnection(
+  db: Database,
+  env: object,
+  connection: Connection,
+  providers: BoundProviderSource = defaultBoundProviderSource,
+  redirectUri = '',
+  clientMetadataUrl = '',
+): Promise<{ deleted: boolean; revocation: 'revoked' | 'unsupported' }> {
+  const provider = await getProvider(providers, connection.providerId)
+  let revocation: 'revoked' | 'unsupported' = 'unsupported'
+  if (!isSecretProvider(provider) && connection.secret) {
+    const configured = await configureOAuthProvider(
+      db,
+      env,
+      connection,
+      providers,
+      redirectUri,
+      clientMetadataUrl,
+    )
+    if (configured.provider.revokeToken) {
+      const key = requireEncryptionKey(env)
+      const accessToken = await decryptSecret(key, connection.secret)
+      const refreshToken = connection.refreshToken
+        ? await decryptSecret(key, connection.refreshToken)
+        : undefined
+      await callProvider(
+        () =>
+          configured.provider.revokeToken?.({
+            accessToken,
+            refreshToken,
+          }),
+        'token_revocation_failed',
+      )
+      revocation = 'revoked'
+    }
+  }
+  return { deleted: await db.deleteConnection(connection.id), revocation }
 }

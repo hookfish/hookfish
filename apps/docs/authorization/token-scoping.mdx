@@ -1,92 +1,50 @@
 ---
 title: "Scoped broker tokens"
-description: "Issue expiring, revocable broker credentials for Hookfish resource subtrees."
+description: "Issue exact-path or subtree credentials for Hookfish resources."
 ---
 
-The root `HOOKFISH_API_KEY` can access every Hookfish resource. Give applications
-and workers named, expiring broker tokens instead of sharing that root key.
+The root `HOOKFISH_API_KEY` can access every resource. Give applications named,
+expiring broker tokens instead.
 
-## Define resource paths
-
-Connections, dynamic providers, and vault secrets share one slash-delimited
-namespace:
+## Exact paths and namespaces
 
 ```text
-acme/engineering/github
-acme/engineering/notion
-acme/finance/github
+user/personal/gmail       exact connection only
+user/personal/**          namespace and every descendant
+**                        every resource
 ```
 
-A submitted scope of `acme/engineering` is canonicalized to
-`acme/engineering/**`. It includes the exact path and descendants, but not
-`acme/engineering-tools`. Use `**` only for root access.
-
-Paths can be at most 512 characters. They must use canonical NFC Unicode and
-cannot contain empty segments, dot segments, backslashes, control characters,
-or encoded path structure.
+Plain paths are exact. Hookfish does not silently turn them into folders.
+Append `/**` when you intend to grant descendants. Paths are canonical
+slash-delimited identifiers up to 512 characters.
 
 ## Mint a token
-
-Use a root credential to create a named one-hour token:
 
 ```bash
 curl --request POST http://127.0.0.1:8787/api/admin/tokens \
   --header "Authorization: Bearer $HOOKFISH_API_KEY" \
   --header 'Content-Type: application/json' \
   --data '{
-    "name": "acme-worker",
-    "scopes": ["acme/engineering"],
+    "name": "gmail-worker",
+    "scopes": ["user/personal/gmail"],
     "expires_in": 3600
   }'
 ```
 
-```json
-{
-  "name": "acme-worker",
-  "access_token": "hookfish_at_v1.eyJ2IjoxLC...",
-  "token_type": "Bearer",
-  "scopes": ["acme/engineering/**"],
-  "expires_at": "2026-08-11T20:00:00.000Z"
-}
-```
+The bearer value is returned once. A scoped token may delegate only equal or
+narrower scopes, under its dot-delimited token-name namespace, with an equal or
+earlier expiration.
 
-The bearer value is returned once. Store it in the consuming service's secret
-manager.
-
-## Use and delegate the token
-
-Send a scoped token through the same header used by the root key:
+Use the token on access:
 
 ```bash
-curl http://127.0.0.1:8787/api/oauth/connections/acme/engineering/github \
+curl --request POST \
+  http://127.0.0.1:8787/api/connections/access/user/personal/gmail \
   --header "Authorization: Bearer $HOOKFISH_ACCESS_TOKEN"
 ```
 
-Requests outside every granted scope return `403 insufficient_scope`.
+The same token cannot access `user/personal/gmail/mcp`. Grant
+`user/personal/**` only if the service needs that subtree.
 
-A scoped token may create another token with the same or narrower scopes and an
-equal or earlier expiry. Names form a delegation namespace: `acme-worker` may
-mint `acme-worker.eu`, but not `production-api`.
-
-| Limit | Value |
-| --- | --- |
-| Default lifetime | 1 hour |
-| Minimum lifetime | 60 seconds |
-| Maximum lifetime | 30 days |
-| Maximum resource scopes | 32 |
-
-## Revoke access
-
-```bash
-curl --request DELETE http://127.0.0.1:8787/api/admin/tokens/acme-worker \
-  --header "Authorization: Bearer $HOOKFISH_API_KEY"
-```
-
-Hookfish stores a hash of each token's random identifier and checks the
-database record on every request. Deletion, expiry changes, and scope narrowing
-take effect on the next request.
-
-<Warning>
-  Rotating `HOOKFISH_API_KEY` invalidates every scoped token because the root key
-  signs them. Treat root-key rotation as a deployment-wide credential rollover.
-</Warning>
+Revoke a name with `DELETE /api/admin/tokens/{name}`. Rotating the root key
+invalidates all scoped tokens because it signs them.

@@ -1,6 +1,10 @@
 import { createHookfishHooks } from '@hookfish/hooks'
-import { browserApiUrl } from './api-url'
+import { backendUrl } from './api-url'
+import { MANAGEMENT_TOKEN_KEY } from './management-token'
 
 export const hookfish = createHookfishHooks({
-  baseUrl: browserApiUrl,
+  baseUrl: `${backendUrl}/api`,
+  headers: () => ({
+    Authorization: `Bearer ${window.sessionStorage.getItem(MANAGEMENT_TOKEN_KEY) ?? ''}`,
+  }),
 })

@@ -1,61 +1,22 @@
 # `@hookfish/hooks`
 
-Typed React Query hooks and option factories for the Hookfish Hono API.
+Typed React Query hooks for Hookfish metadata routes.
 
 ```tsx
-import { createHookfishHooks } from '@hookfish/hooks'
+const hookfish = createHookfishHooks({ baseUrl: '/api/client' })
 
-const hookfish = createHookfishHooks({ baseUrl: '/api' })
-
-function RuntimeStats() {
-  const stats = hookfish.useStats()
-  return <div>{stats.data?.region}</div>
+function Connections() {
+  const query = hookfish.useConnections({
+    namespace: 'user/personal',
+    provider_id: 'github',
+  })
+  return query.data?.connections.map((connection) => (
+    <div key={connection.path}>{connection.path}</div>
+  ))
 }
 ```
 
-The same factory exposes query options for loaders, prefetching, and tests:
-
-```ts
-await queryClient.prefetchQuery(
-  hookfish.options.connections({ provider: 'github' }),
-)
-```
-
-Path and provider filters compose on the same typed endpoint:
-
-```tsx
-const connections = hookfish.useConnections({
-  connection_id_prefix: 'team/payments',
-  provider: 'github',
-})
-```
-
-Provider listings also accept registry-specific query fields. They are sent as
-strings and included in the React Query cache key, so a registry may implement
-offsets, cursors, or custom filters without changing the hooks package:
-
-```tsx
-const providers = hookfish.useProviderSearch({
-  search: 'notion',
-  limit: 50,
-  offset: 100,
-})
-```
-
-Protected routes accept any headers supported by Hono's RPC client. Prefer a
-browser-safe session token or cookie. Never put `HOOKFISH_API_KEY` in frontend
-code:
-
-```ts
-const hookfish = createHookfishHooks({
-  baseUrl: '/api',
-  headers: async () => ({
-    Authorization: `Bearer ${await getSessionToken()}`,
-  }),
-})
-```
-
-Available operations are stats, provider discovery, connection lists and
-details, authorization, and disconnect. The OAuth callback remains a browser
-navigation target. Access-token retrieval is deliberately server-only and has
-no hook.
+The package exposes stats, trusted-provider listings, connection metadata, and
+disconnect. It intentionally has no connection-access or secret-write hook:
+successful access returns a usable credential and must remain in trusted server
+code.

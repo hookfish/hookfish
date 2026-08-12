@@ -9,10 +9,13 @@ import {
   validateConnectionSlug,
 } from './connection-tree'
 
-function connection(connectionId: string, provider = 'github'): Connection {
+function connection(path: string, providerId = 'github'): Connection {
+  const separator = path.lastIndexOf('/')
   return {
-    connection_id: connectionId,
-    provider,
+    path,
+    namespace: path.slice(0, separator),
+    provider_id: providerId,
+    configuration: {},
     scopes: [],
     expires_at: null,
     external_account_id: null,
@@ -30,7 +33,7 @@ describe('connection tree', () => {
         connection('team/payments/production'),
         connection('team/payments/staging'),
         connection('team/support'),
-        connection('personal'),
+        connection('personal/github'),
       ],
       'team',
     )
@@ -42,7 +45,7 @@ describe('connection tree', () => {
         itemCount: 2,
       },
     ])
-    expect(directory.connections.map((item) => item.connection_id)).toEqual([
+    expect(directory.connections.map((item) => item.path)).toEqual([
       'team/support',
     ])
   })

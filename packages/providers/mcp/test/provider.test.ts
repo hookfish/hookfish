@@ -49,7 +49,9 @@ describe('McpProvider', () => {
         const url = String(input)
         if (url === `${issuer}/register`) {
           expect(JSON.parse(String(init?.body))).toMatchObject({
-            redirect_uris: ['https://broker.example/api/oauth/callback/acme'],
+            redirect_uris: [
+              'https://broker.example/api/connections/callback/mcp',
+            ],
             token_endpoint_auth_method: 'none',
             application_type: 'web',
           })
@@ -80,16 +82,21 @@ describe('McpProvider', () => {
     })
     const credentials = await template.registerClient({
       configuration,
-      redirectUri: 'https://broker.example/api/oauth/callback/acme',
+      redirectUri: 'https://broker.example/api/connections/callback/mcp',
+      clientMetadataUrl:
+        'https://broker.example/api/connections/client-metadata.json',
     })
-    expect(credentials).toEqual({ clientId: 'registered-client' })
+    expect(credentials).toEqual({
+      clientId: 'registered-client',
+      issuer,
+    })
 
     const provider = template.createProvider(
       { clientId: credentials.clientId, clientSecret: '' },
       configuration,
     )
     const authorization = await provider.createAuthorization({
-      redirectUri: 'https://broker.example/api/oauth/callback/acme',
+      redirectUri: 'https://broker.example/api/connections/callback/mcp',
       state: 'state-value',
       scopes: [],
     })
@@ -108,7 +115,7 @@ describe('McpProvider', () => {
 
     const result = await provider.exchangeCode({
       code: 'authorization-code',
-      redirectUri: 'https://broker.example/api/oauth/callback/acme',
+      redirectUri: 'https://broker.example/api/connections/callback/mcp',
       codeVerifier: authorization.codeVerifier,
       issuer,
     })
@@ -125,7 +132,7 @@ describe('McpProvider', () => {
     await expect(
       provider.exchangeCode({
         code: 'code',
-        redirectUri: 'https://broker.example/api/oauth/callback/acme',
+        redirectUri: 'https://broker.example/api/connections/callback/mcp',
         issuer: 'https://attacker.example.com',
       }),
     ).rejects.toThrow('does not match')
@@ -148,11 +155,14 @@ describe('McpProvider', () => {
     const provider = new McpProvider({ fetch: fetcher })
     const credentials = await provider.registerClient({
       configuration: { resource_url: resourceUrl },
-      redirectUri: 'https://broker.example/api/oauth/callback/acme',
+      redirectUri: 'https://broker.example/api/connections/callback/mcp',
+      clientMetadataUrl:
+        'https://broker.example/api/connections/client-metadata.json',
     })
 
     expect(credentials).toEqual({
-      clientId: 'https://broker.example/api/oauth/client-metadata/acme',
+      clientId: 'https://broker.example/api/connections/client-metadata.json',
+      issuer,
     })
     expect(fetcher).not.toHaveBeenCalledWith(
       `${issuer}/register`,
@@ -177,7 +187,7 @@ describe('McpProvider', () => {
         if (url === `${issuer}/register`) {
           expect(JSON.parse(String(init?.body))).toMatchObject({
             redirect_uris: [
-              'https://inspector.localhost/api/oauth/callback/acme',
+              'https://inspector.localhost/api/connections/callback/mcp',
             ],
           })
           return Response.json({ client_id: 'localhost-registered-client' })
@@ -188,9 +198,14 @@ describe('McpProvider', () => {
     const provider = new McpProvider({ fetch: fetcher })
     const credentials = await provider.registerClient({
       configuration: { resource_url: resourceUrl },
-      redirectUri: 'https://inspector.localhost/api/oauth/callback/acme',
+      redirectUri: 'https://inspector.localhost/api/connections/callback/mcp',
+      clientMetadataUrl:
+        'https://inspector.localhost/api/connections/client-metadata.json',
     })
 
-    expect(credentials).toEqual({ clientId: 'localhost-registered-client' })
+    expect(credentials).toEqual({
+      clientId: 'localhost-registered-client',
+      issuer,
+    })
   })
 })

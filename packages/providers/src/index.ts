@@ -11,3 +11,4 @@ export {
   createNotionProvider,
   NotionProvider,
 } from '@hookfish/provider-notion'
+export { createSecretProvider } from '@hookfish/provider'

@@ -1,6 +1,9 @@
 import { swaggerUI } from '@hono/swagger-ui'
 import { OpenAPIHono } from '@hono/zod-openapi'
-import { type OAuthProvider, type ProviderRegistry } from '@hookfish/provider'
+import {
+  type ConnectionProvider,
+  type ProviderRegistry,
+} from '@hookfish/provider'
 import type { ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
@@ -22,8 +25,7 @@ import {
   type ProviderInput,
 } from './provider-source'
 import { createAdminRoutes } from './routes/admin'
-import { createOAuthRoutes } from './routes/oauth'
-import { createProviderRoutes } from './routes/providers'
+import { createConnectionRoutes } from './routes/connections'
 import { createSecretRoutes } from './routes/secrets'
 import { statsRoutes } from './routes/stats'
 
@@ -45,10 +47,8 @@ export type HookfishConfig<Bindings extends object = object> = {
   returnTo?: string
   /** Origins allowed by the per-authorization `return_to` option. */
   trustedOrigins?: readonly string[]
-  /** Prefix OAuth management routes with `/organization/:organization`. The provider callback remains global. @default false */
+  /** Add `/organization/:organization` connection and vault routes. Callbacks remain global. @default false */
   organizationRouting?: boolean
-  /** Expose root-authenticated CRUD for database-backed provider instances. @default false */
-  providerManagement?: boolean
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
 }
@@ -86,11 +86,7 @@ function createApiRoutes<Bindings extends object>(
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
-    | 'returnTo'
-    | 'trustedOrigins'
-    | 'organizationRouting'
-    | 'providerManagement'
-    | 'onEvent'
+    'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
   >,
   includeSwagger = true,
   includeAllOpenApiRoutes = false,
@@ -128,21 +124,19 @@ function createApiRoutes<Bindings extends object>(
       }
     }
 
-    // Organization mode still mounts the global OAuth app for the provider
-    // callback. Keep its inactive management operations (and the inverse
-    // organization callback) out of the generated document.
+    // Callbacks and CIMD stay global when management is organization-routed.
     if (options.organizationRouting) {
       for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
         const isGlobalManagementRoute =
-          pathname.startsWith('/oauth/') &&
-          pathname !== '/oauth/callback/{provider_path}' &&
-          pathname !== '/oauth/client-metadata/{provider_path}'
+          pathname.startsWith('/connections/') &&
+          pathname !== '/connections/callback/{provider_id}' &&
+          pathname !== '/connections/client-metadata.json'
         const isOrganizationCallback =
           pathname ===
-          '/organization/{organization}/oauth/callback/{provider_path}'
+          '/organization/{organization}/connections/callback/{provider_id}'
         const isOrganizationClientMetadata =
           pathname ===
-          '/organization/{organization}/oauth/client-metadata/{provider_path}'
+          '/organization/{organization}/connections/client-metadata.json'
 
         if (
           isOrganizationCallback ||
@@ -160,9 +154,7 @@ function createApiRoutes<Bindings extends object>(
               name: 'organization',
               in: 'path',
               required: true,
-              description: pathname.includes('/oauth/')
-                ? 'Organization namespace for OAuth connections.'
-                : 'Organization namespace for Hookfish resources.',
+              description: 'Organization namespace for Hookfish resources.',
               schema: {
                 type: 'string',
                 pattern: ORGANIZATION_PATTERN.source,
@@ -171,17 +163,6 @@ function createApiRoutes<Bindings extends object>(
               },
             },
           ]
-        }
-      }
-    }
-
-    if (!options.providerManagement && !includeAllOpenApiRoutes) {
-      for (const pathname of Object.keys(document.paths ?? {})) {
-        if (
-          pathname.startsWith('/admin/providers') ||
-          pathname.includes('/admin/providers')
-        ) {
-          delete document.paths?.[pathname]
         }
       }
     }
@@ -223,18 +204,11 @@ function createApiRoutes<Bindings extends object>(
     .route('/stats', statsRoutes)
     .use('/admin/*', cors())
     .route('/admin', createAdminRoutes(database, options.onEvent))
+    .use('/connections', cors())
+    .use('/connections/*', cors())
     .route(
-      '/admin',
-      createProviderRoutes(resolveProviders, database, {
-        ...options,
-        enabled: options.providerManagement ?? false,
-        routeMode: 'global',
-      }),
-    )
-    .use('/oauth/*', cors())
-    .route(
-      '/oauth',
-      createOAuthRoutes(resolveProviders, database, {
+      '/connections',
+      createConnectionRoutes(resolveProviders, database, {
         ...options,
         routeMode: 'global',
       }),
@@ -250,9 +224,9 @@ function createApiRoutes<Bindings extends object>(
     )
 
   if (options.organizationRouting) {
-    api.use('/organization/:organization/oauth/*', cors()).route(
-      '/organization/:organization/oauth',
-      createOAuthRoutes(resolveProviders, database, {
+    api.use('/organization/:organization/connections/*', cors()).route(
+      '/organization/:organization/connections',
+      createConnectionRoutes(resolveProviders, database, {
         ...options,
         routeMode: 'organization',
       }),
@@ -267,20 +241,6 @@ function createApiRoutes<Bindings extends object>(
           routeMode: 'organization',
         }),
       )
-
-    if (options.providerManagement) {
-      api
-        .use('/organization/:organization/admin/providers', cors())
-        .use('/organization/:organization/admin/providers/*', cors())
-        .route(
-          '/organization/:organization/admin',
-          createProviderRoutes(resolveProviders, database, {
-            ...options,
-            enabled: true,
-            routeMode: 'organization',
-          }),
-        )
-    }
   }
 
   return api
@@ -289,7 +249,7 @@ function createApiRoutes<Bindings extends object>(
 /**
  * Build the complete server contract used to generate the first-party SDK.
  * Unlike a deployment's `/api/openapi.json`, this includes both global and
- * organization-prefixed operations plus optional provider management routes.
+ * organization-prefixed operations.
  */
 export async function createHookfishOpenAPIDocument(): Promise<unknown> {
   const unavailableDatabase: DatabaseInput<object> = {
@@ -305,7 +265,6 @@ export async function createHookfishOpenAPIDocument(): Promise<unknown> {
     unavailableDatabase,
     {
       organizationRouting: true,
-      providerManagement: true,
     },
     true,
     true,
@@ -340,7 +299,6 @@ export class HookfishServer<Bindings extends object = object> {
   readonly db: DatabaseInput<Bindings>
   readonly includeClient: boolean
   readonly includeSwagger: boolean
-  readonly providerManagement: boolean
   readonly returnTo: string | undefined
   private readonly resolveProviders: (
     bindings: Bindings,
@@ -362,7 +320,6 @@ export class HookfishServer<Bindings extends object = object> {
     this.db = options.db
     this.includeClient = options.includeClient ?? false
     this.includeSwagger = options.includeSwagger ?? true
-    this.providerManagement = options.providerManagement ?? false
     this.returnTo = options.returnTo
     const api = createApiRoutes(
       resolveProviders,
@@ -406,7 +363,7 @@ export class HookfishServer<Bindings extends object = object> {
   readonly getProvider = async (
     providerId: string,
     bindings: Bindings,
-  ): Promise<OAuthProvider | undefined> => {
+  ): Promise<ConnectionProvider | undefined> => {
     return (await this.resolveProviders(bindings)).getProvider(providerId)
   }
 
@@ -448,19 +405,16 @@ export {
 } from './db/binding'
 export type {
   BrokerAccessToken,
+  Connection,
+  ConnectionFilter,
+  ConnectionSummary,
+  ConnectionUpdate,
   Database,
   DatabaseResult,
   NewBrokerAccessToken,
-  NewOAuthConnection,
-  NewOAuthProviderRecord,
+  NewConnection,
   NewOAuthState,
   NewVaultSecret,
-  OAuthConnection,
-  OAuthConnectionFilter,
-  OAuthConnectionSummary,
-  OAuthConnectionTokenUpdate,
-  OAuthProviderRecord,
-  OAuthProviderUpdate,
   OAuthState,
   OAuthStateUpdate,
   VaultSecret,

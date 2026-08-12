@@ -5,6 +5,7 @@ import {
   createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
@@ -30,8 +31,7 @@ export default defineHookfishConfig<Env>({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
-  organizationRouting: false, // Use /api/organization/:organization/oauth management routes.
-  providerManagement: true,
+  organizationRouting: false, // Use /api/organization/:organization/connections routes.
   // onEvent: async (event) => auditLog.write(event),
 
   // For a large dynamic registry, replace the provider map below with
@@ -66,5 +66,6 @@ export default defineHookfishConfig<Env>({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,
     }),
+    secret: createSecretProvider(),
   }),
 })

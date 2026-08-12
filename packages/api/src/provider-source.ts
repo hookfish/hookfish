@@ -3,14 +3,14 @@ import {
   defaultProviderRegistry,
   isProviderRegistry,
   isProviderSource,
-  type OAuthProvider,
+  type ConnectionProvider,
   type ProviderRegistry,
   type ProviderSource,
   type ProviderSourceEntry,
   type ProviderSourceListResult,
 } from '@hookfish/provider'
 
-export type ProviderMap = Record<string, OAuthProvider>
+export type ProviderMap = Record<string, ConnectionProvider>
 
 export type ProviderCollection<Bindings extends object = object> =
   | ProviderMap
@@ -26,7 +26,7 @@ export type ProviderInput<Bindings extends object = object> =
   | ProviderFactory<Bindings>
 
 export interface BoundProviderSource {
-  getProvider(providerId: string): Promise<OAuthProvider | undefined>
+  getProvider(providerId: string): Promise<ConnectionProvider | undefined>
   listProviders(query?: URLSearchParams): Promise<ProviderSourceListResult>
 }
 
@@ -102,7 +102,7 @@ function bindProviderCollection<Bindings extends object>(
 function memoizeProviderLookups(
   source: BoundProviderSource,
 ): BoundProviderSource {
-  const providers = new Map<string, Promise<OAuthProvider | undefined>>()
+  const providers = new Map<string, Promise<ConnectionProvider | undefined>>()
 
   return {
     getProvider(providerId) {

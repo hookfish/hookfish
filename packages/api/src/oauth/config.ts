@@ -1,6 +1,6 @@
 import {
+  type ConnectionProvider,
   isProviderRegistry,
-  type OAuthProvider,
   type ProviderRegistry,
 } from '@hookfish/provider'
 import { z } from 'zod'
@@ -108,13 +108,13 @@ function requireEnvString(env: object, key: string): string {
 }
 
 export type ProviderConfig = {
-  provider: OAuthProvider
+  provider: ConnectionProvider
   scopes: string[]
 }
 
 export function resolveProviderConfig(
   providerId: string,
-  providerOrRegistry: OAuthProvider | ProviderRegistry,
+  providerOrRegistry: ConnectionProvider | ProviderRegistry,
 ): ProviderConfig {
   const provider = isProviderRegistry(providerOrRegistry)
     ? providerOrRegistry.getProvider(providerId)
@@ -133,7 +133,9 @@ export function resolveProviderConfig(
 
   return {
     provider,
-    scopes: [...(provider.defaultScopes ?? [])],
+    scopes: [
+      ...('defaultScopes' in provider ? (provider.defaultScopes ?? []) : []),
+    ],
   }
 }
 
@@ -160,6 +162,26 @@ export function resolveRedirectUri(
   const base = configuredBase ?? new URL(requestUrl).origin
 
   return `${base.replace(/\/$/, '')}/api/oauth/callback/${encodeResourcePath(providerId)}`
+}
+
+export function resolveConnectionCallbackUri(
+  env: object,
+  requestUrl: string,
+  providerId: string,
+): string {
+  return resolveRedirectUri(env, requestUrl, providerId).replace(
+    '/api/oauth/callback/',
+    '/api/connections/callback/',
+  )
+}
+
+export function resolveClientMetadataUri(
+  env: object,
+  requestUrl: string,
+): string {
+  const callback = new URL(resolveConnectionCallbackUri(env, requestUrl, 'mcp'))
+  callback.pathname = '/api/connections/client-metadata.json'
+  return callback.toString()
 }
 
 export function validateReturnTo(

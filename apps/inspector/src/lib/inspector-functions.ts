@@ -27,7 +27,7 @@ const httpUrl = z.url().refine((value) => {
 
 const connectionInput = z.object({
   url: httpUrl,
-  connectionId: z.string().min(1).optional(),
+  connectionPath: z.string().min(1).optional(),
   features: inspectorFeaturesSchema.default(defaultInspectorFeatures),
 })
 

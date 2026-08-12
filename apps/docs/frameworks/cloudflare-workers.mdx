@@ -62,6 +62,7 @@ import {
   createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 const db = postgres<Env>(
@@ -79,7 +80,6 @@ const hookfish = await HookfishServer.init<Env>({
   includeSwagger: true,
   returnTo: 'https://dashboard.example.com',
   trustedOrigins: ['https://dashboard.example.com'],
-  providerManagement: true,
   providers: (env) => ({
     github: createGitHubProvider({
       clientId: env.GITHUB_CLIENT_ID,
@@ -94,6 +94,7 @@ const hookfish = await HookfishServer.init<Env>({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,
     }),
+    secret: createSecretProvider(),
   }),
 })
 

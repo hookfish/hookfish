@@ -1,96 +1,83 @@
 ---
 title: "Remote MCP servers"
-description: "Use protected-resource discovery, PKCE, and client registration to connect remote MCP servers."
+description: "Create per-connection MCP configuration with OAuth discovery, CIMD, PKCE, and DCR fallback."
 ---
 
-The MCP provider turns a remote Streamable HTTP MCP endpoint into a Hookfish
-OAuth provider. It discovers the protected resource and authorization server,
-requires PKCE S256, and can register a client when the authorization server
-supports it.
+The trusted `mcp` provider turns any compatible Streamable HTTP endpoint into a
+connection. There are no runtime provider records to create.
 
-## Add the MCP template
-
-Register the reusable template in `hookfish.config.ts`:
+## Register the implementation
 
 ```ts
-import { defineHookfishConfig } from '@hookfish/api'
 import { createMcpProvider } from '@hookfish/providers'
 
 export default defineHookfishConfig({
   db,
-  providerManagement: true,
   providers: {
     mcp: createMcpProvider(),
   },
 })
 ```
 
-The template itself is not configured for one endpoint. It creates dynamic
-provider instances that supply a `resource_url`.
+## Access a remote server
 
-## Create an MCP provider
+```ts
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
-Use automatic registration when the authorization server advertises dynamic
-client registration or HTTPS client-ID metadata documents.
-
-```bash
-curl --request PUT http://127.0.0.1:8787/api/admin/providers/notion-mcp \
-  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "template": "mcp",
-    "label": "Notion MCP",
-    "configuration": {
-      "resource_url": "https://mcp.notion.com/mcp",
-      "scopes": []
-    },
-    "credentials": { "mode": "register" }
-  }'
-```
-
-Hookfish stores any registered client secret in its internal vault. The secret
-is write-only and never appears in provider responses.
-
-If automatic registration is unavailable, register the callback URL with the
-server yourself and use custom credentials:
-
-```json
-{
-  "template": "mcp",
-  "configuration": {
-    "resource_url": "https://mcp.example.com/mcp",
-    "scopes": ["mcp:tools"]
+const mcpUrl = new URL('https://mcp.notion.com/mcp')
+const authProvider = hookfish.connections.mcpAuthProvider(
+  'user/personal/notion/mcp',
+  {
+    url: mcpUrl.href,
+    scopes: [],
+    returnTo: 'https://app.example.com/integrations',
   },
-  "credentials": {
-    "mode": "custom",
-    "client_id": "hookfish-production",
-    "client_secret": "<client-secret>"
-  }
-}
+)
+
+const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider })
 ```
 
-## Start the connection
+The provider calls Hookfish before each MCP request. When the MCP server returns
+`401`, it starts fresh authorization and lets Hookfish's direct
+`authorization_required` error bubble to your application error handler.
 
-The dynamic provider ID becomes the authorization path:
+The path ends in `mcp` because `mcp` is the provider implementation. The
+preceding `user/personal/notion` segments are the namespace. This cannot collide
+with a fixed Notion connection at `user/personal/notion`, whose provider ID is
+`notion`.
 
-```bash
-curl --request POST http://127.0.0.1:8787/api/oauth/authorize/notion-mcp \
-  --header "Authorization: Bearer $HOOKFISH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{"connection_id":"personal/notion"}'
+The first access stores the normalized URL and scopes. Reusing the path with a
+different URL returns `connection_configuration_conflict`.
+
+## Client identity order
+
+Hookfish discovers protected-resource and authorization-server metadata,
+requires PKCE S256, and then selects a client mechanism:
+
+1. Use fixed MCP client credentials supplied in deployment configuration.
+2. Use the deployment-level HTTPS Client ID Metadata Document when the server
+   advertises CIMD support.
+3. Use Dynamic Client Registration as a compatibility fallback.
+
+The public CIMD URL is:
+
+```text
+https://broker.example.com/api/connections/client-metadata.json
 ```
 
-After consent, give the connection ID to an MCP client or retrieve its token
-from trusted server code. The [Hookfish inspector](/operations/inspector)
-handles this flow interactively.
+CIMD is stateless and shared at the deployment level. If DCR is required, the
+resulting client ID and encrypted client secret belong to the individual
+connection. Hookfish does not create a reusable runtime provider record.
 
 ## Discovery requirements
 
-The remote server must expose OAuth protected-resource metadata that names at
-least one authorization server. The authorization server must advertise an
-authorization endpoint, token endpoint, issuer, and PKCE S256 support.
+The MCP resource must publish protected-resource metadata naming an
+authorization server. The authorization server must advertise an issuer,
+authorization endpoint, token endpoint, and PKCE S256. Hookfish validates a
+callback issuer when it is present.
 
 <Info>
-  Hookfish reads advertised scopes from the OAuth challenge or metadata when
-  the dynamic provider does not configure explicit scopes.
+  Every unready access returns a newly generated authorization URL.
+  `mcpAuthProvider` also handles a credential rejected before its recorded
+  expiration.
 </Info>

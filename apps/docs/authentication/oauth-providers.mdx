@@ -1,24 +1,21 @@
 ---
-title: "OAuth providers"
-description: "Configure GitHub, Linear, Notion, MCP, and application-owned provider registries."
+title: "Trusted providers"
+description: "Configure fixed OAuth, MCP, and static-secret provider implementations."
 ---
 
-An OAuth provider owns one service's authorization URLs, provider scopes, token
-exchange, refresh behavior, revocation, and public metadata. Hookfish resolves a
-provider by its ID when an authorization or token operation runs.
+A provider is trusted application code selected by the final segment of a
+connection path. Request bodies cannot choose a template or upload provider
+credentials.
 
-## Configure built-in providers
-
-`@hookfish/providers` exports provider factories for GitHub, Linear, Notion,
-and remote MCP servers.
+## Configure providers
 
 ```ts
 import { defineHookfishConfig } from '@hookfish/api'
 import {
   createGitHubProvider,
-  createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 export default defineHookfishConfig({
@@ -28,64 +25,41 @@ export default defineHookfishConfig({
       clientId: env.GITHUB_CLIENT_ID,
       clientSecret: env.GITHUB_CLIENT_SECRET,
     }),
-    linear: createLinearProvider({
-      clientId: env.LINEAR_CLIENT_ID,
-      clientSecret: env.LINEAR_CLIENT_SECRET,
-    }),
     mcp: createMcpProvider(),
     notion: createNotionProvider({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,
     }),
+    secret: createSecretProvider(),
   }),
 })
 ```
 
-Provider factories run with the bindings passed to `hookfish.fetch`. This lets
-a Worker read provider credentials from request bindings without capturing
-stale values in its module scope.
+Provider IDs must be non-reserved lower-camel JavaScript identifiers up to 128
+characters. Slashes, hyphens, dots, and reserved words such as `class` are not
+allowed.
 
 ## Register callback URLs
 
-Ask the running broker for the exact callback URL for each provider:
+Fixed OAuth providers use:
 
-```bash
-curl http://127.0.0.1:8787/api/oauth/providers \
-  --header "Authorization: Bearer $HOOKFISH_API_KEY"
+```text
+https://broker.example.com/api/connections/callback/github
+https://broker.example.com/api/connections/callback/notion
 ```
 
-The response also reports whether each provider is configured, its default and
-available provider scopes, and whether it supports refresh or revocation. Copy
-the returned `callback_url` into the provider's developer console.
+Set `OAUTH_REDIRECT_BASE_URL` to the public origin in production. The same
+deployment-level MCP callback ends in `/mcp`.
 
-<Warning>
-  Do not construct callback URLs from forwarded host headers. Set
-  `OAUTH_REDIRECT_BASE_URL` to the public HTTPS origin in production.
-</Warning>
+## Fixed and configurable providers
 
-## Select provider scopes
+Fixed providers such as `github` get their client credentials from deployment
+configuration. The `mcp` provider is configurable per connection: its URL and
+scopes are stored on first access. A later request cannot silently change them.
 
-Pass `scopes` when starting an authorization to override the provider's
-defaults for that connection.
+A lazy `ProviderSource` remains available for large application-owned catalogs.
+It resolves trusted provider code by ID; it is not a public provider CRUD
+system.
 
-```json
-{
-  "connection_id": "acme/engineering/github",
-  "scopes": ["read:user", "repo"]
-}
-```
-
-These are upstream permissions, not Hookfish [resource scopes](/concepts/scopes).
-
-## Choose a provider model
-
-| Model | Use it when |
-| --- | --- |
-| Fixed provider map | The deployment has a small, known set of OAuth applications |
-| Dynamic provider | Operators or tenants create configurations at runtime |
-| Lazy provider source | An application-owned catalog contains many provider definitions |
-| Custom provider | A service's OAuth dialect is not included in Hookfish |
-
-Continue with [remote MCP providers](/providers/remote-mcp),
-[dynamic providers](/providers/dynamic), or
+Continue with [remote MCP servers](/providers/remote-mcp) or
 [custom providers](/providers/custom).

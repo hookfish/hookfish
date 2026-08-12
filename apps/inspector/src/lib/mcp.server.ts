@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import {
   Client,
   SdkHttpError,
@@ -20,7 +20,7 @@ import type { InspectorFeatures } from './inspector-features'
 
 type ConnectionInput = {
   url: string
-  connectionId?: string
+  connectionPath?: string
   actionId?: string
   features: InspectorFeatures
 }
@@ -34,17 +34,11 @@ const hookfishErrorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
 })
 
-const tokenSchema = z.object({ access_token: z.string().min(1) })
-const authorizeSchema = z.object({
-  connection_id: z.string(),
-  authorize_url: z.url(),
-})
-const providerSchema = z.object({
-  provider: z.object({
-    credentials: z
-      .object({ client_id: z.string().min(1) })
-      .nullable()
-      .optional(),
+const accessSchema = z.object({ secret: z.string().min(1) })
+const authorizationRequiredSchema = z.object({
+  error: z.object({
+    code: z.literal('authorization_required'),
+    authorize_url: z.url(),
   }),
 })
 
@@ -96,13 +90,14 @@ async function hookfishRequest(
   )
 }
 
-async function accessToken(origin: string, connectionId?: string) {
-  if (!connectionId) return undefined
+async function accessToken(origin: string, connectionPath?: string) {
+  if (!connectionPath) return undefined
   const response = await hookfishRequest(
     origin,
-    `/api/oauth/tokens/${encodeURIComponent(connectionId)}`,
+    `/api/connections/access/${connectionPath.split('/').map(encodeURIComponent).join('/')}`,
+    { method: 'POST' },
   )
-  return tokenSchema.parse(await response.json()).access_token
+  return accessSchema.parse(await response.json()).secret
 }
 
 function clientOptions(accessToken?: string) {
@@ -190,7 +185,7 @@ async function connect(
   origin: string,
 ): Promise<ConnectedClient> {
   const url = new URL(input.url)
-  const token = await accessToken(origin, input.connectionId)
+  const token = await accessToken(origin, input.connectionPath)
   const streamableClient = createClient(input)
 
   try {
@@ -201,7 +196,7 @@ async function connect(
   } catch (streamableError) {
     await streamableClient.close().catch(() => undefined)
     if (isAuthenticationError(streamableError)) {
-      const action = input.connectionId ? 'Reconnect OAuth' : 'Connect OAuth'
+      const action = input.connectionPath ? 'Reconnect' : 'Connect'
       throw new Error(
         `Authentication required. Use ${action} to authorize this Streamable HTTP server with Hookfish.`,
       )
@@ -382,59 +377,40 @@ export async function authorizeServer(
     .update(`${origin}\0${input.url}`)
     .digest('hex')
     .slice(0, 16)
-  const providerId = `inspector-${hash}`
-  const providerPath = `/api/admin/providers/${providerId}`
-  const existing = await handleHookfishRequest(
-    new Request(new URL(providerPath, origin), {
-      headers: { Authorization: `Bearer ${apiKey()}` },
-    }),
-  )
-
-  let registerClient = existing.status === 404
-  if (existing.ok) {
-    const current = providerSchema.parse(await existing.json())
-    registerClient =
-      current.provider.credentials?.client_id.startsWith(
-        `${origin}/api/oauth/client-metadata/`,
-      ) ?? false
-  }
-
-  if (registerClient) {
-    await hookfishRequest(origin, providerPath, {
-      method: 'PUT',
-      body: JSON.stringify({
-        template: 'mcp',
-        label: input.label,
-        configuration: { resource_url: input.url, scopes: [] },
-        credentials: { mode: 'register' },
-        enabled: true,
-      }),
-    })
-  } else if (!existing.ok) {
-    const payload: unknown = await existing.json().catch(() => undefined)
-    const parsed = hookfishErrorSchema.safeParse(payload)
-    throw new Error(
-      parsed.success
-        ? parsed.data.error.message
-        : `Hookfish returned HTTP ${existing.status}.`,
-    )
-  }
+  const connectionPath = `inspector/${hash}/mcp`
 
   const returnTo = new URL('/', origin)
   returnTo.searchParams.set('oauth', 'complete')
-  returnTo.searchParams.set('provider', providerId)
-  const response = await hookfishRequest(
-    origin,
-    `/api/oauth/authorize/${providerId}`,
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        connection_id: `${providerId}-${randomUUID()}`,
-        scopes: [],
-        return_to: returnTo.toString(),
-      }),
-    },
+  const response = await handleHookfishRequest(
+    new Request(
+      new URL(`/api/connections/reauthorize/${connectionPath}`, origin),
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey()}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          url: input.url,
+          scopes: [],
+          return_to: returnTo.toString(),
+        }),
+      },
+    ),
   )
+  const payload: unknown = await response.json().catch(() => undefined)
+  const authorization = authorizationRequiredSchema.safeParse(payload)
+  if (response.status !== 401 || !authorization.success) {
+    const error = hookfishErrorSchema.safeParse(payload)
+    throw new Error(
+      error.success
+        ? error.data.error.message
+        : `Hookfish returned HTTP ${response.status}.`,
+    )
+  }
 
-  return { ...authorizeSchema.parse(await response.json()), providerId }
+  return {
+    connection_path: connectionPath,
+    authorize_url: authorization.data.error.authorize_url,
+  }
 }

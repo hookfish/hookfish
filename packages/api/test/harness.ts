@@ -1,211 +1,121 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { z } from '@hono/zod-openapi'
 import {
   createProviderRegistry,
+  createSecretProvider,
+  type OAuthProvider,
   type OAuthProviderTemplate,
-  type ProviderCredentials,
-  type ProviderRegistry,
+  ProviderConfigurationError,
   ProviderRequestError,
 } from '@hookfish/provider'
-import {
-  GitHubProvider,
-  LinearProvider,
-  NotionProvider,
-} from '@hookfish/providers'
+import { z } from 'zod'
 import { pglite } from '../../database/src/pglite'
-import type { DrizzleDatabase } from '../src/db/schema'
 import type { Database } from '../src/db/types'
-import { HookfishServer, type HookfishEvent } from '../src/index'
+import { HookfishServer } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
-import { createPkcePair } from '../src/oauth/crypto'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
 /** 32 zero bytes, base64 — valid AES-GCM key for tests only. */
 export const TEST_ENCRYPTION_KEY =
   'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 
-/** A different valid 32-byte key (all 0xff). */
-export const OTHER_ENCRYPTION_KEY =
-  '//////////////////////////////////////////8='
-
 export const API_ORIGIN = 'http://127.0.0.1:8787'
+
+const tokenPayloadSchema = z.record(z.string(), z.unknown())
+const authorizationRequiredSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    authorize_url: z.url(),
+  }),
+})
+
+function stubProvider(stub: OAuthStub): OAuthProvider {
+  async function token(params: Record<string, string>) {
+    const response = await fetch(stub.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        ...params,
+        client_id: 'stub-client',
+        client_secret: 'stub-secret',
+      }),
+    })
+    const text = await response.text()
+    if (!response.ok) {
+      throw new ProviderRequestError(
+        `Stub token endpoint returned ${response.status}: ${text}`,
+      )
+    }
+    const payload = tokenPayloadSchema.parse(JSON.parse(text))
+    return {
+      payload,
+      account: { id: 'acct_stub', label: 'Stub Account' },
+    }
+  }
+
+  return {
+    label: 'Stub OAuth',
+    defaultScopes: ['read', 'write'],
+    createAuthorization({ redirectUri, state, scopes }) {
+      const url = new URL(stub.authorizeUrl)
+      url.searchParams.set('client_id', 'stub-client')
+      url.searchParams.set('redirect_uri', redirectUri)
+      url.searchParams.set('response_type', 'code')
+      url.searchParams.set('state', state)
+      url.searchParams.set('scope', scopes.join(' '))
+      return { url: url.toString() }
+    },
+    exchangeCode({ code, redirectUri }) {
+      return token({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+      })
+    },
+    refreshToken({ refreshToken }) {
+      return token({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      })
+    },
+  }
+}
+
+function stubMcpProvider(stub: OAuthStub): OAuthProviderTemplate {
+  const oauth = stubProvider(stub)
+  return {
+    ...oauth,
+    kind: 'mcp',
+    normalizeConfiguration(configuration) {
+      if (typeof configuration.resource_url !== 'string') {
+        throw new ProviderConfigurationError('MCP resource URL is required.')
+      }
+      return {
+        resource_url: new URL(configuration.resource_url).toString(),
+        scopes: Array.isArray(configuration.scopes) ? configuration.scopes : [],
+      }
+    },
+    async registerClient() {
+      return { clientId: 'stub-mcp-client' }
+    },
+    createProvider() {
+      return oauth
+    },
+  }
+}
 
 export type TestHarness = {
   env: BrokerEnv
   stub: OAuthStub
-  providerId: string
-  altProviderId: string
-  /** PKCE + Basic auth + JSON token body + authorizeParams. */
-  dialectProviderId: string
-  /** Empty default scopes (no `scope` query param). */
-  noscopeProviderId: string
   db: Database
-  rawDb: DrizzleDatabase
-  providers: ProviderRegistry
-  fetch: (path: string, init?: RequestInit) => Promise<Response>
-  authorizeAndCallback: (options?: {
-    provider?: string
-    connectionId?: string
-    scopes?: string[]
-  }) => Promise<{
-    connectionId: string
-    state: string
+  fetch(path: string, init?: RequestInit): Promise<Response>
+  authorize(path?: string): Promise<{
     authorizeUrl: string
-    callback: Response
+    state: string
+    callbackUrl: string
   }>
-  close: () => Promise<void>
-}
-
-type StubProviderOptions = {
-  defaultScopes?: string[]
-  formatScopes?: (scopes: string[]) => string
-  tokenRequest?: 'form-body' | 'json-basic'
-  usesPkce?: boolean
-  authorizeParams?: Record<string, string>
-  supportsRefresh?: boolean
-}
-
-const stubTokenSchema = z.looseObject({})
-
-function basicAuthorization(clientId: string, clientSecret: string) {
-  return `Basic ${btoa(`${clientId}:${clientSecret}`)}`
-}
-
-async function readTokenPayload(
-  response: Response,
-  providerLabel: string,
-): Promise<Record<string, unknown>> {
-  const text = await response.text()
-
-  if (!response.ok) {
-    throw new ProviderRequestError(
-      `${providerLabel} token endpoint returned ${response.status}: ${text.slice(0, 500)}`,
-    )
-  }
-
-  try {
-    return stubTokenSchema.parse(JSON.parse(text))
-  } catch (error) {
-    throw new ProviderRequestError(
-      `${providerLabel} token endpoint returned a non-JSON body: ${text.slice(0, 200)}`,
-      { cause: error },
-    )
-  }
-}
-
-function providerDefinition(
-  id: string,
-  stub: OAuthStub,
-  label: string,
-  options: StubProviderOptions = {},
-): OAuthProviderTemplate {
-  const defaultCredentials = {
-    clientId: `${id}-client`,
-    clientSecret: `${id}-secret`,
-  }
-  const create = (
-    credentials: Required<ProviderCredentials>,
-  ): OAuthProviderTemplate => {
-    const requestToken = async (params: Record<string, string>) => {
-      const headers = new Headers({ Accept: 'application/json' })
-      let body: string
-
-      if (options.tokenRequest === 'json-basic') {
-        headers.set(
-          'Authorization',
-          basicAuthorization(credentials.clientId, credentials.clientSecret),
-        )
-        headers.set('Content-Type', 'application/json')
-        body = JSON.stringify(params)
-      } else {
-        headers.set('Content-Type', 'application/x-www-form-urlencoded')
-        body = new URLSearchParams({
-          ...params,
-          client_id: credentials.clientId,
-          client_secret: credentials.clientSecret,
-        }).toString()
-      }
-
-      const payload = await readTokenPayload(
-        await fetch(stub.tokenUrl, { method: 'POST', headers, body }),
-        label,
-      )
-
-      return {
-        payload,
-        account: {
-          id:
-            typeof payload.account_id === 'string'
-              ? payload.account_id
-              : undefined,
-          label:
-            typeof payload.account_label === 'string'
-              ? payload.account_label
-              : undefined,
-        },
-      }
-    }
-
-    const provider: OAuthProviderTemplate = {
-      label,
-      defaultScopes: options.defaultScopes ?? ['read', 'write'],
-      availableScopes: ['read', 'write'],
-      usesPkce: options.usesPkce ?? false,
-
-      async createAuthorization({ redirectUri, state, scopes }) {
-        const url = new URL(stub.authorizeUrl)
-        url.searchParams.set('client_id', credentials.clientId)
-        url.searchParams.set('redirect_uri', redirectUri)
-        url.searchParams.set('response_type', 'code')
-        url.searchParams.set('state', state)
-        if (scopes.length > 0) {
-          url.searchParams.set(
-            'scope',
-            options.formatScopes?.(scopes) ?? scopes.join(' '),
-          )
-        }
-        for (const [key, value] of Object.entries(
-          options.authorizeParams ?? {},
-        )) {
-          url.searchParams.set(key, value)
-        }
-
-        if (!options.usesPkce) return { url: url.toString() }
-
-        const pkce = await createPkcePair()
-        url.searchParams.set('code_challenge', pkce.challenge)
-        url.searchParams.set('code_challenge_method', 'S256')
-        return { url: url.toString(), codeVerifier: pkce.verifier }
-      },
-
-      exchangeCode({ code, redirectUri, codeVerifier }) {
-        return requestToken({
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: redirectUri,
-          ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
-        })
-      },
-
-      createProvider(override) {
-        return create(override ?? defaultCredentials)
-      },
-    }
-
-    if (options.supportsRefresh !== false) {
-      provider.refreshToken = ({ refreshToken }) =>
-        requestToken({
-          grant_type: 'refresh_token',
-          refresh_token: refreshToken,
-        })
-    }
-
-    return provider
-  }
-
-  return create(defaultCredentials)
+  close(): Promise<void>
 }
 
 export async function createHarness(
@@ -213,81 +123,26 @@ export async function createHarness(
     returnTo?: string
     trustedOrigins?: readonly string[]
     organizationRouting?: boolean
-    providerManagement?: boolean
-    onEvent?: (event: HookfishEvent) => void | Promise<void>
   } = {},
 ): Promise<TestHarness> {
-  const dataDir = await mkdtemp(path.join(tmpdir(), 'oauth-broker-'))
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'hookfish-connections-'))
   const stub = await startOAuthStub()
-
-  const providerId = 'stub'
-  const altProviderId = 'stub-alt'
-  const dialectProviderId = 'stub-dialect'
-  const noscopeProviderId = 'stub-noscope'
-
-  const providers = createProviderRegistry({
-    notion: new NotionProvider({
-      clientId: 'notion-client',
-      clientSecret: 'notion-secret',
-    }),
-    linear: new LinearProvider({
-      clientId: 'linear-client',
-      clientSecret: 'linear-secret',
-    }),
-    github: new GitHubProvider({
-      clientId: 'github-client',
-      clientSecret: 'github-secret',
-    }),
-    [providerId]: providerDefinition(providerId, stub, 'Stub'),
-    [altProviderId]: providerDefinition(altProviderId, stub, 'Stub Alt'),
-    [dialectProviderId]: providerDefinition(
-      dialectProviderId,
-      stub,
-      'Stub Dialect',
-      {
-        tokenRequest: 'json-basic',
-        usesPkce: true,
-        authorizeParams: { access_type: 'offline', prompt: 'consent' },
-        formatScopes: (scopes) => scopes.join(','),
-      },
-    ),
-    [noscopeProviderId]: providerDefinition(
-      noscopeProviderId,
-      stub,
-      'Stub Noscope',
-      {
-        defaultScopes: [],
-        supportsRefresh: false,
-      },
-    ),
-  })
   const database = pglite(dataDir)
   const db = await database.getDatabase({})
-  const rawDb = await database.getDrizzleDatabase({})
-
   const env: BrokerEnv = {
-    ...process.env,
     NODE_ENV: 'test',
     OAUTH_ENCRYPTION_KEY: TEST_ENCRYPTION_KEY,
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
     HOOKFISH_API_KEY: 'test',
-    STUB_CLIENT_ID: 'stub-client',
-    STUB_CLIENT_SECRET: 'stub-secret',
-    STUB_ALT_CLIENT_ID: 'stub-alt-client',
-    STUB_ALT_CLIENT_SECRET: 'stub-alt-secret',
-    STUB_DIALECT_CLIENT_ID: 'stub-dialect-client',
-    STUB_DIALECT_CLIENT_SECRET: 'stub-dialect-secret',
-    STUB_NOSCOPE_CLIENT_ID: 'stub-noscope-client',
-    STUB_NOSCOPE_CLIENT_SECRET: 'stub-noscope-secret',
   }
   const app = await HookfishServer.init({
     db,
-    providers,
-    returnTo: options.returnTo,
-    trustedOrigins: options.trustedOrigins,
-    organizationRouting: options.organizationRouting,
-    providerManagement: options.providerManagement,
-    onEvent: options.onEvent,
+    providers: createProviderRegistry({
+      stub: stubProvider(stub),
+      mcp: stubMcpProvider(stub),
+      secret: createSecretProvider('Static secret'),
+    }),
+    ...options,
   })
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
@@ -301,67 +156,35 @@ export async function createHarness(
     )
   }
 
-  const authorizeAndCallback: TestHarness['authorizeAndCallback'] = async (
-    options = {},
-  ) => {
-    const provider = options.provider ?? providerId
-    const body: Record<string, unknown> = {}
-    if (options.connectionId) body.connection_id = options.connectionId
-    if (options.scopes) body.scopes = options.scopes
-
-    const authorizeRes = await apiFetch(`/api/oauth/authorize/${provider}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!authorizeRes.ok) {
+  const authorize = async (connectionPath = 'user/personal/stub') => {
+    const response = await apiFetch(
+      `/api/connections/access/${connectionPath}`,
+      { method: 'POST' },
+    )
+    const body = authorizationRequiredSchema.parse(await response.json())
+    if (
+      response.status !== 401 ||
+      body.error.code !== 'authorization_required'
+    ) {
       throw new Error(
-        `authorize failed: ${authorizeRes.status} ${await authorizeRes.text()}`,
+        `Expected authorization_required, got ${response.status}.`,
       )
     }
-
-    const authorizeJson: {
-      connection_id: string
-      authorize_url: string
-    } = await authorizeRes.json()
-    const state = new URL(authorizeJson.authorize_url).searchParams.get('state')
-    if (!state) throw new Error('authorize URL did not include OAuth state')
-
-    // Hit the stub consent URL; it 302s to our callback with code+state.
-    const consentRes = await fetch(authorizeJson.authorize_url, {
-      redirect: 'manual',
-    })
-    const location = consentRes.headers.get('location')
-    if (!location) {
-      throw new Error(`stub authorize did not redirect (${consentRes.status})`)
-    }
-
-    const callbackUrl = new URL(location)
-    const callback = await apiFetch(
-      `${callbackUrl.pathname}${callbackUrl.search}`,
-    )
-
-    return {
-      connectionId: authorizeJson.connection_id,
-      state,
-      authorizeUrl: authorizeJson.authorize_url,
-      callback,
-    }
+    const authorizeUrl = body.error.authorize_url
+    const state = new URL(authorizeUrl).searchParams.get('state')
+    if (!state) throw new Error('Authorization URL did not include state.')
+    const consent = await fetch(authorizeUrl, { redirect: 'manual' })
+    const callbackUrl = consent.headers.get('location')
+    if (!callbackUrl) throw new Error('Stub did not return a callback URL.')
+    return { authorizeUrl, state, callbackUrl }
   }
 
   return {
     env,
     stub,
-    providerId,
-    altProviderId,
-    dialectProviderId,
-    noscopeProviderId,
     db,
-    rawDb,
-    providers,
     fetch: apiFetch,
-    authorizeAndCallback,
+    authorize,
     close: async () => {
       await stub.close()
       await rm(dataDir, { recursive: true, force: true })

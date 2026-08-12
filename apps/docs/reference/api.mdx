@@ -1,102 +1,63 @@
 ---
 title: "HTTP API"
-description: "Reference Hookfish endpoint groups, authentication, browser exposure, and OpenAPI discovery."
+description: "Reference the connection, broker-token, vault, callback, and browser-safe endpoints."
 ---
 
-Hookfish generates an OpenAPI 3.1 document from the same Hono route schemas
-used at runtime. Because provider management and organization routing are
-configurable, the running deployment is the authoritative endpoint reference.
+The running deployment publishes its OpenAPI 3.1 contract at
+`/api/openapi.json` and Swagger UI at `/api/docs`.
 
-- Swagger UI: `/api/docs`
-- OpenAPI document: `/api/openapi.json`
-- Raw server API: `/api/*`
-- Optional browser facade: `/api/client/*`
-
-## Authentication
-
-Send the root key or a named scoped token on authenticated raw API requests:
+Send a root or scoped broker credential on authenticated server requests:
 
 ```http
 Authorization: Bearer <broker-credential>
 ```
 
-OAuth callbacks use encrypted, single-use state instead. Runtime stats, Swagger
-UI, the OpenAPI document, and MCP client-metadata documents are public.
-
-## Core endpoints
+## Connections
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/stats` | Deployment runtime and feature metadata |
-| `GET` | `/api/oauth/providers` | List configured providers and callback URLs |
-| `POST` | `/api/oauth/authorize/{provider_path}` | Create a provider authorization URL |
-| `GET` | `/api/oauth/callback/{provider_path}` | Complete a provider callback |
-| `GET` | `/api/oauth/client-metadata/{provider_path}` | Publish MCP-compatible client metadata |
-| `GET` | `/api/oauth/connections` | List connection metadata |
-| `GET` | `/api/oauth/connections/{connection_id}` | Get one connection without tokens |
-| `GET` | `/api/oauth/tokens/{connection_id}` | Retrieve a current provider token |
-| `DELETE` | `/api/oauth/connections/{connection_id}` | Revoke and delete a connection |
+| `POST` | `/api/connections/access/{connection_path}` | Return a secret or `authorization_required` |
+| `POST` | `/api/connections/reauthorize/{connection_path}` | Start fresh authorization after an upstream rejection |
+| `PUT` | `/api/connections/secret/{connection_path}` | Set or rotate a static provider secret |
+| `GET` | `/api/connections` | List metadata |
+| `GET` | `/api/connections/entry/{connection_path}` | Get metadata |
+| `DELETE` | `/api/connections/entry/{connection_path}` | Revoke and delete |
+| `GET` | `/api/connections/providers` | List trusted provider implementations |
+| `GET` | `/api/connections/callback/{provider_id}` | Complete OAuth; public |
+| `GET` | `/api/connections/client-metadata.json` | Publish deployment CIMD; public |
 
-## Administration and vault
+An access body may contain:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/admin/tokens` | Mint a named broker token |
-| `GET` | `/api/admin/tokens` | List active token metadata; root only |
-| `DELETE` | `/api/admin/tokens/{name}` | Revoke a token; root only |
-| `GET` | `/api/admin/providers` | List fixed and dynamic providers |
-| `PUT` | `/api/admin/providers/{provider_path}` | Create or replace a dynamic provider |
-| `PATCH` | `/api/admin/providers/{provider_path}` | Update or disable a provider |
-| `DELETE` | `/api/admin/providers/{provider_path}` | Delete an unused provider |
-| `GET` | `/api/secrets` | List accessible secret metadata |
-| `PUT` | `/api/secrets/{secret_path}` | Encrypt and store a secret |
-| `GET` | `/api/secrets/{secret_path}` | Retrieve a decrypted secret |
-| `DELETE` | `/api/secrets/{secret_path}` | Delete a secret |
-
-Provider-management endpoints exist only when `providerManagement` is enabled.
-With organization routing, OAuth management, providers, and secrets also have
-organization-prefixed variants documented by the deployment's OpenAPI output.
-
-## Call the API from your application
-
-Use Hono's typed client in trusted server code. Authenticate the user on your
-application route first, then supply a scoped broker credential to Hookfish:
-
-```ts
-import type { AppType as HookfishAppType } from '@hookfish/api'
-import { hc } from 'hono/client'
-
-const hookfish = hc<HookfishAppType>('https://broker.example.com/api', {
-  headers: {
-    Authorization: `Bearer ${scopedBrokerToken}`,
-  },
-})
-
-const response = await hookfish.oauth.connections.$get({
-  query: {
-    connection_id_prefix: 'acme',
-  },
-})
+```json
+{
+  "url": "https://gmail.run.tools",
+  "scopes": [],
+  "return_to": "https://app.example.com/integrations"
+}
 ```
 
-Do not create this client with a broker credential in browser code.
+`url` is accepted by the trusted `mcp` provider. Provider selection always
+comes from the final path segment, never the body.
 
-## Optional browser facade
+## Broker administration and generic vault
 
-The `/api/client` facade forwards only:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/admin/tokens` | Mint a named scoped broker token |
+| `GET` | `/api/admin/tokens` | List active token names; root only |
+| `DELETE` | `/api/admin/tokens/{name}` | Revoke a token; root only |
+| `GET` | `/api/secrets` | List generic vault metadata |
+| `PUT` | `/api/secrets/{secret_path}` | Store a generic encrypted value |
+| `GET` | `/api/secrets/{secret_path}` | Retrieve a generic encrypted value |
+| `DELETE` | `/api/secrets/{secret_path}` | Delete a generic encrypted value |
 
-- Runtime health and stats
-- Provider discovery
-- Connection lists and details
-- Authorization starts
-- Disconnects
+## Browser facade
 
-It rejects provider tokens, callbacks, secret values, and administration.
-It uses one server-configured broker credential, so app-owned authenticated
-routes are the recommended tenant boundary.
+The optional `/api/client` facade exposes runtime stats, provider and
+connection metadata, and disconnect. It rejects access, `setSecret`, generic
+vault values, callbacks, and administration because successful access may
+contain a credential.
 
-## Response handling
-
-Provider-token and vault-value responses set `Cache-Control: no-store`.
-Connection and provider metadata never include stored tokens or client secrets.
-See [Errors](/reference/errors) for the stable JSON error shape.
+Connection access responses set `Cache-Control: no-store`. List and get
+responses never include stored secrets, refresh tokens, OAuth client secrets,
+or bearer values.

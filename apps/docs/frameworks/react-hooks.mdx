@@ -56,19 +56,19 @@ function GitHubConnections() {
   return (
     <ul>
       {connections.data.connections.map((connection) => (
-        <li key={connection.connection_id}>{connection.connection_id}</li>
+        <li key={connection.path}>{connection.path}</li>
       ))}
     </ul>
   )
 }
 ```
 
-Create application endpoints for authorization starts and disconnects, then
-call them with `useMutation`. Keep provider-token retrieval and vault-value
-access in trusted server code.
+Create an application endpoint that calls `connections.access()`, returns only
+an authorization URL when required, and performs the credential-backed work on
+the server. Keep successful access payloads out of browser code.
 
 <Note>
-  `@hookfish/hooks` targets Hookfish's optional `/api/client` facade. Prefer
-  your own Hono route type for user-facing applications so authentication and
-  tenant authorization stay in your application.
+  `@hookfish/hooks` targets metadata and disconnect routes. It intentionally
+  has no access or authorization hook because successful access returns a
+  credential.
 </Note>

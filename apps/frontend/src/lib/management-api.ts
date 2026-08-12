@@ -1,59 +1,10 @@
-import { createHookfishClient, type HookfishClient } from '@hookfish/hooks'
 import { backendUrl } from './api-url'
-
-const managementClient = createHookfishClient({
-  baseUrl: `${backendUrl}/api`,
-})
 
 export type SecretMetadata = {
   path: string
   created_at: string
   updated_at: string
 }
-
-export type ManagedProvider = {
-  id: string
-  template: string | null
-  label: string
-  source: 'fixed' | 'dynamic'
-  configured: boolean
-  enabled: boolean
-  credentials: {
-    mode: 'inherit' | 'custom'
-    client_id: string | null
-  } | null
-  configuration: Record<string, unknown> | null
-  callback_url: string
-  created_at: string | null
-  updated_at: string | null
-}
-
-type StoreProviderBase = {
-  id: string
-  template: string
-  label?: string
-}
-
-type StoreOAuthProviderInput = {
-  type: 'oauth'
-  clientId: string
-  clientSecret: string
-}
-
-type StoreMcpProviderInput = {
-  type: 'mcp'
-  resourceUrl: string
-  scopes: string[]
-  clientId?: string
-  clientSecret?: string
-}
-
-export type StoreProviderInput = StoreProviderBase &
-  (StoreOAuthProviderInput | StoreMcpProviderInput)
-
-type StoreProviderBody = Parameters<
-  HookfishClient['admin']['providers'][':provider_path{.+}']['$put']
->[0]['json']
 
 function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
@@ -74,60 +25,19 @@ async function managementRequest<T>(
     headers,
   })
   if (response.ok) return response.json()
-
-  return throwManagementError(response)
-}
-
-async function throwManagementError(response: Response): Promise<never> {
-  const body = await response.json().catch(() => undefined)
-  const message = body?.error?.message
-  throw new Error(
-    typeof message === 'string'
-      ? message
-      : `Hookfish request failed (${response.status}).`,
-  )
-}
-
-function managementRequestOptions(token: string) {
-  return {
-    headers: { Authorization: `Bearer ${token}` },
-  }
-}
-
-function storeProviderBody(input: StoreProviderInput): StoreProviderBody {
-  const base = {
-    template: input.template,
-    ...(input.label ? { label: input.label } : {}),
-    enabled: true,
-  }
-
-  if (input.type === 'mcp') {
-    return {
-      ...base,
-      configuration: {
-        resource_url: input.resourceUrl,
-        scopes: input.scopes,
-      },
-      credentials: input.clientId
-        ? {
-            mode: 'custom',
-            client_id: input.clientId,
-            ...(input.clientSecret
-              ? { client_secret: input.clientSecret }
-              : {}),
-          }
-        : { mode: 'register' },
-    }
-  }
-
-  return {
-    ...base,
-    credentials: {
-      mode: 'custom',
-      client_id: input.clientId,
-      client_secret: input.clientSecret,
-    },
-  }
+  const body: unknown = await response.json().catch(() => undefined)
+  const error =
+    typeof body === 'object' && body !== null && 'error' in body
+      ? body.error
+      : undefined
+  const message =
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+      ? error.message
+      : `Hookfish request failed (${response.status}).`
+  throw new Error(message)
 }
 
 export async function listSecrets(
@@ -161,47 +71,4 @@ export async function deleteSecret(token: string, path: string): Promise<void> {
   await managementRequest(token, `/secrets/${encodePath(path)}`, {
     method: 'DELETE',
   })
-}
-
-export async function listManagedProviders(
-  token: string,
-): Promise<ManagedProvider[]> {
-  const response = await managementClient.admin.providers.$get(
-    { query: {} },
-    managementRequestOptions(token),
-  )
-  if (!response.ok) return throwManagementError(response)
-  const data = await response.json()
-  return data.providers
-}
-
-export async function storeManagedProvider(
-  token: string,
-  input: StoreProviderInput,
-): Promise<ManagedProvider> {
-  const response = await managementClient.admin.providers[
-    ':provider_path{.+}'
-  ].$put(
-    {
-      param: { provider_path: input.id },
-      json: storeProviderBody(input),
-    },
-    managementRequestOptions(token),
-  )
-  if (!response.ok) return throwManagementError(response)
-  const data = await response.json()
-  return data.provider
-}
-
-export async function deleteManagedProvider(
-  token: string,
-  providerId: string,
-): Promise<void> {
-  const response = await managementClient.admin.providers[
-    ':provider_path{.+}'
-  ].$delete(
-    { param: { provider_path: providerId } },
-    managementRequestOptions(token),
-  )
-  if (!response.ok) return throwManagementError(response)
 }

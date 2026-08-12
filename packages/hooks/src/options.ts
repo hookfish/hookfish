@@ -6,12 +6,7 @@ import {
   type QueryKey,
   queryOptions,
 } from '@tanstack/react-query'
-import type {
-  AuthorizeConnectionInput,
-  ConnectionsFilter,
-  HookfishClient,
-  ProvidersFilter,
-} from './client'
+import type { ConnectionsFilter, HookfishClient } from './client'
 import { type HookfishApiError, throwHookfishApiError } from './errors'
 import type { HookfishKeys } from './keys'
 
@@ -50,28 +45,9 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.providers(),
         queryFn: async ({ signal }) => {
-          const response = await client.oauth.providers.$get(
-            { query: {} },
-            { init: { signal } },
-          )
-          if (!response.ok) return throwHookfishApiError(response)
-          return response.json()
-        },
-      }),
-
-    providerSearch: (filter: ProvidersFilter) =>
-      apiQueryOptions({
-        queryKey: keys.providerSearch(filter),
-        queryFn: async ({ signal }) => {
-          const query = Object.fromEntries(
-            Object.entries(filter)
-              .filter(([, value]) => value !== undefined)
-              .map(([key, value]) => [key, String(value)]),
-          )
-          const response = await client.oauth.providers.$get(
-            { query },
-            { init: { signal } },
-          )
+          const response = await client.connections.providers.$get(undefined, {
+            init: { signal },
+          })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
@@ -81,7 +57,7 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.connections(filter),
         queryFn: async ({ signal }) => {
-          const response = await client.oauth.connections.$get(
+          const response = await client.connections.$get(
             { query: filter },
             { init: { signal } },
           )
@@ -90,29 +66,13 @@ export function createHookfishOptions(
         },
       }),
 
-    connection: (connectionId: string) =>
+    connection: (path: string) =>
       apiQueryOptions({
-        queryKey: keys.connection(connectionId),
+        queryKey: keys.connection(path),
         queryFn: async ({ signal }) => {
-          const response = await client.oauth.connections[
-            ':connection_id{.+}'
-          ].$get(
-            { param: { connection_id: connectionId } },
-            { init: { signal } },
-          )
-          if (!response.ok) return throwHookfishApiError(response)
-          return response.json()
-        },
-      }),
-
-    authorize: () =>
-      apiMutationOptions({
-        mutationKey: keys.authorize(),
-        mutationFn: async (input: AuthorizeConnectionInput) => {
-          const { provider, ...json } = input
-          const response = await client.oauth.authorize[
-            ':provider_path{.+}'
-          ].$post({ param: { provider_path: provider }, json })
+          const response = await client.connections.entry[
+            ':connection_path{.+}'
+          ].$get({ param: { connection_path: path } }, { init: { signal } })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
@@ -121,10 +81,10 @@ export function createHookfishOptions(
     disconnect: () =>
       apiMutationOptions({
         mutationKey: keys.disconnect(),
-        mutationFn: async (connectionId: string) => {
-          const response = await client.oauth.connections[
-            ':connection_id{.+}'
-          ].$delete({ param: { connection_id: connectionId } })
+        mutationFn: async (path: string) => {
+          const response = await client.connections.entry[
+            ':connection_path{.+}'
+          ].$delete({ param: { connection_path: path } })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
