@@ -43,6 +43,8 @@ describe('HookfishDurableObject', () => {
       providerId: 'github',
       configuration: {},
       secret: 'encrypted-access',
+      requestedScopes: ['repo'],
+      scopes: ['repo'],
     }
 
     expect(await db.putConnection(connection)).toMatchObject({
@@ -53,6 +55,8 @@ describe('HookfishDurableObject', () => {
     })
     expect(await db.getConnection('', 'shared', 'github')).toMatchObject({
       providerId: 'github',
+      requestedScopes: ['repo'],
+      scopes: ['repo'],
     })
   })
 

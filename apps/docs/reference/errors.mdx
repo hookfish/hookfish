@@ -34,6 +34,28 @@ An OAuth-backed connection that is not ready returns `401`:
 and the parsed response as `body`. Applications can translate those fields at
 their own framework boundary when they expose an HTTP endpoint.
 
+## Provider scope not granted
+
+If an authorization server grants fewer provider scopes than you requested,
+later access that requires a missing scope returns `403 scope_not_granted`:
+
+```json
+{
+  "error": {
+    "code": "scope_not_granted",
+    "message": "Connection was authorized without all required scopes.",
+    "requested_scopes": ["read", "write", "admin"],
+    "granted_scopes": ["read", "write"],
+    "missing_scopes": ["admin"]
+  }
+}
+```
+
+This error is terminal for the current grant. Ask the user to change provider
+permissions before explicitly starting another flow with
+`connections.authorize()`. Hookfish does not start another consent flow from
+`access()` for scopes the provider already declined.
+
 ## Common codes
 
 | Status | Code | Meaning |
@@ -44,6 +66,7 @@ their own framework boundary when they expose an HTTP endpoint.
 | `401` | `authorization_required` | Open the fresh URL to make the connection ready |
 | `401` | `unauthorized` | Broker credential is missing or incorrect |
 | `403` | `insufficient_scope` | Broker credential does not cover the exact path or subtree |
+| `403` | `scope_not_granted` | Provider omitted one or more scopes requested for the current grant |
 | `404` | `unknown_provider` | Final path segment has no trusted implementation |
 | `404` | `secret_required` | Static connection has no stored value |
 | `409` | `authorization_superseded` | A newer access replaced this pending flow |

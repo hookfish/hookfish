@@ -50,6 +50,7 @@ type ConnectionRow = {
   secret: string | null
   refresh_token: string | null
   token_type: string
+  requested_scopes: string
   scopes: string
   expires_at: number | null
   metadata: string
@@ -126,6 +127,7 @@ function toConnection(row: ConnectionRow): Connection {
     secret: row.secret,
     refreshToken: row.refresh_token,
     tokenType: row.token_type,
+    requestedScopes: decodeStringArray(row.requested_scopes),
     scopes: decodeStringArray(row.scopes),
     expiresAt: row.expires_at === null ? null : new Date(row.expires_at),
     metadata: decodeObject(row.metadata),
@@ -209,6 +211,7 @@ export class HookfishDurableObject<Env = object>
           secret TEXT,
           refresh_token TEXT,
           token_type TEXT NOT NULL,
+          requested_scopes TEXT NOT NULL,
           scopes TEXT NOT NULL,
           expires_at INTEGER,
           metadata TEXT NOT NULL,
@@ -411,9 +414,9 @@ export class HookfishDurableObject<Env = object>
       `INSERT OR IGNORE INTO connections (
         id, organization, namespace, provider_id, configuration, oauth_issuer,
         oauth_client_id, oauth_client_secret, secret, refresh_token, token_type,
-        scopes, expires_at, metadata, external_account_id,
+        requested_scopes, scopes, expires_at, metadata, external_account_id,
         external_account_label, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       crypto.randomUUID(),
       input.organization,
       input.namespace,
@@ -425,6 +428,7 @@ export class HookfishDurableObject<Env = object>
       input.secret ?? null,
       input.refreshToken ?? null,
       input.tokenType ?? 'Bearer',
+      JSON.stringify(input.requestedScopes ?? []),
       JSON.stringify(input.scopes ?? []),
       input.expiresAt?.getTime() ?? null,
       JSON.stringify(input.metadata ?? {}),
@@ -455,8 +459,8 @@ export class HookfishDurableObject<Env = object>
       .exec<ConnectionRow>(
         `UPDATE connections SET configuration = ?, oauth_issuer = ?,
           oauth_client_id = ?, oauth_client_secret = ?, secret = ?,
-          refresh_token = ?, token_type = ?, scopes = ?, expires_at = ?,
-          metadata = ?, external_account_id = ?, external_account_label = ?,
+          refresh_token = ?, token_type = ?, requested_scopes = ?, scopes = ?,
+          expires_at = ?, metadata = ?, external_account_id = ?, external_account_label = ?,
           updated_at = ? WHERE id = ? RETURNING *`,
         JSON.stringify(value.configuration),
         value.oauthIssuer,
@@ -465,6 +469,7 @@ export class HookfishDurableObject<Env = object>
         value.secret,
         value.refreshToken,
         value.tokenType,
+        JSON.stringify(value.requestedScopes),
         JSON.stringify(value.scopes),
         value.expiresAt?.getTime() ?? null,
         JSON.stringify(value.metadata),

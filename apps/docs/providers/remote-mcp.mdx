@@ -59,6 +59,11 @@ with a fixed Notion connection at `user/personal/notion`, whose provider ID is
 The first access stores the normalized URL and scopes. Reusing the path with a
 different URL returns `connection_configuration_conflict`.
 
+If the authorization server grants fewer scopes than requested, access that
+requires an omitted scope returns `scope_not_granted`. Hookfish does not restart
+consent automatically for a scope the provider already declined. See
+[Errors](/reference/errors) for handling guidance.
+
 ## Non-OAuth credentials
 
 The MCP `AuthProvider` sends an `Authorization: Bearer` header. It can return a

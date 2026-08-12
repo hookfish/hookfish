@@ -153,6 +153,13 @@
           "notNull": true,
           "default": "'Bearer'"
         },
+        "requested_scopes": {
+          "name": "requested_scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
         "scopes": {
           "name": "scopes",
           "type": "text[]",

@@ -108,6 +108,9 @@ app.onError((error, ctx) => {
       401,
     )
   }
+  if (error instanceof HookfishError && error.code === 'scope_not_granted') {
+    return ctx.json({ error: error.code }, 403)
+  }
   console.error(error)
   return ctx.json({ error: 'Internal server error' }, 500)
 })
@@ -143,7 +146,11 @@ app.post('/organizations/:organization/servers/:server/connect', async (ctx) => 
 An unready connection throws Hookfish's direct `authorization_required` error
 with a newly generated authorization URL. The route-level error handler returns
 that URL to the browser. A ready connection returns its secret to trusted server
-code; the route returns metadata instead of exposing the secret.
+code; the route returns metadata instead of exposing the secret. If the
+authorization server grants fewer scopes than the catalog entry requires,
+Hookfish returns the terminal `scope_not_granted` error instead of restarting
+consent. Retry with `connections.authorize()` only after the user changes
+provider permissions.
 
 ## Call the MCP server
 

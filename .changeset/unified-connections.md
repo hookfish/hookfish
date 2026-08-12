@@ -16,6 +16,8 @@ secrets use the built-in `secret` provider, and dynamic MCP servers use the
 built-in `mcp` provider with connection-local configuration and client
 credentials. The SDK exposes explicit `access()` and `authorize()` operations
 that can be used directly from an MCP client's authentication provider.
+Requested and granted provider scopes are stored separately so a partial grant
+returns `scope_not_granted` instead of repeatedly restarting authorization.
 
 Upgrading intentionally drops the legacy `oauth_connections`,
 `oauth_providers`, and pending `oauth_states` data in Postgres, PGlite, and

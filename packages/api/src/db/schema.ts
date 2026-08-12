@@ -41,6 +41,7 @@ export const connections = pgTable(
     secret: text('secret_encrypted'),
     refreshToken: text('refresh_token_encrypted'),
     tokenType: text('token_type').notNull().default('Bearer'),
+    requestedScopes: text('requested_scopes').array().notNull().default([]),
     scopes: text('scopes').array().notNull().default([]),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
 

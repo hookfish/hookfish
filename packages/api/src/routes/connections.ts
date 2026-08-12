@@ -188,7 +188,7 @@ const accessRoute = createRoute({
   operationId: 'connections.access',
   summary: 'Get a usable secret or start authorization',
   description:
-    'Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL until authorization completes.',
+    'Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL for scopes that have not been requested, or `scope_not_granted` when the provider declined a requested scope.',
   security: brokerAuth,
   request: {
     params: connectionPathParam,

@@ -475,10 +475,10 @@ export async function completeAuthorization(
         issuer: input.issuer,
       }),
     )
-    const updated = await db.updateConnection(
-      configured.connection.id,
-      await toStoredFields(env, response, pending.scopes),
-    )
+    const updated = await db.updateConnection(configured.connection.id, {
+      ...(await toStoredFields(env, response, pending.scopes)),
+      requestedScopes: pending.scopes,
+    })
     if (!updated)
       throw new BrokerError(
         404,
@@ -622,12 +622,12 @@ export type AccessConnectionResult = {
 }
 
 function includesRequestedScopes(
-  grantedScopes: readonly string[],
+  availableScopes: readonly string[],
   requestedScopes: readonly string[] | undefined,
 ): boolean {
   if (!requestedScopes) return true
-  const granted = new Set(grantedScopes)
-  return requestedScopes.every((scope) => granted.has(scope))
+  const available = new Set(availableScopes)
+  return requestedScopes.every((scope) => available.has(scope))
 }
 
 export async function accessConnection(
@@ -688,7 +688,7 @@ export async function accessConnection(
   if (
     !connection.secret ||
     isExpired(connection) ||
-    !includesRequestedScopes(connection.scopes, input.scopes)
+    !includesRequestedScopes(connection.requestedScopes, input.scopes)
   ) {
     const authorization = await startAuthorization(
       db,
@@ -709,6 +709,21 @@ export async function accessConnection(
       {
         authorize_url: authorization.authorizeUrl,
         expires_at: authorization.expiresAt.toISOString(),
+      },
+    )
+  }
+
+  if (!includesRequestedScopes(connection.scopes, input.scopes)) {
+    const granted = new Set(connection.scopes)
+    throw new BrokerError(
+      403,
+      'scope_not_granted',
+      `Connection "${formatConnectionPath(input.namespace, input.providerId)}" was authorized without all required scopes.`,
+      {
+        requested_scopes: connection.requestedScopes,
+        granted_scopes: connection.scopes,
+        missing_scopes:
+          input.scopes?.filter((scope) => !granted.has(scope)) ?? [],
       },
     )
   }

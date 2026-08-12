@@ -36,6 +36,12 @@ The provider implementation defines these values. For MCP, scopes supplied
 with the resource URL become the connection's immutable MCP configuration and
 the requested upstream permissions.
 
+Hookfish records requested and granted provider scopes separately. Access with
+a scope that was never requested starts authorization. If the provider already
+declined that scope, access returns `scope_not_granted` instead of opening a
+consent loop. You can explicitly retry with `connections.authorize()` after the
+user changes their provider permissions.
+
 | Question | Controlled by |
 | --- | --- |
 | Which Hookfish paths may this service access? | Broker resource scopes |

@@ -10,6 +10,7 @@ CREATE TABLE "connections" (
 	"secret_encrypted" text,
 	"refresh_token_encrypted" text,
 	"token_type" text DEFAULT 'Bearer' NOT NULL,
+	"requested_scopes" text[] DEFAULT '{}' NOT NULL,
 	"scopes" text[] DEFAULT '{}' NOT NULL,
 	"expires_at" timestamp with time zone,
 	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,

@@ -12,6 +12,7 @@ export type Connection = {
   secret: string | null
   refreshToken: string | null
   tokenType: string
+  requestedScopes: string[]
   scopes: string[]
   expiresAt: Date | null
   metadata: Record<string, unknown>
@@ -89,6 +90,7 @@ export type NewConnection = Pick<
       | 'secret'
       | 'refreshToken'
       | 'tokenType'
+      | 'requestedScopes'
       | 'scopes'
       | 'expiresAt'
       | 'metadata'
@@ -107,6 +109,7 @@ export type ConnectionUpdate = Partial<
     | 'secret'
     | 'refreshToken'
     | 'tokenType'
+    | 'requestedScopes'
     | 'scopes'
     | 'expiresAt'
     | 'metadata'

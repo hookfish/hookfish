@@ -42,6 +42,12 @@ access creates a fresh URL and supersedes older pending state. For MCP, use
 the client's `onUnauthorized` callback to call `connections.authorize()`. The
 direct Hookfish error then bubbles to your application error handler.
 
+Hookfish persists requested provider scopes separately from the scopes returned
+by the token endpoint. Access requests for scopes that were never requested
+start authorization; scopes requested but not granted return the terminal
+`scope_not_granted` error. Call `connections.authorize()` explicitly to retry
+after the user changes provider permissions.
+
 For static credentials, register `createSecretProvider()` and call:
 
 ```ts

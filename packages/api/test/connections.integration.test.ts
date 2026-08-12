@@ -62,7 +62,7 @@ describe('connections', () => {
     })
   })
 
-  it('starts fresh authorization when access requests missing scopes', async () => {
+  it('distinguishes never-requested scopes from scopes the provider declined', async () => {
     const authorization = await harness.authorize()
     const callbackUrl = new URL(authorization.callbackUrl)
     const callback = await harness.fetch(
@@ -84,6 +84,74 @@ describe('connections', () => {
     expect(
       new URL(body.error.authorize_url).searchParams.get('scope')?.split(' '),
     ).toEqual(['read', 'write', 'admin'])
+
+    const consent = await fetch(body.error.authorize_url, {
+      redirect: 'manual',
+    })
+    const declinedCallbackUrl = consent.headers.get('location')
+    if (!declinedCallbackUrl)
+      throw new Error('Stub did not return a callback URL.')
+    harness.stub.nextTokenResponse = {
+      access_token: 'restricted-access',
+      refresh_token: 'restricted-refresh',
+      expires_in: 3600,
+      scope: 'read write',
+    }
+    const declinedCallback = new URL(declinedCallbackUrl)
+    const completion = await harness.fetch(
+      `${declinedCallback.pathname}${declinedCallback.search}`,
+    )
+    expect(completion.status).toBe(200)
+
+    await expect(
+      harness.db.getConnection('', 'user/personal', 'stub'),
+    ).resolves.toMatchObject({
+      requestedScopes: ['read', 'write', 'admin'],
+      scopes: ['read', 'write'],
+    })
+
+    const declined = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scopes: ['read', 'write', 'admin'] }),
+      },
+    )
+    expect(declined.status).toBe(403)
+    await expect(declined.json()).resolves.toMatchObject({
+      error: {
+        code: 'scope_not_granted',
+        requested_scopes: ['read', 'write', 'admin'],
+        granted_scopes: ['read', 'write'],
+        missing_scopes: ['admin'],
+      },
+    })
+
+    const permitted = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scopes: ['read'] }),
+      },
+    )
+    expect(permitted.status).toBe(200)
+
+    const newScope = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scopes: ['read', 'write', 'admin', 'calendar'],
+        }),
+      },
+    )
+    expect(newScope.status).toBe(401)
+    await expect(newScope.json()).resolves.toMatchObject({
+      error: { code: 'authorization_required' },
+    })
   })
 
   it('stores and retrieves a static provider secret through the same access API', async () => {

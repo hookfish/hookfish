@@ -82,7 +82,7 @@ export const adminTokensRevoke = <ThrowOnError extends boolean = false>(paramete
 /**
  * Get a usable secret or start authorization
  *
- * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL until authorization completes.
+ * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL for scopes that have not been requested, or `scope_not_granted` when the provider declined a requested scope.
  */
 export const connectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
     connection_path: string;
@@ -319,7 +319,7 @@ export const secretsList = <ThrowOnError extends boolean = false>(parameters?: {
 /**
  * Get a usable secret or start authorization
  *
- * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL until authorization completes.
+ * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL for scopes that have not been requested, or `scope_not_granted` when the provider declined a requested scope.
  */
 export const organizationConnectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
