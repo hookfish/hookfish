@@ -13,8 +13,9 @@ describe('HookfishDurableObject', () => {
     const expiresAt = new Date(Date.now() + 60_000)
     await db.createOAuthState({
       id: 'state-hash',
-      connectionId: 'connection',
-      provider: 'github',
+      organization: '',
+      namespace: 'user/personal',
+      providerId: 'github',
       redirectUri: 'https://example.com/callback',
       scopes: ['repo'],
       expiresAt,
@@ -27,36 +28,35 @@ describe('HookfishDurableObject', () => {
 
     expect(claims.filter(Boolean)).toHaveLength(1)
     expect(await db.getOAuthState(['state-hash'], 'github')).toMatchObject({
-      connectionId: 'connection',
+      namespace: 'user/personal',
+      providerId: 'github',
       status: 'processing',
       expiresAt,
     })
   })
 
-  it('does not let another provider take a connection id', async () => {
+  it('uniquely identifies a connection by namespace and provider', async () => {
     const db = database('connection-ownership')
     const connection = {
-      organization: null,
-      connectionId: 'shared/connection',
-      provider: 'github',
-      accessToken: 'encrypted-access',
-      refreshToken: null,
-      tokenType: 'Bearer',
+      organization: '',
+      namespace: 'shared',
+      providerId: 'github',
+      configuration: {},
+      secret: 'encrypted-access',
+      requestedScopes: ['repo'],
       scopes: ['repo'],
-      expiresAt: null,
-      metadata: {},
-      externalAccountId: null,
-      externalAccountLabel: null,
     }
 
-    expect(await db.upsertOAuthConnection(connection)).toMatchObject({
-      provider: 'github',
+    expect(await db.putConnection(connection)).toMatchObject({
+      providerId: 'github',
     })
-    expect(
-      await db.upsertOAuthConnection({ ...connection, provider: 'linear' }),
-    ).toBeUndefined()
-    expect(await db.getOAuthConnection('shared/connection')).toMatchObject({
-      provider: 'github',
+    expect(await db.putConnection(connection)).toMatchObject({
+      providerId: 'github',
+    })
+    expect(await db.getConnection('', 'shared', 'github')).toMatchObject({
+      providerId: 'github',
+      requestedScopes: ['repo'],
+      scopes: ['repo'],
     })
   })
 
@@ -115,13 +115,13 @@ describe('HookfishDurableObject', () => {
     const mintedResponse = await request('/api/admin/tokens', 'test', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'acme-worker', scopes: ['acme'] }),
+      body: JSON.stringify({ name: 'acme-worker', scopes: ['acme/**'] }),
     })
     expect(mintedResponse.status).toBe(200)
     const minted: { access_token: string } = await mintedResponse.json()
 
     const organizationResponse = await request(
-      '/api/organization/acme/oauth/connections',
+      '/api/organization/acme/connections',
       minted.access_token,
     )
     expect(organizationResponse.status).toBe(200)

@@ -1,11 +1,10 @@
 import {
   brokerAccessTokens,
+  connections,
   type Database,
   type DatabaseBinding,
   defineDatabase,
   drizzleDatabase,
-  oauthConnections,
-  oauthProviders,
   oauthStates,
   vaultSecrets,
 } from '@hookfish/api/database'
@@ -16,8 +15,7 @@ import postgresClient from 'postgres'
 
 const schema = {
   brokerAccessTokens,
-  oauthConnections,
-  oauthProviders,
+  connections,
   oauthStates,
   vaultSecrets,
 }

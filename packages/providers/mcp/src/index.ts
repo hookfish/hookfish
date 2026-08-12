@@ -326,17 +326,20 @@ export class McpProvider implements OAuthProviderTemplate {
   ): Promise<RegisteredProviderClient> {
     const configuration = mcpConfigurationSchema.parse(input.configuration)
     const discovery = await discover(this.fetcher, configuration.resource_url)
-    const metadataUrl = new URL(input.redirectUri)
+    if (this.credentials.clientId) {
+      return {
+        clientId: this.credentials.clientId,
+        clientSecret: this.credentials.clientSecret,
+        issuer: discovery.issuer,
+      }
+    }
+    const metadataUrl = new URL(input.clientMetadataUrl)
     if (
       discovery.clientIdMetadataDocumentSupported &&
       metadataUrl.protocol === 'https:' &&
       !isLoopbackMetadataUrl(metadataUrl)
     ) {
-      metadataUrl.pathname = metadataUrl.pathname.replace(
-        '/oauth/callback/',
-        '/oauth/client-metadata/',
-      )
-      return { clientId: metadataUrl.toString() }
+      return { clientId: metadataUrl.toString(), issuer: discovery.issuer }
     }
     if (!discovery.registrationEndpoint) {
       throw new ProviderConfigurationError(
@@ -387,6 +390,7 @@ export class McpProvider implements OAuthProviderTemplate {
     return {
       clientId: parsed.data.client_id,
       clientSecret: parsed.data.client_secret,
+      issuer: discovery.issuer,
     }
   }
 

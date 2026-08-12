@@ -77,9 +77,9 @@ const applicationRoutes = app
     const brokerToken = await scopedBrokerTokenFor(user.organizationId)
     const hookfishClient = hookfishFor(brokerToken)
 
-    const response = await hookfishClient.oauth.connections.$get({
+    const response = await hookfishClient.connections.$get({
       query: {
-        connection_id_prefix: user.organizationId,
+        namespace: `organization/${user.organizationId}`,
       },
     })
 
@@ -128,9 +128,9 @@ const response = await api.rpc.integrations.connections.$get()
 const { connections } = await response.json()
 ```
 
-Use this same server-side pattern for authorization starts, disconnects,
-provider-token retrieval, and vault access. Return provider tokens or decrypted
-secrets only to trusted server consumers.
+Use this same server-side pattern for connection access and disconnect. If
+access returns `authorization_required`, return only its URL to the browser.
+Keep successful secrets in trusted server code.
 
 Continue with [application authentication](/authentication/application-auth)
 for the complete security boundary.

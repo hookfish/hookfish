@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   integer,
   jsonb,
@@ -14,29 +13,35 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 export type {
   BrokerAccessToken,
-  OAuthConnection,
-  OAuthProviderRecord,
+  Connection,
   OAuthState,
   VaultSecret,
 } from './types'
 
 /**
- * One row per connection. A connection_id is a single provider link -- multiple
- * accounts on the same provider are multiple connection ids. Tokens are stored
- * encrypted at rest -- see `oauth/crypto.ts`. The plaintext never touches the
- * database.
+ * One row per structured connection identity. Credentials are encrypted at
+ * rest; plaintext never touches the database.
  */
-export const oauthConnections = pgTable(
-  'oauth_connections',
+export const connections = pgTable(
+  'connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    organization: text('organization'),
-    connectionId: text('connection_id').notNull(),
-    provider: text('provider').notNull(),
+    organization: text('organization').notNull().default(''),
+    namespace: text('namespace').notNull(),
+    providerId: text('provider_id').notNull(),
+    configuration: jsonb('configuration')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
 
-    accessToken: text('access_token_encrypted').notNull(),
+    oauthIssuer: text('oauth_issuer'),
+    oauthClientId: text('oauth_client_id'),
+    oauthClientSecret: text('oauth_client_secret_encrypted'),
+
+    secret: text('secret_encrypted'),
     refreshToken: text('refresh_token_encrypted'),
     tokenType: text('token_type').notNull().default('Bearer'),
+    requestedScopes: text('requested_scopes').array().notNull().default([]),
     scopes: text('scopes').array().notNull().default([]),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
 
@@ -62,9 +67,13 @@ export const oauthConnections = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex('oauth_connections_connection_id_idx').on(table.connectionId),
-    index('oauth_connections_organization_idx').on(table.organization),
-    index('oauth_connections_provider_idx').on(table.provider),
+    uniqueIndex('connections_identity_idx').on(
+      table.organization,
+      table.namespace,
+      table.providerId,
+    ),
+    index('connections_organization_idx').on(table.organization),
+    index('connections_provider_idx').on(table.providerId),
   ],
 )
 
@@ -77,13 +86,14 @@ export const oauthStates = pgTable(
   'oauth_states',
   {
     id: text('id').primaryKey(),
-    connectionId: text('connection_id').notNull(),
-    organization: text('organization'),
-    provider: text('provider').notNull(),
+    organization: text('organization').notNull().default(''),
+    namespace: text('namespace').notNull(),
+    providerId: text('provider_id').notNull(),
     codeVerifier: text('code_verifier'),
     redirectUri: text('redirect_uri').notNull(),
     returnTo: text('return_to'),
     scopes: text('scopes').array().notNull().default([]),
+    issuer: text('issuer'),
     status: text('status').notNull().default('pending'),
     errorStatus: integer('error_status'),
     errorCode: text('error_code'),
@@ -119,44 +129,6 @@ export const brokerAccessTokens = pgTable(
   ],
 )
 
-/**
- * Runtime-configured provider instances. `template_id` names one of the
- * trusted providers supplied to Hookfish at initialization; executable code is
- * never loaded from the database. An empty organization is the global store.
- */
-export const oauthProviders = pgTable(
-  'oauth_providers',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    organization: text('organization').notNull().default(''),
-    providerId: text('provider_id').notNull(),
-    templateId: text('template_id').notNull(),
-    label: text('label'),
-    credentialMode: text('credential_mode').notNull().default('inherit'),
-    clientId: text('client_id'),
-    clientSecretPath: text('client_secret_path'),
-    configuration: jsonb('configuration')
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default({}),
-    enabled: boolean('enabled').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex('oauth_providers_organization_provider_id_idx').on(
-      table.organization,
-      table.providerId,
-    ),
-    index('oauth_providers_organization_idx').on(table.organization),
-    index('oauth_providers_template_id_idx').on(table.templateId),
-  ],
-)
-
 /** Encrypted arbitrary credentials. Plaintext values never touch the database. */
 export const vaultSecrets = pgTable(
   'vault_secrets',
@@ -183,8 +155,7 @@ export const vaultSecrets = pgTable(
 
 type Schema = {
   brokerAccessTokens: typeof brokerAccessTokens
-  oauthConnections: typeof oauthConnections
-  oauthProviders: typeof oauthProviders
+  connections: typeof connections
   oauthStates: typeof oauthStates
   vaultSecrets: typeof vaultSecrets
 }

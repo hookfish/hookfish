@@ -1,64 +1,35 @@
 ---
 title: "Organization routing"
-description: "Add an explicit tenant namespace to Hookfish routes and database resolution."
+description: "Add an explicit tenant key to connection and vault operations."
 ---
 
-Enable organization routing when each tenant needs an explicit request path
-and database context in addition to resource-scoped credentials.
+Enable organization routing when each tenant needs a separate request and
+database context:
 
 ```ts
 export default defineHookfishConfig({
   db,
-  organizationRouting: true,
   providers,
+  organizationRouting: true,
 })
 ```
 
-## Route changes
-
-OAuth management routes move below the organization:
+Management routes gain an organization prefix:
 
 ```text
-/api/organization/acme/oauth/providers
-/api/organization/acme/oauth/connections
-/api/organization/acme/oauth/authorize/github
+/api/organization/acme/connections/access/user/personal/github
+/api/organization/acme/connections
 /api/organization/acme/secrets
-/api/organization/acme/admin/providers
 ```
 
-Provider callbacks and MCP client metadata remain global:
+Callbacks and deployment client metadata stay global:
 
 ```text
-/api/oauth/callback/github
-/api/oauth/client-metadata/mcp
+/api/connections/callback/github
+/api/connections/client-metadata.json
 ```
 
-Stats and broker-token administration also remain deployment-wide.
-
-## Enforce the namespace
-
-The organization must be 1–128 characters using letters, numbers, dots,
-underscores, or hyphens. Hookfish stores the validated organization separately
-on authorization state and connection records.
-
-Explicit connection IDs, connection prefixes, provider paths, and vault paths
-must remain at or below the organization's resource path. For organization
-`acme`, `acme/engineering/github` is valid and `other/github` is rejected.
-
-Use both controls:
-
-- Organization routing supplies an authenticated tenant context to the
-  database adapter.
-- Broker scopes restrict what the calling credential can access.
-
-## Resolve tenant storage
-
-Request-aware database adapters receive `{ organization }` as their context. A
-shared PostgreSQL adapter can retain the organization as a row-level key. A
-partitioned adapter can select a separate store.
-
-<Note>
-  The built-in browser facade exposes only global OAuth-management paths. Proxy
-  organization operations through your authenticated application server and
-  call Hookfish with the tenant's scoped broker token.
-</Note>
+The organization is stored separately from the connection namespace. It must
+be 1–128 characters using letters, numbers, dots, underscores, or hyphens.
+Use organization routing for tenant storage selection and broker resource
+scopes for per-service authorization; neither replaces application auth.

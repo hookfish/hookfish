@@ -10,27 +10,6 @@ export type StatsResponse = {
     features: Array<string>;
 };
 
-export type OAuthConnection = {
-    connection_id: string;
-    provider: string;
-    scopes: Array<string>;
-    expires_at: string | null;
-    external_account_id: string | null;
-    external_account_label: string | null;
-    metadata: {
-        [key: string]: unknown;
-    };
-    created_at: string;
-    updated_at: string;
-};
-
-export type BrokerError = {
-    error: {
-        code: string;
-        message: string;
-    };
-};
-
 export type StatsGetData = {
     body?: never;
     path?: never;
@@ -119,7 +98,7 @@ export type AdminTokensCreateData = {
     body?: {
         name: string;
         /**
-         * Connection folders. Each path is canonicalized to `path**`.
+         * Exact resource paths or explicit namespace subtrees ending in `**`.
          */
         scopes: Array<string>;
         /**
@@ -268,390 +247,78 @@ export type AdminTokensRevokeResponses = {
 
 export type AdminTokensRevokeResponse = AdminTokensRevokeResponses[keyof AdminTokensRevokeResponses];
 
-export type AdminProvidersDeleteData = {
-    body?: never;
-    path: {
-        provider_path: string;
-    };
-    query?: never;
-    url: '/admin/providers/{provider_path}';
-};
-
-export type AdminProvidersDeleteErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type AdminProvidersDeleteError = AdminProvidersDeleteErrors[keyof AdminProvidersDeleteErrors];
-
-export type AdminProvidersDeleteResponses = {
-    /**
-     * Deletion result
-     */
-    200: {
-        id: string;
-        deleted: boolean;
-    };
-};
-
-export type AdminProvidersDeleteResponse = AdminProvidersDeleteResponses[keyof AdminProvidersDeleteResponses];
-
-export type AdminProvidersGetData = {
-    body?: never;
-    path: {
-        provider_path: string;
-    };
-    query?: never;
-    url: '/admin/providers/{provider_path}';
-};
-
-export type AdminProvidersGetErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type AdminProvidersGetError = AdminProvidersGetErrors[keyof AdminProvidersGetErrors];
-
-export type AdminProvidersGetResponses = {
-    /**
-     * Provider configuration
-     */
-    200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type AdminProvidersGetResponse = AdminProvidersGetResponses[keyof AdminProvidersGetResponses];
-
-export type AdminProvidersPatchData = {
+export type ConnectionsAccessData = {
     body?: {
-        template?: string;
-        label?: string | null;
-        configuration?: {
+        url?: string;
+        scopes?: Array<string>;
+        return_to?: string;
+    };
+    path: {
+        connection_path: string;
+    };
+    query?: never;
+    url: '/connections/access/{connection_path}';
+};
+
+export type ConnectionsAccessErrors = {
+    /**
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
             [key: string]: unknown;
         };
-        credentials?: {
-            mode: 'inherit';
-        } | {
-            mode: 'custom';
-            client_id: string;
-            client_secret?: string;
-        } | {
-            mode: 'register';
-        };
-        enabled?: boolean;
-    };
-    path: {
-        provider_path: string;
-    };
-    query?: never;
-    url: '/admin/providers/{provider_path}';
-};
-
-export type AdminProvidersPatchErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
     };
     /**
-     * Missing or invalid broker credential
+     * Authorization required or invalid broker credential
      */
     401: {
         error: {
             code: string;
             message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type AdminProvidersPatchError = AdminProvidersPatchErrors[keyof AdminProvidersPatchErrors];
-
-export type AdminProvidersPatchResponses = {
-    /**
-     * Provider updated
-     */
-    200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type AdminProvidersPatchResponse = AdminProvidersPatchResponses[keyof AdminProvidersPatchResponses];
-
-export type AdminProvidersPutData = {
-    body?: {
-        template: string;
-        label?: string;
-        configuration?: {
+            authorize_url?: string;
+            expires_at?: string;
             [key: string]: unknown;
         };
-        credentials: {
-            mode: 'inherit';
-        } | {
-            mode: 'custom';
-            client_id: string;
-            client_secret?: string;
-        } | {
-            mode: 'register';
-        };
-        enabled?: boolean;
-    };
-    path: {
-        provider_path: string;
-    };
-    query?: never;
-    url: '/admin/providers/{provider_path}';
-};
-
-export type AdminProvidersPutErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
     };
     /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
+     * Insufficient resource scope
      */
     403: {
         error: {
             code: string;
             message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
         };
     };
     /**
-     * Provider not found
+     * Connection, provider, or secret not found
      */
     404: {
         error: {
             code: string;
             message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
         };
     };
     /**
-     * Provider id is reserved or still in use
+     * Connection configuration conflict
      */
     409: {
         error: {
             code: string;
             message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
         };
     };
     /**
@@ -661,460 +328,501 @@ export type AdminProvidersPutErrors = {
         error: {
             code: string;
             message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
         };
     };
     /**
-     * Upstream provider request failed
+     * Upstream provider error
      */
     502: {
         error: {
             code: string;
             message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
         };
     };
 };
 
-export type AdminProvidersPutError = AdminProvidersPutErrors[keyof AdminProvidersPutErrors];
+export type ConnectionsAccessError = ConnectionsAccessErrors[keyof ConnectionsAccessErrors];
 
-export type AdminProvidersPutResponses = {
+export type ConnectionsAccessResponses = {
     /**
-     * Provider stored
+     * Usable secret
      */
     200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type AdminProvidersPutResponse = AdminProvidersPutResponses[keyof AdminProvidersPutResponses];
-
-export type AdminProvidersListData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/admin/providers';
-};
-
-export type AdminProvidersListErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type AdminProvidersListError = AdminProvidersListErrors[keyof AdminProvidersListErrors];
-
-export type AdminProvidersListResponses = {
-    /**
-     * Provider configurations
-     */
-    200: {
-        providers: Array<{
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        }>;
-        [key: string]: unknown;
-    };
-};
-
-export type AdminProvidersListResponse = AdminProvidersListResponses[keyof AdminProvidersListResponses];
-
-export type OauthConnectionsDisconnectData = {
-    body?: never;
-    path: {
-        connection_id: string;
-    };
-    query?: never;
-    url: '/oauth/connections/{connection_id}';
-};
-
-export type OauthConnectionsDisconnectErrors = {
-    /**
-     * Invalid request
-     */
-    400: BrokerError;
-    /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
-     */
-    401: BrokerError;
-    /**
-     * The broker access token does not cover this connection
-     */
-    403: BrokerError;
-    /**
-     * Unknown provider or no connection for this id
-     */
-    404: BrokerError;
-    /**
-     * Connection id is already linked to another provider
-     */
-    409: BrokerError;
-    /**
-     * Broker is misconfigured
-     */
-    500: BrokerError;
-    /**
-     * The provider rejected the token request
-     */
-    502: BrokerError;
-};
-
-export type OauthConnectionsDisconnectError = OauthConnectionsDisconnectErrors[keyof OauthConnectionsDisconnectErrors];
-
-export type OauthConnectionsDisconnectResponses = {
-    /**
-     * Deletion result
-     */
-    200: {
-        deleted: boolean;
-        revocation: 'revoked' | 'unsupported' | 'not_found';
-    };
-};
-
-export type OauthConnectionsDisconnectResponse = OauthConnectionsDisconnectResponses[keyof OauthConnectionsDisconnectResponses];
-
-export type OauthConnectionsGetData = {
-    body?: never;
-    path: {
-        connection_id: string;
-    };
-    query?: never;
-    url: '/oauth/connections/{connection_id}';
-};
-
-export type OauthConnectionsGetErrors = {
-    /**
-     * Invalid request
-     */
-    400: BrokerError;
-    /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
-     */
-    401: BrokerError;
-    /**
-     * The broker access token does not cover this connection
-     */
-    403: BrokerError;
-    /**
-     * Unknown provider or no connection for this id
-     */
-    404: BrokerError;
-    /**
-     * Connection id is already linked to another provider
-     */
-    409: BrokerError;
-    /**
-     * Broker is misconfigured
-     */
-    500: BrokerError;
-    /**
-     * The provider rejected the token request
-     */
-    502: BrokerError;
-};
-
-export type OauthConnectionsGetError = OauthConnectionsGetErrors[keyof OauthConnectionsGetErrors];
-
-export type OauthConnectionsGetResponses = {
-    /**
-     * Connection
-     */
-    200: {
-        connection: OAuthConnection;
-    };
-};
-
-export type OauthConnectionsGetResponse = OauthConnectionsGetResponses[keyof OauthConnectionsGetResponses];
-
-export type OauthTokensGetData = {
-    body?: never;
-    path: {
-        connection_id: string;
-    };
-    query?: never;
-    url: '/oauth/tokens/{connection_id}';
-};
-
-export type OauthTokensGetErrors = {
-    /**
-     * Invalid request
-     */
-    400: BrokerError;
-    /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
-     */
-    401: BrokerError;
-    /**
-     * The broker access token does not cover this connection
-     */
-    403: BrokerError;
-    /**
-     * Unknown provider or no connection for this id
-     */
-    404: BrokerError;
-    /**
-     * Connection id is already linked to another provider
-     */
-    409: BrokerError;
-    /**
-     * Broker is misconfigured
-     */
-    500: BrokerError;
-    /**
-     * The provider rejected the token request
-     */
-    502: BrokerError;
-};
-
-export type OauthTokensGetError = OauthTokensGetErrors[keyof OauthTokensGetErrors];
-
-export type OauthTokensGetResponses = {
-    /**
-     * A token that is valid right now
-     */
-    200: {
-        connection_id: string;
-        provider: string;
-        access_token: string;
-        token_type: string;
+        path: string;
+        secret: string;
         scopes: Array<string>;
         expires_at: string | null;
         refreshed: boolean;
     };
 };
 
-export type OauthTokensGetResponse = OauthTokensGetResponses[keyof OauthTokensGetResponses];
+export type ConnectionsAccessResponse = ConnectionsAccessResponses[keyof ConnectionsAccessResponses];
 
-export type OauthAuthorizeData = {
+export type ConnectionsAuthorizeData = {
     body?: {
-        /**
-         * Opaque id for this provider link. Omit to auto-generate as `word-word-number` (e.g. `swift-orchid-4821`). Re-pass the same id to reconnect the same link; a different provider on an existing id returns 409.
-         */
-        connection_id?: string;
-        /**
-         * Slash-delimited path below which the broker should mint an id. Use this only when connection_id is omitted.
-         */
-        connection_id_prefix?: string;
-        /**
-         * Scopes requested for this flow. Leave empty to use the provider defaults -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.
-         */
+        url?: string;
         scopes?: Array<string>;
-        /**
-         * Absolute post-callback destination. Its origin must appear in Hookfish trustedOrigins.
-         */
         return_to?: string;
     };
     path: {
-        provider_path: string;
+        connection_path: string;
     };
     query?: never;
-    url: '/oauth/authorize/{provider_path}';
+    url: '/connections/authorize/{connection_path}';
 };
 
-export type OauthAuthorizeErrors = {
+export type ConnectionsAuthorizeErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OauthAuthorizeError = OauthAuthorizeErrors[keyof OauthAuthorizeErrors];
+export type ConnectionsAuthorizeError = ConnectionsAuthorizeErrors[keyof ConnectionsAuthorizeErrors];
 
-export type OauthAuthorizeResponses = {
+export type ConnectionsSetSecretData = {
+    body?: {
+        secret: string;
+    };
+    path: {
+        connection_path: string;
+    };
+    query?: never;
+    url: '/connections/secret/{connection_path}';
+};
+
+export type ConnectionsSetSecretErrors = {
     /**
-     * Consent URL created
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type ConnectionsSetSecretError = ConnectionsSetSecretErrors[keyof ConnectionsSetSecretErrors];
+
+export type ConnectionsSetSecretResponses = {
+    /**
+     * Secret stored
      */
     200: {
-        connection_id: string;
-        authorize_url: string;
-        expires_at: string;
+        path: string;
+        stored: true;
     };
 };
 
-export type OauthAuthorizeResponse = OauthAuthorizeResponses[keyof OauthAuthorizeResponses];
+export type ConnectionsSetSecretResponse = ConnectionsSetSecretResponses[keyof ConnectionsSetSecretResponses];
 
-export type OauthCallbackData = {
+export type ConnectionsDisconnectData = {
     body?: never;
     path: {
-        provider_path: string;
+        connection_path: string;
     };
-    query?: {
-        code?: string;
-        state?: string;
-        error?: string;
-        error_description?: string;
-        iss?: string;
-    };
-    url: '/oauth/callback/{provider_path}';
+    query?: never;
+    url: '/connections/entry/{connection_path}';
 };
 
-export type OauthCallbackErrors = {
+export type ConnectionsDisconnectErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OauthCallbackError = OauthCallbackErrors[keyof OauthCallbackErrors];
+export type ConnectionsDisconnectError = ConnectionsDisconnectErrors[keyof ConnectionsDisconnectErrors];
 
-export type OauthCallbackResponses = {
+export type ConnectionsDisconnectResponses = {
     /**
-     * Connection stored; default development page displayed
+     * Deletion result
      */
-    200: string;
+    200: {
+        deleted: boolean;
+        revocation: 'revoked' | 'unsupported';
+    };
 };
 
-export type OauthCallbackResponse = OauthCallbackResponses[keyof OauthCallbackResponses];
+export type ConnectionsDisconnectResponse = ConnectionsDisconnectResponses[keyof ConnectionsDisconnectResponses];
 
-export type OauthClientMetadataGetData = {
+export type ConnectionsGetData = {
     body?: never;
     path: {
-        provider_path: string;
+        connection_path: string;
     };
     query?: never;
-    url: '/oauth/client-metadata/{provider_path}';
+    url: '/connections/entry/{connection_path}';
 };
 
-export type OauthClientMetadataGetResponses = {
+export type ConnectionsGetErrors = {
     /**
-     * OAuth client metadata document
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type ConnectionsGetError = ConnectionsGetErrors[keyof ConnectionsGetErrors];
+
+export type ConnectionsGetResponses = {
+    /**
+     * Connection metadata
+     */
+    200: {
+        connection: {
+            path: string;
+            namespace: string;
+            provider_id: string;
+            configuration: {
+                [key: string]: unknown;
+            };
+            scopes: Array<string>;
+            expires_at: string | null;
+            external_account_id: string | null;
+            external_account_label: string | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            created_at: string;
+            updated_at: string;
+        };
+    };
+};
+
+export type ConnectionsGetResponse = ConnectionsGetResponses[keyof ConnectionsGetResponses];
+
+export type ConnectionsClientMetadataData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/connections/client-metadata.json';
+};
+
+export type ConnectionsClientMetadataResponses = {
+    /**
+     * Client ID Metadata Document
      */
     200: {
         client_id: string;
@@ -1126,129 +834,357 @@ export type OauthClientMetadataGetResponses = {
     };
 };
 
-export type OauthClientMetadataGetResponse = OauthClientMetadataGetResponses[keyof OauthClientMetadataGetResponses];
+export type ConnectionsClientMetadataResponse = ConnectionsClientMetadataResponses[keyof ConnectionsClientMetadataResponses];
 
-export type OauthProvidersListData = {
+export type ConnectionsProvidersData = {
     body?: never;
     path?: never;
-    query?: {
-        search?: string;
-        limit?: number;
-        source?: 'fixed' | 'dynamic';
-        include_unconfigured?: string;
-    };
-    url: '/oauth/providers';
+    query?: never;
+    url: '/connections/providers';
 };
 
-export type OauthProvidersListErrors = {
+export type ConnectionsProvidersErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OauthProvidersListError = OauthProvidersListErrors[keyof OauthProvidersListErrors];
+export type ConnectionsProvidersError = ConnectionsProvidersErrors[keyof ConnectionsProvidersErrors];
 
-export type OauthProvidersListResponses = {
+export type ConnectionsProvidersResponses = {
     /**
-     * Provider registry
+     * Provider implementations
      */
     200: {
         providers: Array<{
             id: string;
             label: string;
-            kind: 'oauth' | 'mcp';
-            configured: boolean;
-            callback_url: string;
-            scopes: Array<string>;
-            available_scopes: Array<string>;
-            supports_refresh: boolean;
-            supports_revocation: boolean;
-            uses_pkce: boolean;
+            configurable: boolean;
         }>;
-        [key: string]: unknown;
     };
 };
 
-export type OauthProvidersListResponse = OauthProvidersListResponses[keyof OauthProvidersListResponses];
+export type ConnectionsProvidersResponse = ConnectionsProvidersResponses[keyof ConnectionsProvidersResponses];
 
-export type OauthConnectionsListData = {
+export type ConnectionsListData = {
     body?: never;
     path?: never;
     query?: {
-        provider?: string;
-        connection_id_prefix?: string;
+        namespace?: string;
+        provider_id?: string;
     };
-    url: '/oauth/connections';
+    url: '/connections';
 };
 
-export type OauthConnectionsListErrors = {
+export type ConnectionsListErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OauthConnectionsListError = OauthConnectionsListErrors[keyof OauthConnectionsListErrors];
+export type ConnectionsListError = ConnectionsListErrors[keyof ConnectionsListErrors];
 
-export type OauthConnectionsListResponses = {
+export type ConnectionsListResponses = {
     /**
      * Connections
      */
     200: {
-        connections: Array<OAuthConnection>;
+        connections: Array<{
+            path: string;
+            namespace: string;
+            provider_id: string;
+            configuration: {
+                [key: string]: unknown;
+            };
+            scopes: Array<string>;
+            expires_at: string | null;
+            external_account_id: string | null;
+            external_account_label: string | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            created_at: string;
+            updated_at: string;
+        }>;
     };
 };
 
-export type OauthConnectionsListResponse = OauthConnectionsListResponses[keyof OauthConnectionsListResponses];
+export type ConnectionsListResponse = ConnectionsListResponses[keyof ConnectionsListResponses];
+
+export type ConnectionsCallbackData = {
+    body?: never;
+    path: {
+        provider_id: string;
+    };
+    query?: {
+        code?: string;
+        state?: string;
+        error?: string;
+        error_description?: string;
+        iss?: string;
+    };
+    url: '/connections/callback/{provider_id}';
+};
+
+export type ConnectionsCallbackErrors = {
+    /**
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type ConnectionsCallbackError = ConnectionsCallbackErrors[keyof ConnectionsCallbackErrors];
+
+export type ConnectionsCallbackResponses = {
+    /**
+     * Connection complete
+     */
+    200: string;
+};
+
+export type ConnectionsCallbackResponse = ConnectionsCallbackResponses[keyof ConnectionsCallbackResponses];
 
 export type SecretsDeleteData = {
     body?: never;
@@ -1542,391 +1478,838 @@ export type SecretsListResponses = {
 
 export type SecretsListResponse = SecretsListResponses[keyof SecretsListResponses];
 
-export type OrganizationOauthConnectionsDisconnectData = {
-    body?: never;
+export type OrganizationConnectionsAccessData = {
+    body?: {
+        url?: string;
+        scopes?: Array<string>;
+        return_to?: string;
+    };
     path: {
         /**
-         * Organization namespace for OAuth connections.
+         * Organization namespace for Hookfish resources.
          */
         organization: string;
-        connection_id: string;
+        connection_path: string;
     };
     query?: never;
-    url: '/organization/{organization}/oauth/connections/{connection_id}';
+    url: '/organization/{organization}/connections/access/{connection_path}';
 };
 
-export type OrganizationOauthConnectionsDisconnectErrors = {
+export type OrganizationConnectionsAccessErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OrganizationOauthConnectionsDisconnectError = OrganizationOauthConnectionsDisconnectErrors[keyof OrganizationOauthConnectionsDisconnectErrors];
+export type OrganizationConnectionsAccessError = OrganizationConnectionsAccessErrors[keyof OrganizationConnectionsAccessErrors];
 
-export type OrganizationOauthConnectionsDisconnectResponses = {
+export type OrganizationConnectionsAccessResponses = {
     /**
-     * Deletion result
+     * Usable secret
      */
     200: {
-        deleted: boolean;
-        revocation: 'revoked' | 'unsupported' | 'not_found';
-    };
-};
-
-export type OrganizationOauthConnectionsDisconnectResponse = OrganizationOauthConnectionsDisconnectResponses[keyof OrganizationOauthConnectionsDisconnectResponses];
-
-export type OrganizationOauthConnectionsGetData = {
-    body?: never;
-    path: {
-        /**
-         * Organization namespace for OAuth connections.
-         */
-        organization: string;
-        connection_id: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/oauth/connections/{connection_id}';
-};
-
-export type OrganizationOauthConnectionsGetErrors = {
-    /**
-     * Invalid request
-     */
-    400: BrokerError;
-    /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
-     */
-    401: BrokerError;
-    /**
-     * The broker access token does not cover this connection
-     */
-    403: BrokerError;
-    /**
-     * Unknown provider or no connection for this id
-     */
-    404: BrokerError;
-    /**
-     * Connection id is already linked to another provider
-     */
-    409: BrokerError;
-    /**
-     * Broker is misconfigured
-     */
-    500: BrokerError;
-    /**
-     * The provider rejected the token request
-     */
-    502: BrokerError;
-};
-
-export type OrganizationOauthConnectionsGetError = OrganizationOauthConnectionsGetErrors[keyof OrganizationOauthConnectionsGetErrors];
-
-export type OrganizationOauthConnectionsGetResponses = {
-    /**
-     * Connection
-     */
-    200: {
-        connection: OAuthConnection;
-    };
-};
-
-export type OrganizationOauthConnectionsGetResponse = OrganizationOauthConnectionsGetResponses[keyof OrganizationOauthConnectionsGetResponses];
-
-export type OrganizationOauthTokensGetData = {
-    body?: never;
-    path: {
-        /**
-         * Organization namespace for OAuth connections.
-         */
-        organization: string;
-        connection_id: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/oauth/tokens/{connection_id}';
-};
-
-export type OrganizationOauthTokensGetErrors = {
-    /**
-     * Invalid request
-     */
-    400: BrokerError;
-    /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
-     */
-    401: BrokerError;
-    /**
-     * The broker access token does not cover this connection
-     */
-    403: BrokerError;
-    /**
-     * Unknown provider or no connection for this id
-     */
-    404: BrokerError;
-    /**
-     * Connection id is already linked to another provider
-     */
-    409: BrokerError;
-    /**
-     * Broker is misconfigured
-     */
-    500: BrokerError;
-    /**
-     * The provider rejected the token request
-     */
-    502: BrokerError;
-};
-
-export type OrganizationOauthTokensGetError = OrganizationOauthTokensGetErrors[keyof OrganizationOauthTokensGetErrors];
-
-export type OrganizationOauthTokensGetResponses = {
-    /**
-     * A token that is valid right now
-     */
-    200: {
-        connection_id: string;
-        provider: string;
-        access_token: string;
-        token_type: string;
+        path: string;
+        secret: string;
         scopes: Array<string>;
         expires_at: string | null;
         refreshed: boolean;
     };
 };
 
-export type OrganizationOauthTokensGetResponse = OrganizationOauthTokensGetResponses[keyof OrganizationOauthTokensGetResponses];
+export type OrganizationConnectionsAccessResponse = OrganizationConnectionsAccessResponses[keyof OrganizationConnectionsAccessResponses];
 
-export type OrganizationOauthAuthorizeData = {
+export type OrganizationConnectionsAuthorizeData = {
     body?: {
-        /**
-         * Opaque id for this provider link. Omit to auto-generate as `word-word-number` (e.g. `swift-orchid-4821`). Re-pass the same id to reconnect the same link; a different provider on an existing id returns 409.
-         */
-        connection_id?: string;
-        /**
-         * Slash-delimited path below which the broker should mint an id. Use this only when connection_id is omitted.
-         */
-        connection_id_prefix?: string;
-        /**
-         * Scopes requested for this flow. Leave empty to use the provider defaults -- Swagger otherwise prefills a literal ["string"], which would be sent to the provider verbatim.
-         */
+        url?: string;
         scopes?: Array<string>;
-        /**
-         * Absolute post-callback destination. Its origin must appear in Hookfish trustedOrigins.
-         */
         return_to?: string;
     };
     path: {
         /**
-         * Organization namespace for OAuth connections.
+         * Organization namespace for Hookfish resources.
          */
         organization: string;
-        provider_path: string;
+        connection_path: string;
     };
     query?: never;
-    url: '/organization/{organization}/oauth/authorize/{provider_path}';
+    url: '/organization/{organization}/connections/authorize/{connection_path}';
 };
 
-export type OrganizationOauthAuthorizeErrors = {
+export type OrganizationConnectionsAuthorizeErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
-};
-
-export type OrganizationOauthAuthorizeError = OrganizationOauthAuthorizeErrors[keyof OrganizationOauthAuthorizeErrors];
-
-export type OrganizationOauthAuthorizeResponses = {
-    /**
-     * Consent URL created
-     */
-    200: {
-        connection_id: string;
-        authorize_url: string;
-        expires_at: string;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
     };
 };
 
-export type OrganizationOauthAuthorizeResponse = OrganizationOauthAuthorizeResponses[keyof OrganizationOauthAuthorizeResponses];
+export type OrganizationConnectionsAuthorizeError = OrganizationConnectionsAuthorizeErrors[keyof OrganizationConnectionsAuthorizeErrors];
 
-export type OrganizationOauthProvidersListData = {
+export type OrganizationConnectionsSetSecretData = {
+    body?: {
+        secret: string;
+    };
+    path: {
+        /**
+         * Organization namespace for Hookfish resources.
+         */
+        organization: string;
+        connection_path: string;
+    };
+    query?: never;
+    url: '/organization/{organization}/connections/secret/{connection_path}';
+};
+
+export type OrganizationConnectionsSetSecretErrors = {
+    /**
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type OrganizationConnectionsSetSecretError = OrganizationConnectionsSetSecretErrors[keyof OrganizationConnectionsSetSecretErrors];
+
+export type OrganizationConnectionsSetSecretResponses = {
+    /**
+     * Secret stored
+     */
+    200: {
+        path: string;
+        stored: true;
+    };
+};
+
+export type OrganizationConnectionsSetSecretResponse = OrganizationConnectionsSetSecretResponses[keyof OrganizationConnectionsSetSecretResponses];
+
+export type OrganizationConnectionsDisconnectData = {
     body?: never;
     path: {
         /**
-         * Organization namespace for OAuth connections.
+         * Organization namespace for Hookfish resources.
          */
         organization: string;
+        connection_path: string;
     };
-    query?: {
-        search?: string;
-        limit?: number;
-        source?: 'fixed' | 'dynamic';
-        include_unconfigured?: string;
-    };
-    url: '/organization/{organization}/oauth/providers';
+    query?: never;
+    url: '/organization/{organization}/connections/entry/{connection_path}';
 };
 
-export type OrganizationOauthProvidersListErrors = {
+export type OrganizationConnectionsDisconnectErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OrganizationOauthProvidersListError = OrganizationOauthProvidersListErrors[keyof OrganizationOauthProvidersListErrors];
+export type OrganizationConnectionsDisconnectError = OrganizationConnectionsDisconnectErrors[keyof OrganizationConnectionsDisconnectErrors];
 
-export type OrganizationOauthProvidersListResponses = {
+export type OrganizationConnectionsDisconnectResponses = {
     /**
-     * Provider registry
+     * Deletion result
+     */
+    200: {
+        deleted: boolean;
+        revocation: 'revoked' | 'unsupported';
+    };
+};
+
+export type OrganizationConnectionsDisconnectResponse = OrganizationConnectionsDisconnectResponses[keyof OrganizationConnectionsDisconnectResponses];
+
+export type OrganizationConnectionsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Organization namespace for Hookfish resources.
+         */
+        organization: string;
+        connection_path: string;
+    };
+    query?: never;
+    url: '/organization/{organization}/connections/entry/{connection_path}';
+};
+
+export type OrganizationConnectionsGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type OrganizationConnectionsGetError = OrganizationConnectionsGetErrors[keyof OrganizationConnectionsGetErrors];
+
+export type OrganizationConnectionsGetResponses = {
+    /**
+     * Connection metadata
+     */
+    200: {
+        connection: {
+            path: string;
+            namespace: string;
+            provider_id: string;
+            configuration: {
+                [key: string]: unknown;
+            };
+            scopes: Array<string>;
+            expires_at: string | null;
+            external_account_id: string | null;
+            external_account_label: string | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            created_at: string;
+            updated_at: string;
+        };
+    };
+};
+
+export type OrganizationConnectionsGetResponse = OrganizationConnectionsGetResponses[keyof OrganizationConnectionsGetResponses];
+
+export type OrganizationConnectionsProvidersData = {
+    body?: never;
+    path: {
+        /**
+         * Organization namespace for Hookfish resources.
+         */
+        organization: string;
+    };
+    query?: never;
+    url: '/organization/{organization}/connections/providers';
+};
+
+export type OrganizationConnectionsProvidersErrors = {
+    /**
+     * Invalid request
+     */
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Authorization required or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Insufficient resource scope
+     */
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection, provider, or secret not found
+     */
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Connection configuration conflict
+     */
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Broker configuration error
+     */
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Upstream provider error
+     */
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
+};
+
+export type OrganizationConnectionsProvidersError = OrganizationConnectionsProvidersErrors[keyof OrganizationConnectionsProvidersErrors];
+
+export type OrganizationConnectionsProvidersResponses = {
+    /**
+     * Provider implementations
      */
     200: {
         providers: Array<{
             id: string;
             label: string;
-            kind: 'oauth' | 'mcp';
-            configured: boolean;
-            callback_url: string;
-            scopes: Array<string>;
-            available_scopes: Array<string>;
-            supports_refresh: boolean;
-            supports_revocation: boolean;
-            uses_pkce: boolean;
+            configurable: boolean;
         }>;
-        [key: string]: unknown;
     };
 };
 
-export type OrganizationOauthProvidersListResponse = OrganizationOauthProvidersListResponses[keyof OrganizationOauthProvidersListResponses];
+export type OrganizationConnectionsProvidersResponse = OrganizationConnectionsProvidersResponses[keyof OrganizationConnectionsProvidersResponses];
 
-export type OrganizationOauthConnectionsListData = {
+export type OrganizationConnectionsListData = {
     body?: never;
     path: {
         /**
-         * Organization namespace for OAuth connections.
+         * Organization namespace for Hookfish resources.
          */
         organization: string;
     };
     query?: {
-        provider?: string;
-        connection_id_prefix?: string;
+        namespace?: string;
+        provider_id?: string;
     };
-    url: '/organization/{organization}/oauth/connections';
+    url: '/organization/{organization}/connections';
 };
 
-export type OrganizationOauthConnectionsListErrors = {
+export type OrganizationConnectionsListErrors = {
     /**
      * Invalid request
      */
-    400: BrokerError;
+    400: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Missing or invalid broker credential, or the connection needs reauthorizing
+     * Authorization required or invalid broker credential
      */
-    401: BrokerError;
+    401: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The broker access token does not cover this connection
+     * Insufficient resource scope
      */
-    403: BrokerError;
+    403: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Unknown provider or no connection for this id
+     * Connection, provider, or secret not found
      */
-    404: BrokerError;
+    404: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Connection id is already linked to another provider
+     * Connection configuration conflict
      */
-    409: BrokerError;
+    409: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * Broker is misconfigured
+     * Broker configuration error
      */
-    500: BrokerError;
+    500: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
     /**
-     * The provider rejected the token request
+     * Upstream provider error
      */
-    502: BrokerError;
+    502: {
+        error: {
+            code: string;
+            message: string;
+            authorize_url?: string;
+            expires_at?: string;
+            [key: string]: unknown;
+        };
+    };
 };
 
-export type OrganizationOauthConnectionsListError = OrganizationOauthConnectionsListErrors[keyof OrganizationOauthConnectionsListErrors];
+export type OrganizationConnectionsListError = OrganizationConnectionsListErrors[keyof OrganizationConnectionsListErrors];
 
-export type OrganizationOauthConnectionsListResponses = {
+export type OrganizationConnectionsListResponses = {
     /**
      * Connections
      */
     200: {
-        connections: Array<OAuthConnection>;
+        connections: Array<{
+            path: string;
+            namespace: string;
+            provider_id: string;
+            configuration: {
+                [key: string]: unknown;
+            };
+            scopes: Array<string>;
+            expires_at: string | null;
+            external_account_id: string | null;
+            external_account_label: string | null;
+            metadata: {
+                [key: string]: unknown;
+            };
+            created_at: string;
+            updated_at: string;
+        }>;
     };
 };
 
-export type OrganizationOauthConnectionsListResponse = OrganizationOauthConnectionsListResponses[keyof OrganizationOauthConnectionsListResponses];
+export type OrganizationConnectionsListResponse = OrganizationConnectionsListResponses[keyof OrganizationConnectionsListResponses];
 
 export type OrganizationSecretsDeleteData = {
     body?: never;
@@ -2236,564 +2619,3 @@ export type OrganizationSecretsListResponses = {
 };
 
 export type OrganizationSecretsListResponse = OrganizationSecretsListResponses[keyof OrganizationSecretsListResponses];
-
-export type OrganizationAdminProvidersDeleteData = {
-    body?: never;
-    path: {
-        /**
-         * Organization namespace for Hookfish resources.
-         */
-        organization: string;
-        provider_path: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/admin/providers/{provider_path}';
-};
-
-export type OrganizationAdminProvidersDeleteErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersDeleteError = OrganizationAdminProvidersDeleteErrors[keyof OrganizationAdminProvidersDeleteErrors];
-
-export type OrganizationAdminProvidersDeleteResponses = {
-    /**
-     * Deletion result
-     */
-    200: {
-        id: string;
-        deleted: boolean;
-    };
-};
-
-export type OrganizationAdminProvidersDeleteResponse = OrganizationAdminProvidersDeleteResponses[keyof OrganizationAdminProvidersDeleteResponses];
-
-export type OrganizationAdminProvidersGetData = {
-    body?: never;
-    path: {
-        /**
-         * Organization namespace for Hookfish resources.
-         */
-        organization: string;
-        provider_path: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/admin/providers/{provider_path}';
-};
-
-export type OrganizationAdminProvidersGetErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersGetError = OrganizationAdminProvidersGetErrors[keyof OrganizationAdminProvidersGetErrors];
-
-export type OrganizationAdminProvidersGetResponses = {
-    /**
-     * Provider configuration
-     */
-    200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersGetResponse = OrganizationAdminProvidersGetResponses[keyof OrganizationAdminProvidersGetResponses];
-
-export type OrganizationAdminProvidersPatchData = {
-    body?: {
-        template?: string;
-        label?: string | null;
-        configuration?: {
-            [key: string]: unknown;
-        };
-        credentials?: {
-            mode: 'inherit';
-        } | {
-            mode: 'custom';
-            client_id: string;
-            client_secret?: string;
-        } | {
-            mode: 'register';
-        };
-        enabled?: boolean;
-    };
-    path: {
-        /**
-         * Organization namespace for Hookfish resources.
-         */
-        organization: string;
-        provider_path: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/admin/providers/{provider_path}';
-};
-
-export type OrganizationAdminProvidersPatchErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersPatchError = OrganizationAdminProvidersPatchErrors[keyof OrganizationAdminProvidersPatchErrors];
-
-export type OrganizationAdminProvidersPatchResponses = {
-    /**
-     * Provider updated
-     */
-    200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersPatchResponse = OrganizationAdminProvidersPatchResponses[keyof OrganizationAdminProvidersPatchResponses];
-
-export type OrganizationAdminProvidersPutData = {
-    body?: {
-        template: string;
-        label?: string;
-        configuration?: {
-            [key: string]: unknown;
-        };
-        credentials: {
-            mode: 'inherit';
-        } | {
-            mode: 'custom';
-            client_id: string;
-            client_secret?: string;
-        } | {
-            mode: 'register';
-        };
-        enabled?: boolean;
-    };
-    path: {
-        /**
-         * Organization namespace for Hookfish resources.
-         */
-        organization: string;
-        provider_path: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/admin/providers/{provider_path}';
-};
-
-export type OrganizationAdminProvidersPutErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersPutError = OrganizationAdminProvidersPutErrors[keyof OrganizationAdminProvidersPutErrors];
-
-export type OrganizationAdminProvidersPutResponses = {
-    /**
-     * Provider stored
-     */
-    200: {
-        provider: {
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersPutResponse = OrganizationAdminProvidersPutResponses[keyof OrganizationAdminProvidersPutResponses];
-
-export type OrganizationAdminProvidersListData = {
-    body?: never;
-    path: {
-        /**
-         * Organization namespace for Hookfish resources.
-         */
-        organization: string;
-    };
-    query?: never;
-    url: '/organization/{organization}/admin/providers';
-};
-
-export type OrganizationAdminProvidersListErrors = {
-    /**
-     * Invalid provider configuration
-     */
-    400: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Missing or invalid broker credential
-     */
-    401: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Credential cannot access this provider path
-     */
-    403: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider not found
-     */
-    404: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Provider id is reserved or still in use
-     */
-    409: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Broker configuration error
-     */
-    500: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-    /**
-     * Upstream provider request failed
-     */
-    502: {
-        error: {
-            code: string;
-            message: string;
-        };
-    };
-};
-
-export type OrganizationAdminProvidersListError = OrganizationAdminProvidersListErrors[keyof OrganizationAdminProvidersListErrors];
-
-export type OrganizationAdminProvidersListResponses = {
-    /**
-     * Provider configurations
-     */
-    200: {
-        providers: Array<{
-            id: string;
-            template: string | null;
-            label: string;
-            source: 'fixed' | 'dynamic';
-            configured: boolean;
-            enabled: boolean;
-            credentials: {
-                mode: 'inherit' | 'custom';
-                client_id: string | null;
-            } | null;
-            configuration: {
-                [key: string]: unknown;
-            } | null;
-            callback_url: string;
-            created_at: string | null;
-            updated_at: string | null;
-        }>;
-        [key: string]: unknown;
-    };
-};
-
-export type OrganizationAdminProvidersListResponse = OrganizationAdminProvidersListResponses[keyof OrganizationAdminProvidersListResponses];

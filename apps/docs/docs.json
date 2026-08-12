@@ -29,7 +29,6 @@
               "secrets/api-keys",
               "authentication/oauth-providers",
               "providers/remote-mcp",
-              "providers/dynamic",
               "providers/custom"
             ]
           },

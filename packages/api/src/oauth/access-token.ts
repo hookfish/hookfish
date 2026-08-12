@@ -1,5 +1,6 @@
 import type { Database } from '../db/types'
 import { BrokerError } from './errors'
+import { normalizeResourcePath } from './resource-path'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const TOKEN_VERSION = 1
@@ -83,8 +84,8 @@ function invalidToken(): BrokerError {
 }
 
 /**
- * A scope is either `**` or a folder path. Folder paths are canonicalized to
- * end in `/**`. Resource paths are opaque; only `/` separates ancestors.
+ * A scope is `**`, an exact resource path, or an explicit namespace ending in
+ * `/**`. Exact and descendant access are intentionally distinct.
  */
 export function normalizeResourceScope(scope: string): string {
   const normalized = scope.trim()
@@ -99,15 +100,14 @@ export function normalizeResourceScope(scope: string): string {
     throw new BrokerError(
       400,
       'invalid_resource_scope',
-      'Scope must be `**` or a folder path such as `team`.',
+      'Scope must be `**`, an exact resource path, or a namespace ending in `/**`.',
     )
   }
 
   if (normalized === '**') return normalized
 
-  const literal = normalized.endsWith('/**')
-    ? normalized.slice(0, -3)
-    : normalized
+  const isNamespace = normalized.endsWith('/**')
+  const literal = isNamespace ? normalized.slice(0, -3) : normalized
 
   if (!literal || literal.includes('*')) {
     throw new BrokerError(
@@ -117,7 +117,8 @@ export function normalizeResourceScope(scope: string): string {
     )
   }
 
-  return `${literal}/**`
+  normalizeResourcePath(literal, 'resource')
+  return isNamespace ? `${literal}/**` : literal
 }
 
 export function normalizeResourceScopes(scopes: string[]): string[] {
@@ -192,18 +193,8 @@ export function scopesContainScopes(
   )
 }
 
-export function assertConnectionAccess(
-  grant: AccessGrant,
-  connectionId: string,
-): void {
-  assertResourceAccess(grant, connectionId, 'connection')
-}
-
-export function assertProviderAccess(
-  grant: AccessGrant,
-  providerPath: string,
-): void {
-  assertResourceAccess(grant, providerPath, 'provider')
+export function assertConnectionAccess(grant: AccessGrant, path: string): void {
+  assertResourceAccess(grant, path, 'connection')
 }
 
 function assertResourceAccess(
@@ -220,17 +211,17 @@ function assertResourceAccess(
   )
 }
 
-export function assertConnectionPrefixAccess(
+export function assertNamespaceAccess(
   grant: AccessGrant,
-  connectionIdPrefix: string,
+  namespace: string,
 ): void {
-  const generatedDescendant = `${connectionIdPrefix}/__hookfish_generated__`
+  const generatedDescendant = `${namespace}/__hookfish_generated__`
   if (scopesAllowResource(grant.scopes, generatedDescendant)) return
 
   throw new BrokerError(
     403,
     'insufficient_scope',
-    `This broker access token cannot create connections below "${connectionIdPrefix}".`,
+    `This broker access token cannot access resources below "${namespace}".`,
   )
 }
 

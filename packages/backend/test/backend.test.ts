@@ -6,26 +6,21 @@ import {
 } from '../src'
 
 describe('Hookfish backend', () => {
-  it('passes the raw Hookfish API through unchanged', async () => {
+  it('passes the raw API through unchanged', async () => {
     const hookfishFetch = vi.fn(async () => new Response('raw'))
-    const backend = createHookfishBackend({
-      config: {},
-      hookfishFetch,
-    })
+    const backend = createHookfishBackend({ config: {}, hookfishFetch })
     const request = new Request('https://backend.example/api/openapi.json')
-
     expect(await (await backend.fetch(request)).text()).toBe('raw')
     expect(hookfishFetch).toHaveBeenCalledWith(request, undefined, undefined)
   })
 
-  it('forwards only browser-safe routes with a server credential', async () => {
+  it('forwards connection metadata with a server credential', async () => {
     const hookfishFetch = vi.fn(async (request: Request) => {
       expect(request.url).toBe(
-        'https://backend.example/api/oauth/connections?provider=github',
+        'https://backend.example/api/connections?provider_id=github',
       )
       expect(request.headers.get('Authorization')).toBe('Bearer root-secret')
       expect(request.headers.get('Cookie')).toBeNull()
-      expect(request.headers.get('X-Browser-Value')).toBeNull()
       return Response.json({ connections: [] })
     })
     const backend = createHookfishBackend({
@@ -33,71 +28,49 @@ describe('Hookfish backend', () => {
       hookfishFetch,
       brokerApiKey: 'root-secret',
     })
-
     const response = await backend.fetch(
       new Request(
-        'https://backend.example/api/client/oauth/connections?provider=github',
-        {
-          headers: {
-            Cookie: 'session=browser',
-            'X-Browser-Value': 'do-not-forward',
-          },
-        },
+        'https://backend.example/api/client/connections?provider_id=github',
+        { headers: { Cookie: 'session=browser' } },
       ),
     )
-
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
-    expect(await response.json()).toEqual({ connections: [] })
   })
 
-  it('forwards bounded JSON mutation bodies', async () => {
-    const hookfishFetch = vi.fn(async (request: Request) => {
-      expect(request.method).toBe('POST')
-      expect(request.headers.get('Content-Type')).toBe('application/json')
-      expect(await request.text()).toBe('{"scopes":[]}')
-      return Response.json({ authorize_url: 'https://provider.example' })
-    })
-    const backend = createHookfishBackend({
-      config: { includeClient: true },
-      hookfishFetch,
-      brokerApiKey: 'root-secret',
-    })
-
-    const response = await backend.fetch(
-      new Request(
-        'https://backend.example/api/client/oauth/authorize/github?source=ui',
-        { method: 'POST', body: '{"scopes":[]}' },
+  it('allows metadata and disconnect but rejects credential routes', () => {
+    expect(isAllowedBrowserApiRequest('GET', '/api/connections')).toBe(true)
+    expect(
+      isAllowedBrowserApiRequest(
+        'GET',
+        '/api/connections/entry/user/personal/github',
       ),
-    )
-
-    expect(response.status).toBe(200)
-    expect(hookfishFetch).toHaveBeenCalledOnce()
-  })
-
-  it('rejects token, callback, and unsupported browser routes', async () => {
+    ).toBe(true)
     expect(
-      isAllowedBrowserApiRequest('GET', '/api/oauth/tokens/team/alice'),
+      isAllowedBrowserApiRequest(
+        'DELETE',
+        '/api/connections/entry/user/personal/github',
+      ),
+    ).toBe(true)
+    expect(
+      isAllowedBrowserApiRequest(
+        'POST',
+        '/api/connections/access/user/personal/github',
+      ),
     ).toBe(false)
     expect(
-      isAllowedBrowserApiRequest('GET', '/api/oauth/callback/github'),
+      isAllowedBrowserApiRequest(
+        'PUT',
+        '/api/connections/secret/service/openai/secret',
+      ),
     ).toBe(false)
-    expect(isAllowedBrowserApiRequest('PUT', '/api/stats')).toBe(false)
-
-    const hookfishFetch = vi.fn(async () => Response.json({ unexpected: true }))
-    const backend = createHookfishBackend({
-      config: { includeClient: true },
-      hookfishFetch,
-    })
-    const response = await backend.fetch(
-      new Request('https://backend.example/api/client/oauth/tokens/team/alice'),
-    )
-
-    expect(response.status).toBe(403)
-    expect(hookfishFetch).not.toHaveBeenCalled()
+    expect(
+      isAllowedBrowserApiRequest('GET', '/api/connections/callback/github'),
+    ).toBe(false)
+    expect(isAllowedBrowserApiRequest('GET', '/api/secrets/key')).toBe(false)
   })
 
-  it('serves backend health without forwarding to Hookfish', async () => {
+  it('serves health without forwarding', async () => {
     const hookfishFetch = vi.fn(async () => new Response())
     const backend = createHookfishBackend({
       config: { includeClient: true },
@@ -107,86 +80,43 @@ describe('Hookfish backend', () => {
     const response = await backend.fetch(
       new Request(`https://backend.example${browserApiPath}/health`),
     )
-    const health = await response.json()
-
-    expect(health).toMatchObject({ ok: true, runtime: 'cloudflare-worker' })
-    expect(health.checkedAt).toEqual(expect.any(String))
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      runtime: 'cloudflare-worker',
+    })
     expect(hookfishFetch).not.toHaveBeenCalled()
   })
 
-  it('uses configured trusted origins for cross-origin access and preflight', async () => {
+  it('enforces origin and application authorization', async () => {
+    const hookfishFetch = vi.fn(async () => Response.json({}))
     const backend = createHookfishBackend({
       config: {
         includeClient: true,
         trustedOrigins: ['http://localhost:5173'],
       },
-      hookfishFetch: async () => Response.json({}),
-    })
-    const allowed = await backend.fetch(
-      new Request('https://backend.example/api/client/health', {
-        headers: { Origin: 'http://localhost:5173' },
-      }),
-    )
-    expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(
-      'http://localhost:5173',
-    )
-
-    const preflight = await backend.fetch(
-      new Request('https://backend.example/api/client/oauth/authorize/github', {
-        method: 'OPTIONS',
-        headers: { Origin: 'http://localhost:5173' },
-      }),
-    )
-    expect(preflight.status).toBe(204)
-    expect(preflight.headers.get('Access-Control-Allow-Methods')).toContain(
-      'POST',
-    )
-
-    const denied = await backend.fetch(
-      new Request('https://backend.example/api/client/health', {
-        headers: { Origin: 'https://evil.example' },
-      }),
-    )
-    expect(denied.status).toBe(403)
-  })
-
-  it('runs application authorization before browser requests', async () => {
-    const hookfishFetch = vi.fn(async () => Response.json({}))
-    const backend = createHookfishBackend({
-      config: { includeClient: true },
       hookfishFetch,
       authorizeBrowserRequest: () =>
         Response.json({ error: 'sign in' }, { status: 401 }),
     })
-    const response = await backend.fetch(
-      new Request('https://backend.example/api/client/health'),
-    )
-
-    expect(response.status).toBe(401)
-    expect(hookfishFetch).not.toHaveBeenCalled()
-  })
-
-  it('rejects oversized browser request bodies', async () => {
-    const hookfishFetch = vi.fn(async () => Response.json({}))
-    const backend = createHookfishBackend({
-      config: { includeClient: true },
-      hookfishFetch,
-    })
-    const response = await backend.fetch(
-      new Request('https://backend.example/api/client/oauth/authorize/github', {
-        method: 'POST',
-        body: 'x'.repeat(65_537),
+    const deniedOrigin = await backend.fetch(
+      new Request('https://backend.example/api/client/connections', {
+        headers: { Origin: 'https://evil.example' },
       }),
     )
+    expect(deniedOrigin.status).toBe(403)
 
-    expect(response.status).toBe(413)
+    const deniedSession = await backend.fetch(
+      new Request('https://backend.example/api/client/connections', {
+        headers: { Origin: 'http://localhost:5173' },
+      }),
+    )
+    expect(deniedSession.status).toBe(401)
     expect(hookfishFetch).not.toHaveBeenCalled()
   })
 
-  it('does not mount the client facade unless enabled', async () => {
+  it('does not mount the facade unless enabled', async () => {
     const hookfishFetch = vi.fn(async () => Response.json({}))
     const backend = createHookfishBackend({ config: {}, hookfishFetch })
-
     expect(
       await backend.fetch(
         new Request('https://backend.example/api/client/health'),

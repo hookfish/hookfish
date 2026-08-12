@@ -1,67 +1,44 @@
 ---
 title: "Troubleshooting"
-description: "Diagnose callback, credential, browser, scope, provider, and database failures."
+description: "Diagnose callback, connection, scope, discovery, and storage failures."
 ---
 
-Hookfish returns a stable error code under `error.code`. Start with that code,
-then verify the request path, credential, runtime environment, and provider
-configuration.
+Start with `error.code`, then verify the connection path, broker credential,
+runtime environment, and trusted provider configuration.
 
 ## Callback URL mismatch
 
-**Symptoms:** The provider rejects the redirect URI or sends the browser to the
-wrong host.
+Set `OAUTH_REDIRECT_BASE_URL` to the public broker origin and register
+`/api/connections/callback/{providerId}` exactly. Start access again because
+pending state retains its original callback.
 
-1. Set `OAUTH_REDIRECT_BASE_URL` to the public broker origin.
-2. Request `GET /api/oauth/providers` with a broker credential.
-3. Copy the returned `callback_url` exactly into the provider console.
-4. Start a new authorization; existing state retains its original callback.
+## `authorization_superseded`
 
-## `missing_configuration`
+Every unready access intentionally creates a fresh authorization URL and
+invalidates older pending state. Open only the most recently returned URL.
 
-The operation needs `HOOKFISH_API_KEY`, `OAUTH_ENCRYPTION_KEY`, or provider
-credentials that are not available to the runtime. Confirm that the host passes
-its environment or bindings into `hookfish.fetch`.
+## `connection_configuration_conflict`
 
-## `untrusted_return_to` or `untrusted_browser_origin`
-
-- Add the exact application origin to `trustedOrigins`.
-- Include the scheme and port.
-- Do not add paths to origin entries.
-- Use the runtime `browserOrigins` option when the host must override the shared
-  configuration.
+The path already owns different immutable MCP configuration. Use the original
+URL, disconnect the connection before recreating it, or choose a different
+namespace.
 
 ## `insufficient_scope`
 
-Compare the complete connection, provider, or secret path with the token's
-canonical scopes. A scope matches only the exact subtree. It does not perform a
-substring or glob-anywhere match.
+Compare the full path with the broker scopes. Plain scopes are exact;
+descendants require an explicit `/**` suffix.
 
-When starting authorization with a scoped token, provide `connection_id` or
-`connection_id_prefix` inside its grant.
+## MCP discovery or registration
 
-## `reauthorization_required`
-
-The provider token could not be refreshed or no usable refresh token exists.
-Start authorization again with the same connection ID to replace the stored
-credentials.
-
-## Provider discovery or registration failure
-
-For MCP providers, verify that the resource exposes protected-resource metadata
-and that the authorization server advertises PKCE S256. If it does not support
-automatic client registration, create a client manually and store custom
-credentials.
+Verify protected-resource metadata, authorization-server metadata, and PKCE
+S256 support. Hookfish prefers HTTPS CIMD when advertised. DCR is only a
+fallback; a server supporting neither needs fixed client credentials configured
+on the trusted `mcp` provider.
 
 ## Data disappears after restart
 
-- Confirm `PGLITE_DATA_DIR` points to persistent storage.
-- Confirm a Docker volume remains attached.
-- Do not use PGlite on an ephemeral or multi-instance host.
-- On Workers, use PostgreSQL through Hyperdrive for production.
+Use persistent PGlite storage for local single-process deployments and
+PostgreSQL for ephemeral or horizontally scaled deployments. Keep the database
+and `OAUTH_ENCRYPTION_KEY` together in your recovery plan.
 
-## Inspect the actual API
-
-Open `/api/docs` for Swagger UI or request `/api/openapi.json`. The document
-reflects the configured organization-routing, provider-management, and Swagger
-settings for that deployment.
+Inspect `/api/docs` or `/api/openapi.json` for the exact deployed contract.

@@ -1,75 +1,79 @@
 ---
 title: "Errors"
-description: "Handle stable Hookfish error codes across HTTP, OAuth callbacks, and the typed client."
+description: "Handle stable Hookfish errors, including authorization-required details."
 ---
 
-Failed JSON requests return a stable code and human-readable message:
+Failed JSON requests return a stable code and message:
 
 ```json
 {
   "error": {
     "code": "insufficient_scope",
-    "message": "This broker access token cannot access connection \"acme/finance/github\"."
+    "message": "This broker access token cannot access connection ..."
   }
 }
 ```
 
-Branch on `error.code`, not the message text.
+## Authorization required
+
+An OAuth-backed connection that is not ready returns `401`:
+
+```json
+{
+  "error": {
+    "code": "authorization_required",
+    "message": "Connection requires authorization.",
+    "authorize_url": "https://provider.example/authorize?...",
+    "expires_at": "2026-08-12T18:00:00.000Z"
+  }
+}
+```
+
+`@hookfish/sdk` exposes these as `HookfishError.authorizeUrl` and
+`HookfishError.expiresAt`. The SDK also preserves the HTTP status as `status`
+and the parsed response as `body`. Applications can translate those fields at
+their own framework boundary when they expose an HTTP endpoint.
+
+## Provider scope not granted
+
+If an authorization server grants fewer provider scopes than you requested,
+later access that requires a missing scope returns `403 scope_not_granted`:
+
+```json
+{
+  "error": {
+    "code": "scope_not_granted",
+    "message": "Connection was authorized without all required scopes.",
+    "requested_scopes": ["read", "write", "admin"],
+    "granted_scopes": ["read", "write"],
+    "missing_scopes": ["admin"]
+  }
+}
+```
+
+This error is terminal for the current grant. Ask the user to change provider
+permissions before explicitly starting another flow with
+`connections.authorize()`. Hookfish does not start another consent flow from
+`access()` for scopes the provider already declined.
 
 ## Common codes
 
 | Status | Code | Meaning |
 | --- | --- | --- |
-| `400` | `invalid_connection_id` | Connection path is structurally invalid |
-| `400` | `invalid_return_to` | Callback destination is not an absolute HTTP(S) URL |
+| `400` | `invalid_connection_path` | Path lacks a namespace and provider ID |
+| `400` | `invalid_provider_id` | Final segment is not an allowed provider ID |
+| `400` | `invalid_connection_configuration` | MCP URL or scopes are invalid |
+| `401` | `authorization_required` | Open the fresh URL to make the connection ready |
 | `401` | `unauthorized` | Broker credential is missing or incorrect |
-| `401` | `invalid_access_token` | Scoped token is malformed, expired, or revoked |
-| `401` | `reauthorization_required` | Provider credentials cannot be refreshed |
-| `403` | `insufficient_scope` | Credential does not cover the resource path |
-| `403` | `root_access_required` | Operation requires `HOOKFISH_API_KEY` |
-| `403` | `untrusted_return_to` | Destination origin is not allowlisted |
-| `403` | `untrusted_browser_origin` | Browser origin is not allowlisted |
-| `404` | `not_connected` | Connection ID does not exist |
-| `404` | `unknown_provider` | Provider path cannot be resolved |
-| `409` | `connection_id_in_use` | Another provider already owns the connection ID |
-| `409` | `token_name_in_use` | A named broker token already exists |
-| `413` | `request_too_large` | Browser-facade POST body exceeds its limit |
-| `500` | `missing_configuration` | Required broker or provider configuration is absent |
-| `502` | `token_exchange_failed` | Upstream token exchange failed |
+| `403` | `insufficient_scope` | Broker credential does not cover the exact path or subtree |
+| `403` | `scope_not_granted` | Provider omitted one or more scopes requested for the current grant |
+| `404` | `unknown_provider` | Final path segment has no trusted implementation |
+| `404` | `secret_required` | Static connection has no stored value |
+| `409` | `authorization_superseded` | A newer access replaced this pending flow |
+| `409` | `connection_configuration_conflict` | Existing connection has different immutable configuration |
+| `409` | `secret_assignment_unsupported` | Provider does not accept caller-supplied secrets |
+| `500` | `missing_configuration` | Required deployment setting is absent |
+| `502` | `token_exchange_failed` | Upstream exchange or refresh failed |
 
-Provider-management operations also return specific configuration,
-registration, disabled-provider, in-use, and organization-mismatch codes.
-
-## OAuth callback errors
-
-When `returnTo` or `return_to` is configured, failed callbacks redirect with:
-
-```text
-hookfish_status=error&error=<stable-code>
-```
-
-Do not display the code as the only explanation to an end user. Map expected
-codes to application-specific recovery actions and keep diagnostic detail in
-server logs.
-
-## Typed client errors
-
-`@hookfish/sdk` throws `HookfishError`. Check its `status` for HTTP behavior and
-its `code` for the stable Hookfish error code. The original error object remains
-available as `body`. Translate the failure into an application-level response;
-do not forward provider details or credentials to the browser.
-
-```ts
-import { HookfishError } from '@hookfish/sdk'
-
-try {
-  await hookfish.oauth.getToken('billing/github')
-} catch (error) {
-  if (error instanceof HookfishError && error.status === 404) {
-    // Start authorization for this connection.
-  }
-}
-```
-
-`@hookfish/hooks`, when used with the optional browser facade, throws
-`HookfishApiError` from its queries and mutations.
+Branch on `code`, not message text. Do not forward provider diagnostics or
+successful access payloads to browser code.

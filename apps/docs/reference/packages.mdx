@@ -12,7 +12,7 @@ provider implementations, React integration, and CLI into published packages.
 | `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
 | `@hookfish/sdk` | Generated, end-to-end typed `Hookfish` client for trusted application code |
 | `@hookfish/database` | Shared database types and migration helper |
-| `@hookfish/providers` | GitHub, Linear, Notion, and MCP factories |
+| `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
 | `@hookfish/hooks` | Typed client and React hooks for the optional browser facade |
 | `@hookfish/backend` | Lower-level raw API and browser-facade composition |
@@ -56,7 +56,7 @@ const hookfish = new Hookfish({
   organization: 'acme',
 })
 
-const token = await hookfish.oauth.getToken('billing/github')
+const { secret } = await hookfish.connections.access('billing/github')
 ```
 
 Use `@hookfish/api` for the broker runtime and lower-level composition. Import

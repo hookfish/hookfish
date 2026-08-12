@@ -77,9 +77,9 @@ export async function GET(request: Request) {
     },
   })
 
-  return hookfish.oauth.connections.$get({
+  return hookfish.connections.$get({
     query: {
-      connection_id_prefix: session.organizationId,
+      namespace: `organization/${session.organizationId}`,
     },
   })
 }

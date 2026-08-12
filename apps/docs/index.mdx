@@ -32,7 +32,7 @@ backend a consistent way to use them.
 - Runs OAuth and MCP authorization flows
 - Encrypts access tokens, refresh tokens, and stored secrets
 - Refreshes OAuth tokens when they expire
-- Keeps each connected account under a stable connection ID
+- Keeps each credential under a stable `namespace/providerId` connection path
 - Lets your backend give different services access to different users or
   resource paths
 

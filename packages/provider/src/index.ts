@@ -19,14 +19,26 @@ export type ProviderCredentials = {
 
 export type ProviderConfiguration = Record<string, unknown>
 
+/** A provider whose credential is supplied directly by trusted application code. */
+export interface SecretProvider {
+  readonly kind: 'secret'
+  readonly label?: string
+}
+
+export function createSecretProvider(label = 'Secret'): SecretProvider {
+  return { kind: 'secret', label }
+}
+
 export type RegisterProviderClientInput = {
   configuration: ProviderConfiguration
   redirectUri: string
+  clientMetadataUrl: string
 }
 
 export type RegisteredProviderClient = {
   clientId: string
   clientSecret?: string
+  issuer?: string
 }
 
 /**
@@ -114,9 +126,18 @@ export interface OAuthProvider {
   revokeToken?(input: RevokeTokenInput): Promise<void>
 }
 
+/** Trusted code selected by the final segment of a connection path. */
+export type ConnectionProvider = OAuthProvider | SecretProvider
+
+export function isSecretProvider(
+  provider: ConnectionProvider,
+): provider is SecretProvider {
+  return provider.kind === 'secret'
+}
+
 export type ProviderSourceEntry = {
   id: string
-  provider: OAuthProvider
+  provider: ConnectionProvider
 }
 
 /**
@@ -150,7 +171,7 @@ export interface ProviderSource<Bindings extends object = object> {
   getProvider(
     providerId: string,
     bindings: Bindings,
-  ): ProviderSourceResult<OAuthProvider | undefined>
+  ): ProviderSourceResult<ConnectionProvider | undefined>
   listProviders?(
     query: ProviderSourceQuery,
     bindings: Bindings,
@@ -183,18 +204,76 @@ export function isOAuthProviderTemplate(
 
 const registryKey = Symbol.for('@hookfish/provider/registry')
 
-export class ProviderRegistry {
-  private readonly providers = new Map<string, OAuthProvider>()
+const javascriptReservedProviderIds = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'let',
+  'new',
+  'null',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'return',
+  'static',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+])
 
-  constructor(providers: Record<string, OAuthProvider> = {}) {
+/** Whether a provider ID is a slash-free, non-reserved JavaScript identifier. */
+export function isValidProviderId(providerId: string): boolean {
+  return (
+    providerId.length <= 128 &&
+    /^[a-z][A-Za-z0-9]*$/.test(providerId) &&
+    !javascriptReservedProviderIds.has(providerId)
+  )
+}
+
+export class ProviderRegistry {
+  private readonly providers = new Map<string, ConnectionProvider>()
+
+  constructor(providers: Record<string, ConnectionProvider> = {}) {
     this.register(providers)
   }
 
-  register(providers: Record<string, OAuthProvider>): void {
+  register(providers: Record<string, ConnectionProvider>): void {
     for (const [slug, provider] of Object.entries(providers)) {
-      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      if (!isValidProviderId(slug)) {
         throw new Error(
-          `Invalid provider slug "${slug}". Use lowercase letters, numbers, and hyphens.`,
+          `Invalid provider id "${slug}". Use a non-reserved lower-camel JavaScript identifier up to 128 characters.`,
         )
       }
       this.providers.set(slug, provider)
@@ -205,7 +284,7 @@ export class ProviderRegistry {
     for (const slug of slugs) this.providers.delete(slug)
   }
 
-  getProvider(slug: string): OAuthProvider | undefined {
+  getProvider(slug: string): ConnectionProvider | undefined {
     return this.providers.get(slug)
   }
 
@@ -213,13 +292,20 @@ export class ProviderRegistry {
     return [...this.providers.keys()]
   }
 
-  listProviders(): Array<readonly [slug: string, provider: OAuthProvider]> {
+  listProviders(): Array<
+    readonly [slug: string, provider: ConnectionProvider]
+  > {
     return [...this.providers.entries()]
   }
 
   isProviderConfigured(slug: string): boolean {
     const provider = this.getProvider(slug)
-    return provider !== undefined && (provider.isConfigured?.() ?? true)
+    return (
+      provider !== undefined &&
+      (isSecretProvider(provider) ||
+        provider.kind === 'mcp' ||
+        (provider.isConfigured?.() ?? true))
+    )
   }
 }
 
@@ -248,13 +334,13 @@ function getDefaultProviderRegistry(): ProviderRegistry {
 export const defaultProviderRegistry = getDefaultProviderRegistry()
 
 export function createProviderRegistry(
-  providers: Record<string, OAuthProvider> = {},
+  providers: Record<string, ConnectionProvider> = {},
 ): ProviderRegistry {
   return new ProviderRegistry(providers)
 }
 
 export function registerProvider(
-  providers: Record<string, OAuthProvider>,
+  providers: Record<string, ConnectionProvider>,
 ): ProviderRegistry {
   defaultProviderRegistry.register(providers)
   return createProviderRegistry(providers)
@@ -264,7 +350,7 @@ export function unregisterProvider(...slugs: string[]): void {
   defaultProviderRegistry.unregister(...slugs)
 }
 
-export function getProvider(slug: string): OAuthProvider | undefined {
+export function getProvider(slug: string): ConnectionProvider | undefined {
   return defaultProviderRegistry.getProvider(slug)
 }
 
@@ -273,7 +359,7 @@ export function listProviderIds(): string[] {
 }
 
 export function listProviders(): Array<
-  readonly [slug: string, provider: OAuthProvider]
+  readonly [slug: string, provider: ConnectionProvider]
 > {
   return defaultProviderRegistry.listProviders()
 }

@@ -1,13 +1,18 @@
 export type DatabaseResult<T> = T | PromiseLike<T>
 
-export type OAuthConnection = {
+export type Connection = {
   id: string
-  organization: string | null
-  connectionId: string
-  provider: string
-  accessToken: string
+  organization: string
+  namespace: string
+  providerId: string
+  configuration: Record<string, unknown>
+  oauthIssuer: string | null
+  oauthClientId: string | null
+  oauthClientSecret: string | null
+  secret: string | null
   refreshToken: string | null
   tokenType: string
+  requestedScopes: string[]
   scopes: string[]
   expiresAt: Date | null
   metadata: Record<string, unknown>
@@ -19,13 +24,14 @@ export type OAuthConnection = {
 
 export type OAuthState = {
   id: string
-  connectionId: string
-  organization: string | null
-  provider: string
+  organization: string
+  namespace: string
+  providerId: string
   codeVerifier: string | null
   redirectUri: string
   returnTo: string | null
   scopes: string[]
+  issuer: string | null
   status: string
   errorStatus: number | null
   errorCode: string | null
@@ -43,21 +49,6 @@ export type BrokerAccessToken = {
   expiresAt: Date
 }
 
-export type OAuthProviderRecord = {
-  id: string
-  organization: string
-  providerId: string
-  templateId: string
-  label: string | null
-  credentialMode: string
-  clientId: string | null
-  clientSecretPath: string | null
-  configuration: Record<string, unknown>
-  enabled: boolean
-  createdAt: Date
-  updatedAt: Date
-}
-
 export type VaultSecret = {
   id: string
   organization: string
@@ -69,11 +60,15 @@ export type VaultSecret = {
 
 export type NewOAuthState = Pick<
   OAuthState,
-  'id' | 'connectionId' | 'provider' | 'redirectUri' | 'scopes' | 'expiresAt'
+  | 'id'
+  | 'organization'
+  | 'namespace'
+  | 'providerId'
+  | 'redirectUri'
+  | 'scopes'
+  | 'expiresAt'
 > &
-  Partial<
-    Pick<OAuthState, 'organization' | 'codeVerifier' | 'returnTo' | 'status'>
-  >
+  Partial<Pick<OAuthState, 'codeVerifier' | 'returnTo' | 'issuer' | 'status'>>
 
 export type OAuthStateUpdate = Partial<
   Pick<
@@ -82,27 +77,52 @@ export type OAuthStateUpdate = Partial<
   >
 >
 
-export type NewOAuthConnection = Omit<
-  OAuthConnection,
-  'id' | 'createdAt' | 'updatedAt'
+export type NewConnection = Pick<
+  Connection,
+  'organization' | 'namespace' | 'providerId' | 'configuration'
+> &
+  Partial<
+    Pick<
+      Connection,
+      | 'oauthIssuer'
+      | 'oauthClientId'
+      | 'oauthClientSecret'
+      | 'secret'
+      | 'refreshToken'
+      | 'tokenType'
+      | 'requestedScopes'
+      | 'scopes'
+      | 'expiresAt'
+      | 'metadata'
+      | 'externalAccountId'
+      | 'externalAccountLabel'
+    >
+  >
+
+export type ConnectionUpdate = Partial<
+  Pick<
+    Connection,
+    | 'configuration'
+    | 'oauthIssuer'
+    | 'oauthClientId'
+    | 'oauthClientSecret'
+    | 'secret'
+    | 'refreshToken'
+    | 'tokenType'
+    | 'requestedScopes'
+    | 'scopes'
+    | 'expiresAt'
+    | 'metadata'
+    | 'externalAccountId'
+    | 'externalAccountLabel'
+  >
 >
 
-export type OAuthConnectionTokenUpdate = Pick<
-  OAuthConnection,
-  | 'accessToken'
-  | 'refreshToken'
-  | 'tokenType'
-  | 'scopes'
-  | 'expiresAt'
-  | 'metadata'
-  | 'externalAccountId'
-  | 'externalAccountLabel'
->
-
-export type OAuthConnectionSummary = Pick<
-  OAuthConnection,
-  | 'connectionId'
-  | 'provider'
+export type ConnectionSummary = Pick<
+  Connection,
+  | 'namespace'
+  | 'providerId'
+  | 'configuration'
   | 'scopes'
   | 'expiresAt'
   | 'externalAccountId'
@@ -112,35 +132,11 @@ export type OAuthConnectionSummary = Pick<
   | 'updatedAt'
 >
 
-export type OAuthConnectionFilter = {
+export type ConnectionFilter = {
   organization?: string
-  provider?: string
-  connectionIdPrefix?: string
-  connectionScopes?: string[]
-}
-
-export type NewOAuthProviderRecord = Omit<
-  OAuthProviderRecord,
-  'id' | 'createdAt' | 'updatedAt'
->
-
-export type OAuthProviderUpdate = Partial<
-  Pick<
-    OAuthProviderRecord,
-    | 'templateId'
-    | 'label'
-    | 'credentialMode'
-    | 'clientId'
-    | 'clientSecretPath'
-    | 'configuration'
-    | 'enabled'
-  >
->
-
-export type OAuthProviderFilter = {
-  organization: string
-  search?: string
-  limit?: number
+  providerId?: string
+  namespace?: string
+  resourceScopes?: string[]
 }
 
 export type NewVaultSecret = Pick<
@@ -165,22 +161,21 @@ export type NewBrokerAccessToken = Pick<
   'name' | 'tokenIdHash' | 'scopes' | 'expiresAt'
 >
 
-/**
- * The persistence contract used by Hookfish business logic.
- *
- * Implementations may be local databases or remote, request-scoped handles
- * such as Durable Object RPC stubs. Methods return awaitable values so both
- * ordinary promises and Workers RPC thenables are accepted.
- */
+/** Persistence contract shared by Postgres, PGlite, and Durable Objects. */
 export interface Database {
   createOAuthState(input: NewOAuthState): DatabaseResult<void>
+  supersedeOAuthStates(
+    organization: string,
+    namespace: string,
+    providerId: string,
+  ): DatabaseResult<void>
   claimOAuthState(
     ids: readonly string[],
-    provider: string,
+    providerId: string,
   ): DatabaseResult<OAuthState | undefined>
   getOAuthState(
     ids: readonly string[],
-    provider: string,
+    providerId: string,
   ): DatabaseResult<OAuthState | undefined>
   updateOAuthState(
     id: string,
@@ -188,45 +183,20 @@ export interface Database {
   ): DatabaseResult<OAuthState | undefined>
   purgeExpiredOAuthStates(before: Date): DatabaseResult<number>
 
-  getOAuthConnection(
-    connectionId: string,
-    organization?: string,
-  ): DatabaseResult<OAuthConnection | undefined>
-  upsertOAuthConnection(
-    input: NewOAuthConnection,
-  ): DatabaseResult<OAuthConnection | undefined>
-  updateOAuthConnectionTokens(
-    id: string,
-    update: OAuthConnectionTokenUpdate,
-  ): DatabaseResult<OAuthConnection | undefined>
-  listOAuthConnections(
-    filter?: OAuthConnectionFilter,
-  ): DatabaseResult<OAuthConnectionSummary[]>
-  deleteOAuthConnection(id: string): DatabaseResult<boolean>
-  hasOAuthConnectionForProvider(
-    providerId: string,
-    organization?: string,
-  ): DatabaseResult<boolean>
-
-  getOAuthProvider(
+  getConnection(
     organization: string,
+    namespace: string,
     providerId: string,
-  ): DatabaseResult<OAuthProviderRecord | undefined>
-  listOAuthProviders(
-    filter: OAuthProviderFilter,
-  ): DatabaseResult<OAuthProviderRecord[]>
-  putOAuthProvider(
-    input: NewOAuthProviderRecord,
-  ): DatabaseResult<OAuthProviderRecord>
-  updateOAuthProvider(
+  ): DatabaseResult<Connection | undefined>
+  putConnection(input: NewConnection): DatabaseResult<Connection>
+  updateConnection(
     id: string,
-    update: OAuthProviderUpdate,
-  ): DatabaseResult<OAuthProviderRecord | undefined>
-  deleteOAuthProviderIfUnused(
-    id: string,
-    providerId: string,
-    organization?: string,
-  ): DatabaseResult<'deleted' | 'not_found' | 'in_use'>
+    update: ConnectionUpdate,
+  ): DatabaseResult<Connection | undefined>
+  listConnections(
+    filter?: ConnectionFilter,
+  ): DatabaseResult<ConnectionSummary[]>
+  deleteConnection(id: string): DatabaseResult<boolean>
 
   putVaultSecret(input: NewVaultSecret): DatabaseResult<VaultSecret>
   getVaultSecret(

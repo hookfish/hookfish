@@ -26,38 +26,20 @@ export function createHookfishClient(
 }
 
 type StatsEndpoint = HookfishClient['stats']['$get']
-type ProvidersEndpoint = HookfishClient['oauth']['providers']['$get']
-type ConnectionsEndpoint = HookfishClient['oauth']['connections']['$get']
+type ProvidersEndpoint = HookfishClient['connections']['providers']['$get']
+type ConnectionsEndpoint = HookfishClient['connections']['$get']
 type ConnectionEndpoint =
-  HookfishClient['oauth']['connections'][':connection_id{.+}']['$get']
-type AuthorizeEndpoint =
-  HookfishClient['oauth']['authorize'][':provider_path{.+}']['$post']
+  HookfishClient['connections']['entry'][':connection_path{.+}']['$get']
 type DisconnectEndpoint =
-  HookfishClient['oauth']['connections'][':connection_id{.+}']['$delete']
+  HookfishClient['connections']['entry'][':connection_path{.+}']['$delete']
 
 export type StatsResponse = InferResponseType<StatsEndpoint, 200>
 export type ProvidersResponse = InferResponseType<ProvidersEndpoint, 200>
-export type ProviderListQueryValue = string | number | boolean | undefined
-export type ProvidersFilter = {
-  include_unconfigured?: boolean
-  search?: string
-  limit?: number
-  source?: 'fixed' | 'dynamic'
-} & Record<string, ProviderListQueryValue>
 export type ConnectionsResponse = InferResponseType<ConnectionsEndpoint, 200>
 export type ConnectionResponse = InferResponseType<ConnectionEndpoint, 200>
-export type AuthorizeConnectionResponse = InferResponseType<
-  AuthorizeEndpoint,
-  200
->
 export type DisconnectConnectionResponse = InferResponseType<
   DisconnectEndpoint,
   200
 >
 
 export type ConnectionsFilter = InferRequestType<ConnectionsEndpoint>['query']
-type AuthorizeRequest = InferRequestType<AuthorizeEndpoint>
-
-export type AuthorizeConnectionInput = AuthorizeRequest['json'] & {
-  provider: AuthorizeRequest['param']['provider_path']
-}

@@ -1,99 +1,105 @@
 ---
 title: "How Hookfish works"
-description: "Understand Hookfish connections, request surfaces, callbacks, and credential boundaries."
+description: "Understand connection paths, trusted providers, authorization, and secret access."
 ---
 
-Hookfish sits between your application and OAuth providers. Your application
-refers to one linked account by a stable connection ID. Hookfish stores and
-refreshes the credentials behind that ID.
+Hookfish exposes one connection abstraction for OAuth tokens and static
+credentials. Trusted server code asks for access to a path. Hookfish either
+returns a usable secret or reports what the user must authorize.
 
-## Core objects
+## Connection identity
 
-| Object | Meaning |
-| --- | --- |
-| OAuth provider | Protocol implementation and client configuration for a service |
-| Connection | One authorized provider account identified by a resource path |
-| Broker access token | Credential used to call Hookfish |
-| Provider access token | Upstream credential returned only to trusted server code |
-| Vault secret | Non-OAuth credential encrypted under a resource path |
+A connection path is `namespace/providerId`:
 
-A provider can have many connections. Reauthorizing the same connection ID for
-the same provider replaces its stored credentials. Reusing that ID for a
-different provider returns `409`.
+```text
+user/personal/gmail
+user/personal/gmail/mcp
+service/prod/openai/secret
+```
 
-## Connection lifecycle
+The final segment always selects a trusted provider implementation. Everything
+before it is the namespace. Provider IDs are slash-free, non-reserved
+lower-camel JavaScript identifiers such as `gmail`, `githubEnterprise`, `mcp`,
+or `secret`.
+
+Folder names may equal provider names. Their position removes ambiguity. In
+`user/personal/gmail/mcp`, `gmail` is a namespace segment and `mcp` is the
+provider ID.
+
+Hookfish stores identity as `(organization, namespace, providerId)` with a
+unique constraint. It does not accept caller-generated opaque IDs, slots,
+or provider templates in request bodies.
+
+## One access operation
+
+```ts
+const { secret } = await hookfish.connections.access(
+  'user/personal/gmail',
+)
+```
+
+For a usable connection, Hookfish returns `{ path, secret, scopes, expires_at,
+refreshed }`. For an OAuth-backed connection that is not ready,
+`@hookfish/sdk` throws `HookfishError` with:
+
+```json
+{
+  "code": "authorization_required",
+  "authorize_url": "https://provider.example/authorize?...",
+  "expires_at": "2026-08-12T18:00:00.000Z"
+}
+```
+
+Each unready access creates new state, PKCE material when required, and a fresh
+authorization URL. It supersedes earlier pending URLs for that connection.
+Call `connections.authorize()` to start a fresh flow unconditionally, such as
+after an upstream MCP server rejects a credential whose stored expiration has
+not passed.
+
+## Lifecycle
 
 <Steps>
-  <Step title="Start authorization">
-    Trusted code calls `POST /api/oauth/authorize/{provider_path}` with an
-    explicit `connection_id` or a `connection_id_prefix`. Hookfish generates an
-    ID when only a prefix is supplied.
+  <Step title="Resolve the provider">
+    Hookfish parses the final path segment and resolves only that trusted
+    provider implementation.
   </Step>
-  <Step title="Collect consent">
-    Hookfish creates single-use state and returns an `authorize_url`. Your
-    application redirects the user to that URL.
+  <Step title="Ensure the connection">
+    Hookfish creates the structured connection if it does not exist. Supplying
+    different immutable configuration later returns `409`.
   </Step>
-  <Step title="Complete the callback">
-    The provider sends the browser to Hookfish. Hookfish claims the state,
-    validates the provider response, exchanges the code, and encrypts the
-    returned credentials.
+  <Step title="Return or acquire a secret">
+    Static providers read an encrypted value set with `setSecret`. OAuth
+    providers refresh when possible, otherwise return `authorization_required`
+    with a new URL.
   </Step>
-  <Step title="Use the connection">
-    Trusted server code calls `GET /api/oauth/tokens/{connection_id}`. Hookfish
-    refreshes an expiring token when the provider supports refresh.
+  <Step title="Complete authorization">
+    The public callback claims single-use state, exchanges the code, encrypts
+    the returned credentials, and marks the connection ready.
   </Step>
   <Step title="Disconnect">
-    Hookfish requests upstream revocation when supported, then deletes the
-    local connection.
+    Hookfish attempts upstream revocation when supported and deletes the local
+    connection.
   </Step>
 </Steps>
 
-## Callback destinations
+## Connection-owned state
 
-Set `returnTo` in `hookfish.config.ts` for a fixed post-callback destination.
-An authorization request can override it with `return_to` when that URL's
-origin appears in `trustedOrigins`.
+Each connection owns its non-secret configuration, OAuth client fallback
+credentials when needed, user token, refresh token, and metadata. Hookfish
+does not create shared runtime provider records.
 
-Successful redirects include `hookfish_status=connected`, `provider`, and
-`connection_id`. Failed flows include `hookfish_status=error` and a stable
-`error` code. When no destination is configured, Hookfish renders a development
-completion page.
+For dynamic MCP connections, the built-in `mcp` provider uses the connection's
+URL to discover the protected resource and authorization server. It prefers a
+deployment-level Client ID Metadata Document (CIMD) when advertised and uses
+Dynamic Client Registration (DCR) only as a compatibility fallback. Any DCR
+credentials belong to that connection.
 
-Provider callbacks do not use a broker token. Their encrypted, single-use OAuth
-state authenticates the flow and expires after ten minutes. Runtime stats,
-Swagger UI, the OpenAPI document, and MCP client metadata are also public.
+## Security boundary
 
-## Application API and Hookfish API
+`connections.access()` and `connections.setSecret()` are server-only. The
+optional browser facade exposes connection metadata and disconnect operations,
+never usable credentials or authorization starts. Authenticate your own
+application endpoint before calling Hookfish with a scoped broker token.
 
-| Surface | Purpose | Authentication |
-| --- | --- | --- |
-| Your application API | User-facing connection operations | Your application session and permissions |
-| Hookfish `/api/*` | Complete broker API | Root or scoped broker credential |
-| `/api/docs` | Swagger UI | Visibility controlled by `includeSwagger` |
-| `/api/openapi.json` | OpenAPI 3.1 document | Visibility controlled by `includeSwagger` |
-
-Authenticate browser requests in your application. The authorized route
-handler can then use a typed Hono RPC client to call Hookfish with the correct
-scoped broker token. Keep provider-token retrieval, vault values, and broker
-administration inside trusted server code.
-
-Hookfish also includes an optional `/api/client` browser facade. It exposes an
-allowlist of connection-management operations, but it uses one configured
-broker credential and does not establish your application's tenant boundary.
-Prefer an authenticated application route when serving your users.
-
-## Portable runtime and storage
-
-`HookfishServer.init(config)` returns an object with a Fetch-compatible `fetch`
-handler. Framework adapters translate their request model or mount that handler
-without changing Hookfish's API.
-
-Database adapters follow the same request-aware model:
-
-- PGlite persists to a local directory and applies bundled migrations lazily.
-- Postgres accepts a URL or a resolver that reads request bindings.
-- The experimental SQLite Durable Objects adapter selects a storage object from
-  the validated organization context.
-
-Continue with [resource and provider scopes](/concepts/scopes), or inspect all
-[configuration options](/reference/configuration).
+Continue with [resource scopes](/concepts/scopes) or
+[remote MCP servers](/providers/remote-mcp).

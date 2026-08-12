@@ -9,16 +9,22 @@ describe('canonical Hookfish OpenAPI document', () => {
     const document = record.parse(await createHookfishOpenAPIDocument())
     const paths = record.parse(document.paths)
 
-    const globalToken = record.parse(paths['/oauth/tokens/{connection_id}'])
-    expect(record.parse(globalToken.get).operationId).toBe('oauth.tokens.get')
+    const globalAccess = record.parse(
+      paths['/connections/access/{connection_path}'],
+    )
+    expect(record.parse(globalAccess.post).operationId).toBe(
+      'connections.access',
+    )
 
-    const organizationToken = record.parse(
-      paths['/organization/{organization}/oauth/tokens/{connection_id}'],
+    const organizationAccess = record.parse(
+      paths[
+        '/organization/{organization}/connections/access/{connection_path}'
+      ],
     )
-    expect(record.parse(organizationToken.get).operationId).toBe(
-      'organization.oauth.tokens.get',
+    expect(record.parse(organizationAccess.post).operationId).toBe(
+      'organization.connections.access',
     )
-    expect(organizationToken.parameters).toEqual(
+    expect(organizationAccess.parameters).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           in: 'path',
@@ -28,15 +34,15 @@ describe('canonical Hookfish OpenAPI document', () => {
       ]),
     )
 
-    expect(paths).toHaveProperty('/admin/providers/{provider_path}')
-    expect(paths).toHaveProperty(
-      '/organization/{organization}/admin/providers/{provider_path}',
+    expect(paths).toHaveProperty('/connections/secret/{connection_path}')
+    expect(paths).toHaveProperty('/connections/authorize/{connection_path}')
+    expect(paths).toHaveProperty('/connections/callback/{provider_id}')
+    expect(paths).toHaveProperty('/connections/client-metadata.json')
+    expect(paths).not.toHaveProperty(
+      '/organization/{organization}/connections/callback/{provider_id}',
     )
     expect(paths).not.toHaveProperty(
-      '/organization/{organization}/oauth/callback/{provider_path}',
-    )
-    expect(paths).not.toHaveProperty(
-      '/organization/{organization}/oauth/client-metadata/{provider_path}',
+      '/organization/{organization}/connections/client-metadata.json',
     )
   })
 })

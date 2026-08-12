@@ -1,13 +1,12 @@
 import { PGlite } from '@electric-sql/pglite'
 import {
   brokerAccessTokens,
+  connections,
   type Database,
   type DatabaseBinding,
   type DrizzleDatabase,
   defineDatabase,
   drizzleDatabase,
-  oauthConnections,
-  oauthProviders,
   oauthStates,
   vaultSecrets,
 } from '@hookfish/api/database'
@@ -17,8 +16,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator'
 
 const schema = {
   brokerAccessTokens,
-  oauthConnections,
-  oauthProviders,
+  connections,
   oauthStates,
   vaultSecrets,
 }

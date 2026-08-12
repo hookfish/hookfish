@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdminProvidersDeleteErrors, AdminProvidersDeleteResponses, AdminProvidersGetErrors, AdminProvidersGetResponses, AdminProvidersListErrors, AdminProvidersListResponses, AdminProvidersPatchErrors, AdminProvidersPatchResponses, AdminProvidersPutErrors, AdminProvidersPutResponses, AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, OauthAuthorizeErrors, OauthAuthorizeResponses, OauthCallbackErrors, OauthCallbackResponses, OauthClientMetadataGetResponses, OauthConnectionsDisconnectErrors, OauthConnectionsDisconnectResponses, OauthConnectionsGetErrors, OauthConnectionsGetResponses, OauthConnectionsListErrors, OauthConnectionsListResponses, OauthProvidersListErrors, OauthProvidersListResponses, OauthTokensGetErrors, OauthTokensGetResponses, OrganizationAdminProvidersDeleteErrors, OrganizationAdminProvidersDeleteResponses, OrganizationAdminProvidersGetErrors, OrganizationAdminProvidersGetResponses, OrganizationAdminProvidersListErrors, OrganizationAdminProvidersListResponses, OrganizationAdminProvidersPatchErrors, OrganizationAdminProvidersPatchResponses, OrganizationAdminProvidersPutErrors, OrganizationAdminProvidersPutResponses, OrganizationOauthAuthorizeErrors, OrganizationOauthAuthorizeResponses, OrganizationOauthConnectionsDisconnectErrors, OrganizationOauthConnectionsDisconnectResponses, OrganizationOauthConnectionsGetErrors, OrganizationOauthConnectionsGetResponses, OrganizationOauthConnectionsListErrors, OrganizationOauthConnectionsListResponses, OrganizationOauthProvidersListErrors, OrganizationOauthProvidersListResponses, OrganizationOauthTokensGetErrors, OrganizationOauthTokensGetResponses, OrganizationSecretsDeleteErrors, OrganizationSecretsDeleteResponses, OrganizationSecretsGetErrors, OrganizationSecretsGetResponses, OrganizationSecretsListErrors, OrganizationSecretsListResponses, OrganizationSecretsPutErrors, OrganizationSecretsPutResponses, SecretsDeleteErrors, SecretsDeleteResponses, SecretsGetErrors, SecretsGetResponses, SecretsListErrors, SecretsListResponses, SecretsPutErrors, SecretsPutResponses, StatsGetResponses } from './types.gen';
+import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, OrganizationConnectionsAccessErrors, OrganizationConnectionsAccessResponses, OrganizationConnectionsAuthorizeErrors, OrganizationConnectionsDisconnectErrors, OrganizationConnectionsDisconnectResponses, OrganizationConnectionsGetErrors, OrganizationConnectionsGetResponses, OrganizationConnectionsListErrors, OrganizationConnectionsListResponses, OrganizationConnectionsProvidersErrors, OrganizationConnectionsProvidersResponses, OrganizationConnectionsSetSecretErrors, OrganizationConnectionsSetSecretResponses, OrganizationSecretsDeleteErrors, OrganizationSecretsDeleteResponses, OrganizationSecretsGetErrors, OrganizationSecretsGetResponses, OrganizationSecretsListErrors, OrganizationSecretsListResponses, OrganizationSecretsPutErrors, OrganizationSecretsPutResponses, SecretsDeleteErrors, SecretsDeleteResponses, SecretsGetErrors, SecretsGetResponses, SecretsListErrors, SecretsListResponses, SecretsPutErrors, SecretsPutResponses, StatsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -37,7 +37,7 @@ export const adminTokensList = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Mint a named broker access token
  *
- * Creates an expiring named credential for one or more connection folders. Folder paths are canonicalized to `folder**`. Tokens may delegate only to folders they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.
+ * Creates an expiring named credential for exact resource paths or explicit `namespace**` subtrees. Tokens may delegate only grants they already hold, within their own dot-delimited name namespace, and may not create a token that outlives them.
  */
 export const adminTokensCreate = <ThrowOnError extends boolean = false>(parameters: {
     name: string;
@@ -80,69 +80,25 @@ export const adminTokensRevoke = <ThrowOnError extends boolean = false>(paramete
 };
 
 /**
- * Delete an unused dynamic provider
+ * Get a usable secret or start authorization
  *
- * Returns 409 while an OAuth connection references the provider. Disable it to block new authorizations while retaining refresh and revocation.
+ * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL for scopes that have not been requested, or `scope_not_granted` when the provider declined a requested scope.
  */
-export const adminProvidersDelete = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<AdminProvidersDeleteResponses, AdminProvidersDeleteErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'provider_path' }] }]);
-    return (options?.client ?? client).delete<AdminProvidersDeleteResponses, AdminProvidersDeleteErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/admin/providers/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Get a provider configuration
- */
-export const adminProvidersGet = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<AdminProvidersGetResponses, AdminProvidersGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'provider_path' }] }]);
-    return (options?.client ?? client).get<AdminProvidersGetResponses, AdminProvidersGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/admin/providers/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Update a dynamic provider
- */
-export const adminProvidersPatch = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-    template?: string;
-    label?: string | null;
-    configuration?: {
-        [key: string]: unknown;
-    };
-    credentials?: {
-        mode: 'inherit';
-    } | {
-        mode: 'custom';
-        client_id: string;
-        client_secret?: string;
-    } | {
-        mode: 'register';
-    };
-    enabled?: boolean;
-}, options?: Options<never, ThrowOnError>): RequestResult<AdminProvidersPatchResponses, AdminProvidersPatchErrors, ThrowOnError> => {
+export const connectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
+    connection_path: string;
+    url?: string;
+    scopes?: Array<string>;
+    return_to?: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsAccessResponses, ConnectionsAccessErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'template' },
-                { in: 'body', key: 'label' },
-                { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'credentials' },
-                { in: 'body', key: 'enabled' }
+                { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'url' },
+                { in: 'body', key: 'scopes' },
+                { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).patch<AdminProvidersPatchResponses, AdminProvidersPatchErrors, ThrowOnError>({
+    return (options?.client ?? client).post<ConnectionsAccessResponses, ConnectionsAccessErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/admin/providers/{provider_path}',
+        url: '/connections/access/{connection_path}',
         ...options,
         ...params,
         headers: {
@@ -154,39 +110,25 @@ export const adminProvidersPatch = <ThrowOnError extends boolean = false>(parame
 };
 
 /**
- * Create or replace a dynamic provider
+ * Start fresh authorization for a connection
  *
- * Custom client secrets are encrypted and write-only. Inherited credentials use the complete credential pair from the fixed provider template.
+ * Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.
  */
-export const adminProvidersPut = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-    template: string;
-    label?: string;
-    configuration?: {
-        [key: string]: unknown;
-    };
-    credentials: {
-        mode: 'inherit';
-    } | {
-        mode: 'custom';
-        client_id: string;
-        client_secret?: string;
-    } | {
-        mode: 'register';
-    };
-    enabled?: boolean;
-}, options?: Options<never, ThrowOnError>): RequestResult<AdminProvidersPutResponses, AdminProvidersPutErrors, ThrowOnError> => {
+export const connectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
+    connection_path: string;
+    url?: string;
+    scopes?: Array<string>;
+    return_to?: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<unknown, ConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'template' },
-                { in: 'body', key: 'label' },
-                { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'credentials' },
-                { in: 'body', key: 'enabled' }
+                { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'url' },
+                { in: 'body', key: 'scopes' },
+                { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).put<AdminProvidersPutResponses, AdminProvidersPutErrors, ThrowOnError>({
+    return (options?.client ?? client).post<unknown, ConnectionsAuthorizeErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/admin/providers/{provider_path}',
+        url: '/connections/authorize/{connection_path}',
         ...options,
         ...params,
         headers: {
@@ -198,173 +140,107 @@ export const adminProvidersPut = <ThrowOnError extends boolean = false>(paramete
 };
 
 /**
- * List fixed and dynamic providers
+ * Set or rotate a connection secret
  */
-export const adminProvidersList = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<AdminProvidersListResponses, AdminProvidersListErrors, ThrowOnError> => (options?.client ?? client).get<AdminProvidersListResponses, AdminProvidersListErrors, ThrowOnError>({
+export const connectionsSetSecret = <ThrowOnError extends boolean = false>(parameters: {
+    connection_path: string;
+    secret: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsSetSecretResponses, ConnectionsSetSecretErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_path' }, { in: 'body', key: 'secret' }] }]);
+    return (options?.client ?? client).put<ConnectionsSetSecretResponses, ConnectionsSetSecretErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/connections/secret/{connection_path}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Revoke and delete a connection
+ */
+export const connectionsDisconnect = <ThrowOnError extends boolean = false>(parameters: {
+    connection_path: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsDisconnectResponses, ConnectionsDisconnectErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_path' }] }]);
+    return (options?.client ?? client).delete<ConnectionsDisconnectResponses, ConnectionsDisconnectErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/connections/entry/{connection_path}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Get connection metadata
+ */
+export const connectionsGet = <ThrowOnError extends boolean = false>(parameters: {
+    connection_path: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsGetResponses, ConnectionsGetErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_path' }] }]);
+    return (options?.client ?? client).get<ConnectionsGetResponses, ConnectionsGetErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/connections/entry/{connection_path}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * Deployment-level OAuth client metadata document
+ */
+export const connectionsClientMetadata = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<ConnectionsClientMetadataResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ConnectionsClientMetadataResponses, unknown, ThrowOnError>({ url: '/connections/client-metadata.json', ...options });
+
+/**
+ * List trusted provider implementations
+ */
+export const connectionsProviders = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<ConnectionsProvidersResponses, ConnectionsProvidersErrors, ThrowOnError> => (options?.client ?? client).get<ConnectionsProvidersResponses, ConnectionsProvidersErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/admin/providers',
+    url: '/connections/providers',
     ...options
 });
 
 /**
- * Revoke and forget a stored connection
- *
- * Revokes upstream credentials when the provider implements revocation, then deletes the encrypted local record. If upstream revocation fails, the record is retained so the operation can be retried. Providers without revocation support are deleted locally.
+ * List connection metadata
  */
-export const oauthConnectionsDisconnect = <ThrowOnError extends boolean = false>(parameters: {
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthConnectionsDisconnectResponses, OauthConnectionsDisconnectErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).delete<OauthConnectionsDisconnectResponses, OauthConnectionsDisconnectErrors, ThrowOnError>({
+export const connectionsList = <ThrowOnError extends boolean = false>(parameters?: {
+    namespace?: string;
+    provider_id?: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsListResponses, ConnectionsListErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'query', key: 'namespace' }, { in: 'query', key: 'provider_id' }] }]);
+    return (options?.client ?? client).get<ConnectionsListResponses, ConnectionsListErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/connections/{connection_id}',
+        url: '/connections',
         ...options,
         ...params
     });
 };
 
 /**
- * Get a connection by id
+ * OAuth callback
  */
-export const oauthConnectionsGet = <ThrowOnError extends boolean = false>(parameters: {
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthConnectionsGetResponses, OauthConnectionsGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).get<OauthConnectionsGetResponses, OauthConnectionsGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/connections/{connection_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Get a currently-valid access token, refreshing if needed
- */
-export const oauthTokensGet = <ThrowOnError extends boolean = false>(parameters: {
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthTokensGetResponses, OauthTokensGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).get<OauthTokensGetResponses, OauthTokensGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/tokens/{connection_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Create a consent URL for a connection
- *
- * Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.
- */
-export const oauthAuthorize = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-    connection_id?: string;
-    connection_id_prefix?: string;
-    scopes?: Array<string>;
-    return_to?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthAuthorizeResponses, OauthAuthorizeErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'connection_id' },
-                { in: 'body', key: 'connection_id_prefix' },
-                { in: 'body', key: 'scopes' },
-                { in: 'body', key: 'return_to' }
-            ] }]);
-    return (options?.client ?? client).post<OauthAuthorizeResponses, OauthAuthorizeErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/authorize/{provider_path}',
-        ...options,
-        ...params,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-            ...params.headers
-        }
-    });
-};
-
-/**
- * OAuth redirect target (called by the provider, not by your code)
- *
- * Register this URL in the provider's developer console, one per provider. Call `GET /providers` for the exact strings this deployment uses -- they depend on the branch and on how the API is reached, so they are not hard-coded here. Authenticated by the single-use `state` parameter rather than the broker API key.
- */
-export const oauthCallback = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
+export const connectionsCallback = <ThrowOnError extends boolean = false>(parameters: {
+    provider_id: string;
     code?: string;
     state?: string;
     error?: string;
     error_description?: string;
     iss?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthCallbackResponses, OauthCallbackErrors, ThrowOnError> => {
+}, options?: Options<never, ThrowOnError>): RequestResult<ConnectionsCallbackResponses, ConnectionsCallbackErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'provider_path' },
+                { in: 'path', key: 'provider_id' },
                 { in: 'query', key: 'code' },
                 { in: 'query', key: 'state' },
                 { in: 'query', key: 'error' },
                 { in: 'query', key: 'error_description' },
                 { in: 'query', key: 'iss' }
             ] }]);
-    return (options?.client ?? client).get<OauthCallbackResponses, OauthCallbackErrors, ThrowOnError>({
-        url: '/oauth/callback/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * OAuth client metadata document for MCP authorization servers
- */
-export const oauthClientMetadataGet = <ThrowOnError extends boolean = false>(parameters: {
-    provider_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthClientMetadataGetResponses, unknown, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'provider_path' }] }]);
-    return (options?.client ?? client).get<OauthClientMetadataGetResponses, unknown, ThrowOnError>({
-        url: '/oauth/client-metadata/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * List known providers and whether credentials are configured
- *
- * Returns configured providers by default. Set `include_unconfigured=true` to include providers that cannot start a new authorization. Each `callback_url` is the exact string this deployment will send as `redirect_uri`; paste it into the provider's developer console verbatim.
- */
-export const oauthProvidersList = <ThrowOnError extends boolean = false>(parameters?: {
-    search?: string;
-    limit?: number;
-    source?: 'fixed' | 'dynamic';
-    include_unconfigured?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthProvidersListResponses, OauthProvidersListErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [
-                { in: 'query', key: 'search' },
-                { in: 'query', key: 'limit' },
-                { in: 'query', key: 'source' },
-                { in: 'query', key: 'include_unconfigured' }
-            ] }]);
-    return (options?.client ?? client).get<OauthProvidersListResponses, OauthProvidersListErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/providers',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * List connections
- *
- * Returns every stored connection. Pass `provider`, `connection_id_prefix`, or both to filter. Connection id prefixes respect `/` segment boundaries: `team/apple` matches itself and `team/apple/...`, but not `team/apples`.
- */
-export const oauthConnectionsList = <ThrowOnError extends boolean = false>(parameters?: {
-    provider?: string;
-    connection_id_prefix?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OauthConnectionsListResponses, OauthConnectionsListErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'query', key: 'provider' }, { in: 'query', key: 'connection_id_prefix' }] }]);
-    return (options?.client ?? client).get<OauthConnectionsListResponses, OauthConnectionsListErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/oauth/connections',
+    return (options?.client ?? client).get<ConnectionsCallbackResponses, ConnectionsCallbackErrors, ThrowOnError>({
+        url: '/connections/callback/{provider_id}',
         ...options,
         ...params
     });
@@ -441,79 +317,27 @@ export const secretsList = <ThrowOnError extends boolean = false>(parameters?: {
 };
 
 /**
- * Revoke and forget a stored connection
+ * Get a usable secret or start authorization
  *
- * Revokes upstream credentials when the provider implements revocation, then deletes the encrypted local record. If upstream revocation fails, the record is retained so the operation can be retried. Providers without revocation support are deleted locally.
+ * Returns the connection secret when ready. OAuth providers return `authorization_required` with a newly generated consent URL for scopes that have not been requested, or `scope_not_granted` when the provider declined a requested scope.
  */
-export const organizationOauthConnectionsDisconnect = <ThrowOnError extends boolean = false>(parameters: {
+export const organizationConnectionsAccess = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthConnectionsDisconnectResponses, OrganizationOauthConnectionsDisconnectErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).delete<OrganizationOauthConnectionsDisconnectResponses, OrganizationOauthConnectionsDisconnectErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/connections/{connection_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Get a connection by id
- */
-export const organizationOauthConnectionsGet = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthConnectionsGetResponses, OrganizationOauthConnectionsGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).get<OrganizationOauthConnectionsGetResponses, OrganizationOauthConnectionsGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/connections/{connection_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Get a currently-valid access token, refreshing if needed
- */
-export const organizationOauthTokensGet = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    connection_id: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthTokensGetResponses, OrganizationOauthTokensGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'connection_id' }] }]);
-    return (options?.client ?? client).get<OrganizationOauthTokensGetResponses, OrganizationOauthTokensGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/tokens/{connection_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Create a consent URL for a connection
- *
- * Returns the provider consent URL. Redirect the user there; the broker handles the callback and stores the tokens. Omit `connection_id` to have the broker mint one (`word-word-number`), optionally below `connection_id_prefix`. Each connection id is one provider link.
- */
-export const organizationOauthAuthorize = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    provider_path: string;
-    connection_id?: string;
-    connection_id_prefix?: string;
+    connection_path: string;
+    url?: string;
     scopes?: Array<string>;
     return_to?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthAuthorizeResponses, OrganizationOauthAuthorizeErrors, ThrowOnError> => {
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsAccessResponses, OrganizationConnectionsAccessErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'connection_id' },
-                { in: 'body', key: 'connection_id_prefix' },
+                { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'url' },
                 { in: 'body', key: 'scopes' },
                 { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).post<OrganizationOauthAuthorizeResponses, OrganizationOauthAuthorizeErrors, ThrowOnError>({
+    return (options?.client ?? client).post<OrganizationConnectionsAccessResponses, OrganizationConnectionsAccessErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/authorize/{provider_path}',
+        url: '/organization/{organization}/connections/access/{connection_path}',
         ...options,
         ...params,
         headers: {
@@ -525,50 +349,126 @@ export const organizationOauthAuthorize = <ThrowOnError extends boolean = false>
 };
 
 /**
- * List known providers and whether credentials are configured
+ * Start fresh authorization for a connection
  *
- * Returns configured providers by default. Set `include_unconfigured=true` to include providers that cannot start a new authorization. Each `callback_url` is the exact string this deployment will send as `redirect_uri`; paste it into the provider's developer console verbatim.
+ * Invalidates the current authorization attempt and returns `authorization_required` with a newly generated consent URL.
  */
-export const organizationOauthProvidersList = <ThrowOnError extends boolean = false>(parameters: {
+export const organizationConnectionsAuthorize = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
-    search?: string;
-    limit?: number;
-    source?: 'fixed' | 'dynamic';
-    include_unconfigured?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthProvidersListResponses, OrganizationOauthProvidersListErrors, ThrowOnError> => {
+    connection_path: string;
+    url?: string;
+    scopes?: Array<string>;
+    return_to?: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<unknown, OrganizationConnectionsAuthorizeErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
-                { in: 'query', key: 'search' },
-                { in: 'query', key: 'limit' },
-                { in: 'query', key: 'source' },
-                { in: 'query', key: 'include_unconfigured' }
+                { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'url' },
+                { in: 'body', key: 'scopes' },
+                { in: 'body', key: 'return_to' }
             ] }]);
-    return (options?.client ?? client).get<OrganizationOauthProvidersListResponses, OrganizationOauthProvidersListErrors, ThrowOnError>({
+    return (options?.client ?? client).post<unknown, OrganizationConnectionsAuthorizeErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/providers',
+        url: '/organization/{organization}/connections/authorize/{connection_path}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Set or rotate a connection secret
+ */
+export const organizationConnectionsSetSecret = <ThrowOnError extends boolean = false>(parameters: {
+    organization: string;
+    connection_path: string;
+    secret: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsSetSecretResponses, OrganizationConnectionsSetSecretErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [
+                { in: 'path', key: 'organization' },
+                { in: 'path', key: 'connection_path' },
+                { in: 'body', key: 'secret' }
+            ] }]);
+    return (options?.client ?? client).put<OrganizationConnectionsSetSecretResponses, OrganizationConnectionsSetSecretErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/organization/{organization}/connections/secret/{connection_path}',
+        ...options,
+        ...params,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options?.headers,
+            ...params.headers
+        }
+    });
+};
+
+/**
+ * Revoke and delete a connection
+ */
+export const organizationConnectionsDisconnect = <ThrowOnError extends boolean = false>(parameters: {
+    organization: string;
+    connection_path: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsDisconnectResponses, OrganizationConnectionsDisconnectErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'connection_path' }] }]);
+    return (options?.client ?? client).delete<OrganizationConnectionsDisconnectResponses, OrganizationConnectionsDisconnectErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/organization/{organization}/connections/entry/{connection_path}',
         ...options,
         ...params
     });
 };
 
 /**
- * List connections
- *
- * Returns every stored connection. Pass `provider`, `connection_id_prefix`, or both to filter. Connection id prefixes respect `/` segment boundaries: `team/apple` matches itself and `team/apple/...`, but not `team/apples`.
+ * Get connection metadata
  */
-export const organizationOauthConnectionsList = <ThrowOnError extends boolean = false>(parameters: {
+export const organizationConnectionsGet = <ThrowOnError extends boolean = false>(parameters: {
     organization: string;
-    provider?: string;
-    connection_id_prefix?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationOauthConnectionsListResponses, OrganizationOauthConnectionsListErrors, ThrowOnError> => {
+    connection_path: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsGetResponses, OrganizationConnectionsGetErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'connection_path' }] }]);
+    return (options?.client ?? client).get<OrganizationConnectionsGetResponses, OrganizationConnectionsGetErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/organization/{organization}/connections/entry/{connection_path}',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List trusted provider implementations
+ */
+export const organizationConnectionsProviders = <ThrowOnError extends boolean = false>(parameters: {
+    organization: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsProvidersResponses, OrganizationConnectionsProvidersErrors, ThrowOnError> => {
+    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }] }]);
+    return (options?.client ?? client).get<OrganizationConnectionsProvidersResponses, OrganizationConnectionsProvidersErrors, ThrowOnError>({
+        security: [{ scheme: 'bearer', type: 'http' }],
+        url: '/organization/{organization}/connections/providers',
+        ...options,
+        ...params
+    });
+};
+
+/**
+ * List connection metadata
+ */
+export const organizationConnectionsList = <ThrowOnError extends boolean = false>(parameters: {
+    organization: string;
+    namespace?: string;
+    provider_id?: string;
+}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationConnectionsListResponses, OrganizationConnectionsListErrors, ThrowOnError> => {
     const params = buildClientParams([parameters], [{ args: [
                 { in: 'path', key: 'organization' },
-                { in: 'query', key: 'provider' },
-                { in: 'query', key: 'connection_id_prefix' }
+                { in: 'query', key: 'namespace' },
+                { in: 'query', key: 'provider_id' }
             ] }]);
-    return (options?.client ?? client).get<OrganizationOauthConnectionsListResponses, OrganizationOauthConnectionsListErrors, ThrowOnError>({
+    return (options?.client ?? client).get<OrganizationConnectionsListResponses, OrganizationConnectionsListErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/oauth/connections',
+        url: '/organization/{organization}/connections',
         ...options,
         ...params
     });
@@ -647,145 +547,6 @@ export const organizationSecretsList = <ThrowOnError extends boolean = false>(pa
     return (options?.client ?? client).get<OrganizationSecretsListResponses, OrganizationSecretsListErrors, ThrowOnError>({
         security: [{ scheme: 'bearer', type: 'http' }],
         url: '/organization/{organization}/secrets',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Delete an unused dynamic provider
- *
- * Returns 409 while an OAuth connection references the provider. Disable it to block new authorizations while retaining refresh and revocation.
- */
-export const organizationAdminProvidersDelete = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    provider_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationAdminProvidersDeleteResponses, OrganizationAdminProvidersDeleteErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'provider_path' }] }]);
-    return (options?.client ?? client).delete<OrganizationAdminProvidersDeleteResponses, OrganizationAdminProvidersDeleteErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/admin/providers/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Get a provider configuration
- */
-export const organizationAdminProvidersGet = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    provider_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationAdminProvidersGetResponses, OrganizationAdminProvidersGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }, { in: 'path', key: 'provider_path' }] }]);
-    return (options?.client ?? client).get<OrganizationAdminProvidersGetResponses, OrganizationAdminProvidersGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/admin/providers/{provider_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Update a dynamic provider
- */
-export const organizationAdminProvidersPatch = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    provider_path: string;
-    template?: string;
-    label?: string | null;
-    configuration?: {
-        [key: string]: unknown;
-    };
-    credentials?: {
-        mode: 'inherit';
-    } | {
-        mode: 'custom';
-        client_id: string;
-        client_secret?: string;
-    } | {
-        mode: 'register';
-    };
-    enabled?: boolean;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationAdminProvidersPatchResponses, OrganizationAdminProvidersPatchErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'organization' },
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'template' },
-                { in: 'body', key: 'label' },
-                { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'credentials' },
-                { in: 'body', key: 'enabled' }
-            ] }]);
-    return (options?.client ?? client).patch<OrganizationAdminProvidersPatchResponses, OrganizationAdminProvidersPatchErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/admin/providers/{provider_path}',
-        ...options,
-        ...params,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-            ...params.headers
-        }
-    });
-};
-
-/**
- * Create or replace a dynamic provider
- *
- * Custom client secrets are encrypted and write-only. Inherited credentials use the complete credential pair from the fixed provider template.
- */
-export const organizationAdminProvidersPut = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-    provider_path: string;
-    template: string;
-    label?: string;
-    configuration?: {
-        [key: string]: unknown;
-    };
-    credentials: {
-        mode: 'inherit';
-    } | {
-        mode: 'custom';
-        client_id: string;
-        client_secret?: string;
-    } | {
-        mode: 'register';
-    };
-    enabled?: boolean;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationAdminProvidersPutResponses, OrganizationAdminProvidersPutErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [
-                { in: 'path', key: 'organization' },
-                { in: 'path', key: 'provider_path' },
-                { in: 'body', key: 'template' },
-                { in: 'body', key: 'label' },
-                { in: 'body', key: 'configuration' },
-                { in: 'body', key: 'credentials' },
-                { in: 'body', key: 'enabled' }
-            ] }]);
-    return (options?.client ?? client).put<OrganizationAdminProvidersPutResponses, OrganizationAdminProvidersPutErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/admin/providers/{provider_path}',
-        ...options,
-        ...params,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-            ...params.headers
-        }
-    });
-};
-
-/**
- * List fixed and dynamic providers
- */
-export const organizationAdminProvidersList = <ThrowOnError extends boolean = false>(parameters: {
-    organization: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<OrganizationAdminProvidersListResponses, OrganizationAdminProvidersListErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'organization' }] }]);
-    return (options?.client ?? client).get<OrganizationAdminProvidersListResponses, OrganizationAdminProvidersListErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/organization/{organization}/admin/providers',
         ...options,
         ...params
     });

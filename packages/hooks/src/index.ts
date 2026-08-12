@@ -34,17 +34,13 @@ export type HookfishHooks = ReturnType<typeof createHookfishHooks>
 export {
   createHookfishClient,
   normalizeApiBaseUrl,
-  type AuthorizeConnectionInput,
-  type AuthorizeConnectionResponse,
   type ConnectionResponse,
   type ConnectionsFilter,
   type ConnectionsResponse,
   type DisconnectConnectionResponse,
   type HookfishClient,
   type HookfishClientOptions,
-  type ProviderListQueryValue,
   type ProvidersResponse,
-  type ProvidersFilter,
   type StatsResponse,
 } from './client'
 export { HookfishApiError } from './errors'

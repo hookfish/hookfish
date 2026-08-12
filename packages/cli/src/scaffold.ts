@@ -123,6 +123,7 @@ const providerConfig = `providers: (env: typeof process.env) => ({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,
     }),
+    secret: createSecretProvider(),
   })`
 
 function pgliteConfig(): string {
@@ -135,6 +136,7 @@ import {
   createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
@@ -151,7 +153,6 @@ export default defineHookfishConfig({
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   organizationRouting: false,
-  providerManagement: true,
   ${providerConfig},
 })
 `
@@ -168,6 +169,7 @@ import {
   createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
@@ -194,7 +196,6 @@ export default defineHookfishConfig({
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   organizationRouting: false,
-  providerManagement: true,
   ${providerConfig},
 })
 `
@@ -255,6 +256,7 @@ import {
   createLinearProvider,
   createMcpProvider,
   createNotionProvider,
+  createSecretProvider,
 } from '@hookfish/providers'
 
 export { HookfishDurableObject }
@@ -270,7 +272,6 @@ const hookfish = await HookfishServer.init<Env>({
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   organizationRouting: false,
-  providerManagement: true,
   providers: (env) => ({
     github: createGitHubProvider({
       clientId: env.GITHUB_CLIENT_ID,
@@ -285,6 +286,7 @@ const hookfish = await HookfishServer.init<Env>({
       clientId: env.NOTION_CLIENT_ID,
       clientSecret: env.NOTION_CLIENT_SECRET,
     }),
+    secret: createSecretProvider(),
   }),
 })
 

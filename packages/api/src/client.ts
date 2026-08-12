@@ -2,13 +2,11 @@ import type { ExecutionContext } from 'hono'
 
 import { requireBrokerApiKey } from './oauth/config'
 
-const allowedMethods = ['GET', 'POST', 'DELETE'] as const
+const allowedMethods = ['GET', 'DELETE'] as const
 type AllowedMethod = (typeof allowedMethods)[number]
 
 export const browserApiPath = '/api/client'
 export const hookfishApiPath = '/api'
-
-const maxRequestBodyBytes = 65_536
 
 function parseMethod(method: string): AllowedMethod | undefined {
   const normalized = method.toUpperCase()
@@ -33,22 +31,17 @@ export function isAllowedClientRequest(
   if (normalizedMethod === 'GET') {
     return (
       decodedPathname === '/api/stats' ||
-      decodedPathname === '/api/oauth/providers' ||
-      decodedPathname === '/api/oauth/connections' ||
-      decodedPathname.startsWith('/api/oauth/connections/')
+      decodedPathname === '/api/connections/providers' ||
+      decodedPathname === '/api/connections' ||
+      decodedPathname.startsWith('/api/connections/entry/')
     )
   }
 
-  if (normalizedMethod === 'POST') {
-    return (
-      decodedPathname.startsWith('/api/oauth/authorize/') &&
-      decodedPathname.length > '/api/oauth/authorize/'.length
-    )
-  }
-
+  // Access and secret writes are server-only because successful responses
+  // contain credentials. The browser facade only exposes metadata and delete.
   return (
-    decodedPathname.startsWith('/api/oauth/connections/') &&
-    decodedPathname.length > '/api/oauth/connections/'.length
+    decodedPathname.startsWith('/api/connections/entry/') &&
+    decodedPathname.length > '/api/connections/entry/'.length
   )
 }
 
@@ -147,29 +140,12 @@ function preflightResponse(origin: string): Response {
     status: 204,
     headers: {
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, DELETE, OPTIONS',
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
   })
-}
-
-async function boundedRequestBody(
-  request: Request,
-): Promise<string | undefined> {
-  if (request.method !== 'POST') return undefined
-
-  const contentLength = request.headers.get('Content-Length')
-  if (contentLength && Number(contentLength) > maxRequestBodyBytes) {
-    throw new RangeError('Hookfish request body is too large')
-  }
-
-  const body = await request.text()
-  if (new TextEncoder().encode(body).byteLength > maxRequestBodyBytes) {
-    throw new RangeError('Hookfish request body is too large')
-  }
-  return body
 }
 
 /** Compose the raw API with the optional browser-safe `/api/client` facade. */
@@ -253,19 +229,6 @@ export function createHookfishBackend<Bindings extends object = object>(
         )
       }
 
-      let body: string | undefined
-      try {
-        body = await boundedRequestBody(request)
-      } catch (error) {
-        if (error instanceof RangeError) {
-          return addCorsHeaders(
-            jsonError(413, 'request_too_large', error.message),
-            origin,
-          )
-        }
-        throw error
-      }
-
       const brokerApiKey =
         typeof options.brokerApiKey === 'function'
           ? options.brokerApiKey(suppliedBindings)
@@ -277,10 +240,8 @@ export function createHookfishBackend<Bindings extends object = object>(
         Accept: 'application/json',
         Authorization: `Bearer ${brokerApiKey}`,
       })
-      if (body !== undefined) headers.set('Content-Type', 'application/json')
-
       const response = await options.hookfishFetch(
-        new Request(targetUrl, { method, headers, body }),
+        new Request(targetUrl, { method, headers }),
         suppliedBindings,
         executionContext,
       )

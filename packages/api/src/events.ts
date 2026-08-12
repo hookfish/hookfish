@@ -3,20 +3,18 @@ export type HookfishEvent = {
     | 'authorization.started'
     | 'authorization.connected'
     | 'authorization.failed'
-    | 'connection.token_retrieved'
+    | 'connection.secret_accessed'
+    | 'connection.secret_stored'
     | 'connection.disconnected'
     | 'broker_token.created'
     | 'broker_token.revoked'
-    | 'provider.created'
-    | 'provider.updated'
-    | 'provider.deleted'
     | 'secret.stored'
     | 'secret.retrieved'
     | 'secret.deleted'
   occurredAt: Date
   organization?: string
-  provider?: string
-  connectionId?: string
+  providerId?: string
+  connectionPath?: string
   tokenName?: string
   secretPath?: string
   errorCode?: string

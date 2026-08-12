@@ -82,14 +82,13 @@ Implement `refreshToken` when the provider issues refresh tokens. Implement
 capabilities in provider discovery and invokes them at the appropriate point in
 the connection lifecycle.
 
-Implement `isConfigured` when provider availability depends on credentials.
-Return `false` instead of failing the complete provider listing.
+Implement `isConfigured` when provider availability depends on deployment
+credentials. Register the instance under a trusted provider ID in
+`hookfish.config.ts`.
 
-## Make a reusable template
-
-Implement `OAuthProviderTemplate` when operators should create dynamic
-instances. A template can validate non-secret configuration, replace
-credentials, and optionally register OAuth clients.
+`OAuthProviderTemplate` is reserved for trusted implementations such as `mcp`
+that need connection-owned configuration. It does not create a public template
+or runtime provider-management API.
 
 <Tip>
   Validate every upstream JSON response before returning it. Throw
