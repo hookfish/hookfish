@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { proxyBackendRequest } from '../src/serve'
+import { proxyBackendRequest, resolveBackendUrl } from '../src/serve'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -55,5 +55,30 @@ describe('proxyBackendRequest', () => {
     expect(response.headers.get('content-length')).toBeNull()
     expect(response.headers.get('content-type')).toBe('application/json')
     await expect(response.json()).resolves.toEqual({ connections: [] })
+  })
+})
+
+describe('resolveBackendUrl', () => {
+  it('requires an explicitly configured backend URL', () => {
+    expect(() => resolveBackendUrl(undefined, {})).toThrow(
+      '--backend-url or HOOKFISH_BACKEND_URL is required',
+    )
+  })
+
+  it('accepts the CLI option or environment variable', () => {
+    expect(resolveBackendUrl('http://localhost:8787', {})).toBe(
+      'http://localhost:8787',
+    )
+    expect(
+      resolveBackendUrl(undefined, {
+        HOOKFISH_BACKEND_URL: 'https://hookfish.example.com',
+      }),
+    ).toBe('https://hookfish.example.com')
+  })
+
+  it('rejects non-HTTP backend URLs', () => {
+    expect(() => resolveBackendUrl('file:///tmp/hookfish', {})).toThrow(
+      '--backend-url must use http or https',
+    )
   })
 })

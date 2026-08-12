@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -53,15 +54,11 @@ describe('scaffoldProject', () => {
       backend,
       parentDirectory,
     })
-    const manifest = JSON.parse(
-      readFileSync(
-        path.join(result.directory, 'hookfish.project.json'),
-        'utf8',
-      ),
-    )
     const packageJson = packageFile(result.directory)
 
-    expect(manifest).toEqual({ backend, backendPort: 8787 })
+    expect(
+      existsSync(path.join(result.directory, 'hookfish.project.json')),
+    ).toBe(false)
     expect(packageJson.scripts.dev).toContain('npm:dev:server')
     expect(packageJson.scripts.dev).toContain('hookfish serve --backend-url')
     expect(packageJson.scripts['dev:server']).toBeTruthy()

@@ -27,7 +27,6 @@ cp apps/frontend/.env.example apps/frontend/.env
 # Fill OAUTH_ENCRYPTION_KEY, BROKER_API_KEY, and provider credentials.
 
 pnpm dev
-# Equivalent: pnpm exec hookfish dev --backend hono-node
 # Frontend: http://127.0.0.1:5173
 # Backend:  http://127.0.0.1:8787
 
@@ -67,13 +66,17 @@ packaged server directly at `http://localhost:3000`. It mounts the raw API at
 unset or empty. Use `INSPECTOR_PORT` to choose another port. In Conductor, the
 CLI uses the third allocated workspace port automatically.
 
-`hookfish dev` delegates to `turbo dev` filtered to the frontend and the selected
-backend. Choose `hono-node` (the default), `express`, `nextjs`, or
-`cloudflare-worker` with `--backend`. The Vite server proxies `/api` to that
-backend. The default Hono backend stores PGlite data in
+The repository's `pnpm dev` script delegates to `turbo dev` filtered to the
+frontend and the selected backend. Choose `hono-node` (the default), `express`,
+`nextjs`, or `cloudflare-worker` with `--backend`. The Vite server proxies
+`/api` to that backend. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
 it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
-and the next allocated port for the backend. `hookfish serve` remains an alias.
+and the next allocated port for the backend.
+
+Outside this repository, `hookfish dev` and its `hookfish serve` alias serve the
+packaged dashboard and proxy `/api` to a backend. An explicit backend is
+required through `--backend-url` or `HOOKFISH_BACKEND_URL`.
 
 ## Pointing the SPA at another backend
 
