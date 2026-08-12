@@ -1,1 +1,1 @@
-examples/cloudflare-worker/worker-configuration.d.ts whitespace=-blank-at-eol
+examples/backends/cloudflare-worker/worker-configuration.d.ts whitespace=-blank-at-eol

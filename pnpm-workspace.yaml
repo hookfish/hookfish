@@ -1,5 +1,5 @@
 packages:
   - apps/*
-  - examples/*
+  - examples/backends/*
   - packages/*
   - packages/providers/*

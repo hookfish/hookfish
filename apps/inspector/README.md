@@ -33,7 +33,9 @@ uses the third allocated workspace port automatically.
 
 The published CLI bundles the production app, so it does not require a
 Hookfish checkout or pnpm workspace. It stores PGlite data in
-`~/.hookfish/inspector` unless `PGLITE_DATA_DIR` is set.
+`~/.hookfish/inspector` unless `PGLITE_DATA_DIR` is set. When running the app
+workspace directly, its local `hookfish.config.ts` defaults to `pgdata` beside
+the config file.
 
 The inspector supports Streamable HTTP with HTTP + SSE fallback, and displays
 tools, resources, resource templates, prompts, server metadata, and raw results.

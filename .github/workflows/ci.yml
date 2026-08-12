@@ -32,7 +32,7 @@ jobs:
         with:
           path: |
             .turbo/cache
-            examples/nextjs/.next/cache
+            examples/backends/nextjs/.next/cache
           key: ${{ runner.os }}-build-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-build-${{ hashFiles('pnpm-lock.yaml') }}-

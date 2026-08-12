@@ -1,7 +1,5 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { defineHookfishConfig } from '@hookfish/api'
-import { pglite } from '@hookfish/database/pglite'
+import { durableObjects } from '@hookfish/database/durable-object'
 import {
   createGitHubProvider,
   createLinearProvider,
@@ -11,12 +9,8 @@ import {
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
-const configDirectory =
-  typeof import.meta.url === 'string'
-    ? path.dirname(fileURLToPath(import.meta.url))
-    : process.cwd()
-const db = pglite(
-  process.env.PGLITE_DATA_DIR ?? path.join(configDirectory, 'pgdata'),
+const db = durableObjects<Env>((bindings, context) =>
+  bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
 )
 
 // To use Postgres instead:
@@ -30,9 +24,7 @@ const db = pglite(
 //   { cache: false, fetchTypes: false, max: 5, prepare: true },
 // )
 // const hookfish = await Hookfish.init({ ...config, db: cloudflareDb })
-// For SQLite-backed Durable Objects instead, see examples/cloudflare-worker.
-
-export default defineHookfishConfig({
+export default defineHookfishConfig<Env>({
   db,
   includeClient: true,
   includeSwagger: true,
@@ -59,7 +51,7 @@ export default defineHookfishConfig({
   // Hookfish passes custom query and result fields through unchanged, so the
   // registry may instead use cursors or return every provider. See
   // docs/SMITHERY.md for a complete global-registry, org-connections example.
-  providers: (env: typeof process.env) => ({
+  providers: (env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({
       clientId: env.GITHUB_CLIENT_ID,

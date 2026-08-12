@@ -56,14 +56,14 @@ Each host initializes Hookfish and mounts its Fetch-compatible handler directly:
 | `pnpm --filter @hookfish/example-hono-node dev` | standalone Hono backend | `pgdata` |
 | `pnpm --filter @hookfish/example-cloudflare-worker dev` | Cloudflare Worker backend | SQLite Durable Objects |
 
-Set `PGLITE_DATA_DIR` to move the embedded Node database. Providers, browser
-policy, and documentation visibility live in the root `hookfish.config.ts`.
-Node examples use its default database unchanged; the Worker replaces `db`
-with its tenant-aware Durable Object binding.
+Set `PGLITE_DATA_DIR` to move an embedded Node database. Each backend example
+owns its database, providers, browser policy, and documentation visibility in
+its local `hookfish.config.ts`. The Worker config uses its tenant-aware Durable
+Object binding.
 
 ### Configuring Hookfish
 
-The root config owns the default database, providers, and browser policy. A
+The project config owns the default database, providers, and browser policy. A
 database may be a Hookfish `Database`, a promise, or a request-aware binding:
 
 ```ts
@@ -594,7 +594,7 @@ The frontend exposes the same options through **Add provider**.
 ## Adding a provider
 
 Provider slugs belong to the application, not to provider classes. Add the
-providers you want in the root `hookfish.config.ts`:
+providers you want in the project's `hookfish.config.ts`:
 
 ```sh
 pnpm add @hookfish/api @hookfish/database @hookfish/provider \

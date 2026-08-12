@@ -17,6 +17,7 @@
   "dependencies": {
     "@hookfish/api": "workspace:*",
     "@hookfish/database": "workspace:*",
+    "@hookfish/providers": "workspace:*",
     "@modelcontextprotocol/client": "^2.0.0",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",

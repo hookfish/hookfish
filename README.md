@@ -10,9 +10,9 @@ backend runtimes:
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
 - `packages/database` — PGlite, Postgres, and Durable Object adapters
 - `packages/provider` and `packages/providers/*` — provider contracts and implementations
-- `examples/hono-node` — default Node backend using PGlite
-- `examples/express` and `examples/nextjs` — alternative Node hosts
-- `examples/cloudflare-worker` — Worker backend using SQLite Durable Objects
+- `examples/backends/hono-node` — default Node backend using PGlite
+- `examples/backends/express` and `examples/backends/nextjs` — alternative Node hosts
+- `examples/backends/cloudflare-worker` — Worker backend using SQLite Durable Objects
 
 The frontend contains no server functions or database code. Every host exposes:
 
@@ -113,15 +113,15 @@ pnpm --filter @hookfish/example-nextjs dev
 pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
-The root `hookfish.config.ts` owns the default PGlite database, providers,
-browser policy, and documentation visibility. Node examples use it unchanged;
-the Worker spreads the same config and replaces only `db` with its Durable
-Object binding.
+Each backend example owns its `hookfish.config.ts`, including its database,
+providers, browser policy, and documentation visibility. The Node examples
+store PGlite data in a local `pgdata` directory; the Worker config uses its
+Durable Object binding.
 
 ## Cloudflare Worker backend
 
 The example already declares a SQLite-backed `HookfishDurableObject` namespace
-in `examples/cloudflare-worker/wrangler.jsonc`. Log in and generate its runtime
+in `examples/backends/cloudflare-worker/wrangler.jsonc`. Log in and generate its runtime
 types:
 
 ```sh
