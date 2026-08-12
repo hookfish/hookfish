@@ -3,30 +3,30 @@
 A registry product has two different kinds of data:
 
 - A global catalog of MCP servers that users can discover.
-- OAuth connections and secrets that belong to one organization.
+- Connections and encrypted credentials that belong to one organization.
 
-Keep those concerns separate. The application owns the catalog, users, and
-organization membership. Hookfish owns OAuth, encrypted credentials, token
-refresh, callbacks, and organization-scoped persistence.
+Keep the catalog in the application. Hookfish owns connection state, OAuth
+callbacks, encrypted credentials, refresh, revocation, and organization-scoped
+persistence.
 
 ```text
 Application
-  Global server catalog
+  Global MCP catalog
   Users and organization membership
   Search, ranking, publishing, and moderation
-  Browser routes and authorization
+  Authenticated browser routes
 
 Hookfish
-  Provider resolution
+  Trusted mcp provider implementation
+  Per-connection MCP URL and scopes
   OAuth state and callbacks
-  Organization provider installations
-  Organization connections and secrets
-  Token encryption, refresh, and revocation
+  Encrypted credentials and client registration
+  Organization routing and broker authorization
 ```
 
 ## Data model
 
-A small catalog table is enough to start:
+A catalog table can stay application-specific:
 
 ```ts
 type CatalogServer = {
@@ -38,210 +38,189 @@ type CatalogServer = {
 }
 ```
 
-Catalog entries do not contain user tokens. A Hookfish connection references
-the stable catalog ID and stores its organization separately:
+Catalog entries never contain user tokens. A dynamic MCP connection uses a path
+whose final segment is the trusted `mcp` provider:
 
-```ts
-{
-  organization: 'acme',
-  provider: 'notion',
-  connectionId: 'acme/notion/finance'
-}
+```text
+catalog/notion/mcp
+└── namespace ─┘ └ provider ID
 ```
 
-Treat catalog IDs as immutable. Hide disabled servers from listings and block
-new connections in the application, but keep them resolvable until existing
-connections no longer need their configuration for refresh or revocation.
+With organization routing, Hookfish stores the identity as:
 
-## Configure a lazy global registry
+```text
+(organization, namespace, providerId)
+('acme', 'catalog/notion', 'mcp')
+```
 
-Hookfish should not load the entire catalog during every OAuth operation.
-Configure a provider source so authorization, callback, refresh, and revocation
-resolve only one provider by ID:
+The organization is not embedded in the connection path. Treat catalog IDs as
+stable path segments. Hide disabled entries from discovery and block new
+connections in the application.
+
+## Configure Hookfish once
+
+Register one trusted `mcp` implementation shared by all dynamic catalog
+entries:
 
 ```ts
-import {
-  defineHookfishConfig,
-  createProviderSource,
-} from '@hookfish/api'
+import { defineHookfishConfig } from '@hookfish/api'
 import { pglite } from '@hookfish/database/pglite'
-import { createMcpProvider } from '@hookfish/provider-mcp'
+import { createMcpProvider } from '@hookfish/providers'
 
-type Env = {
-  REGISTRY: {
-    get(id: string): Promise<CatalogServer | undefined>
-    list(input: {
-      search?: string
-      limit?: number
-      offset?: number
-    }): Promise<{ items: CatalogServer[]; total: number }>
-  }
-}
-
-function providerFor(server: CatalogServer) {
-  return createMcpProvider({
-    resourceUrl: server.resourceUrl,
-    scopes: server.scopes,
-  })
-}
-
-export default defineHookfishConfig<Env>({
+export default defineHookfishConfig({
   db: pglite('./pgdata'),
   organizationRouting: true,
-  providerManagement: true,
-  providers: createProviderSource<Env>({
-    async getProvider(id, env) {
-      const server = await env.REGISTRY.get(id)
-      return server ? providerFor(server) : undefined
-    },
-
-    async listProviders(query, env) {
-      const search = query.get('search') ?? undefined
-      const limit = Number(query.get('limit') ?? 50)
-      const offset = Number(query.get('offset') ?? 0)
-      const page = await env.REGISTRY.list({ search, limit, offset })
-
-      return {
-        providers: page.items.map((server) => ({
-          id: server.id,
-          provider: providerFor(server),
-        })),
-        total: page.total,
-        limit,
-        offset,
-      }
-    },
-  }),
+  providers: {
+    mcp: createMcpProvider(),
+  },
 })
 ```
 
-`listProviders` is optional and flexible. A registry may:
+There is no provider-management flag, runtime provider record, template in the
+request body, or `/admin/providers` setup step. The first access stores the
+catalog server's normalized URL and scopes on that connection. Reusing the same
+path with different configuration returns
+`409 connection_configuration_conflict`.
 
-- Ignore the query and return every provider.
-- Accept `limit` and `offset`.
-- Accept a cursor and return `next_cursor`.
-- Add search, category, sort, or other query parameters.
+Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers up
+to 128 characters. Catalog IDs are namespace segments, so they do not need to
+become provider IDs.
 
-Only the `providers` array has a fixed meaning. Hookfish passes other response
-fields through to the caller. Normal OAuth operations use `getProvider` and do
-not invoke the listing callback.
+## Connect from an authenticated application route
 
-## Keep connections organization-scoped
-
-The application should expose its own authenticated browser endpoint. It
-validates membership and then makes a server-to-server Hookfish request:
+Authenticate the user, verify organization membership, and look up the catalog
+entry before calling Hookfish:
 
 ```ts
-app.post('/organizations/:organization/servers/:server/connect', async (c) => {
-  const user = await requireUser(c)
-  const { organization, server } = c.req.param()
+import { Hookfish, HookfishError } from '@hookfish/sdk'
+
+app.onError((error, ctx) => {
+  if (
+    error instanceof HookfishError &&
+    error.code === 'authorization_required'
+  ) {
+    return ctx.json(
+      {
+        error: error.code,
+        authorize_url: error.authorizeUrl,
+        expires_at: error.expiresAt,
+      },
+      401,
+    )
+  }
+  console.error(error)
+  return ctx.json({ error: 'Internal server error' }, 500)
+})
+
+app.post('/organizations/:organization/servers/:server/connect', async (ctx) => {
+  const user = await requireUser(ctx)
+  const { organization, server } = ctx.req.param()
 
   await requireOrganizationMembership(user.id, organization)
   const catalogServer = await registry.get(server)
   if (!catalogServer || catalogServer.status !== 'published') {
-    return c.json({ error: 'Server not found' }, 404)
+    return ctx.json({ error: 'Server not found' }, 404)
   }
 
-  const response = await fetch(
-    `${HOOKFISH_URL}/api/organization/${encodeURIComponent(organization)}` +
-      `/oauth/authorize/${encodeURIComponent(server)}`,
+  const hookfish = new Hookfish({
+    apiKey: await hookfishTokenFor(organization, server),
+    baseUrl: `${HOOKFISH_URL}/api`,
+    organization,
+  })
+  const connection = await hookfish.connections.access(
+    `catalog/${catalogServer.id}/mcp`,
     {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${await hookfishTokenFor(organization, server)}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        connection_id_prefix: `${organization}/${server}`,
-        return_to:
-          `${APP_URL}/organizations/${organization}/connections`,
-      }),
+      url: catalogServer.resourceUrl,
+      scopes: catalogServer.scopes,
+      returnTo: `${APP_URL}/organizations/${organization}/connections`,
     },
   )
 
-  return c.json(await response.json(), response.status)
+  return ctx.json({ connected: true, path: connection.path })
 })
 ```
 
-The browser navigates to the returned `authorize_url`. Hookfish carries the
-organization in authenticated OAuth state, receives the global callback, and
-selects the same organization partition before storing the connection.
+An unready connection throws Hookfish's direct `authorization_required` error
+with a newly generated authorization URL. The route-level error handler returns
+that URL to the browser. A ready connection returns its secret to trusted server
+code; the route returns metadata instead of exposing the secret.
 
-List connections through the same application boundary:
+## Call the MCP server
+
+Use the same catalog lookup and connection path when creating the MCP
+transport:
 
 ```ts
-app.get('/organizations/:organization/connections', async (c) => {
-  const user = await requireUser(c)
-  const { organization } = c.req.param()
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
-  await requireOrganizationMembership(user.id, organization)
-
-  const response = await fetch(
-    `${HOOKFISH_URL}/api/organization/${encodeURIComponent(organization)}` +
-      '/oauth/connections',
+const mcpUrl = new URL(catalogServer.resourceUrl)
+const transport = new StreamableHTTPClientTransport(mcpUrl, {
+  authProvider: hookfish.connections.mcpAuthProvider(
+    `catalog/${catalogServer.id}/mcp`,
     {
-      headers: {
-        Authorization: `Bearer ${await hookfishTokenFor(organization)}`,
-      },
+      url: mcpUrl.href,
+      scopes: catalogServer.scopes,
+      returnTo: `${APP_URL}/organizations/${organization}/connections`,
     },
-  )
-
-  return c.json(await response.json(), response.status)
+  ),
 })
 ```
 
-Do not expose the root `HOOKFISH_API_KEY` to the browser. Use a server-held root
-credential or mint scoped Hookfish credentials. A scoped credential that uses
-a global provider currently needs access to both the organization namespace
-and provider ID, for example `['acme/**', 'notion']`.
+`mcpAuthProvider()` gets a usable token before an MCP request. When the upstream
+server rejects that token, it asks Hookfish to start fresh authorization and
+lets the resulting `HookfishError` bubble to the application error handler.
 
-## Shared versus organization-specific OAuth clients
+Hookfish discovers the authorization server and then chooses client identity in
+this order:
 
-For a shared platform OAuth client, return the catalog provider directly from
-`getProvider`. Every organization uses the same OAuth application, while each
-connection remains organization-scoped.
+1. Deployment-configured MCP client credentials.
+2. The deployment-level HTTPS Client ID Metadata Document when supported.
+3. Dynamic Client Registration as a compatibility fallback.
 
-If every organization needs its own OAuth client or dynamic client
-registration, keep the catalog metadata global but create an organization
-provider installation first:
+DCR client credentials are encrypted and stored on the individual connection;
+they are not reusable provider records.
 
-```ts
-const providerId = `${organization}/${server.id}`
+## Avoid path collisions
 
-await fetch(
-  `${HOOKFISH_URL}/api/organization/${organization}` +
-    `/admin/providers/${providerId}`,
-  {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${organizationToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      template: 'mcp',
-      label: server.name,
-      configuration: {
-        resource_url: server.resourceUrl,
-        scopes: server.scopes,
-      },
-      credentials: { mode: 'register' },
-    }),
-  },
-)
+The final segment always determines the provider. A fixed Notion provider and a
+dynamic Notion catalog entry therefore use different paths:
+
+```text
+user/personal/notion       provider ID: notion
+user/personal/notion/mcp   provider ID: mcp
 ```
 
-Authorize against `acme/notion` instead of the global `notion` entry. Hookfish
-then keeps the provider credentials and connections inside Acme's partition.
+In the second path, `notion` is an ordinary folder in the namespace. Folder
+names may match provider IDs because their position makes the identity
+unambiguous.
+
+## Scope broker credentials
+
+Do not expose `HOOKFISH_API_KEY` to the browser. Mint an expiring token for the
+connection or catalog subtree:
+
+```json
+{
+  "name": "acme-catalog-worker",
+  "scopes": ["catalog/**"],
+  "expires_in": 3600
+}
+```
+
+Broker resource scopes apply to connection paths. Organization routing selects
+the storage context separately; it does not add the organization to a resource
+scope. The application must ensure that a token intended for Acme is used only
+after Acme membership has been verified.
 
 ## Database partitioning
 
-A shared Postgres database can use Hookfish's organization columns. On
-Cloudflare, map each organization to a Durable Object and reserve one global
-object for broker credentials:
+A shared Postgres database stores the organization as a row key. On Cloudflare,
+map each organization to a Durable Object and reserve a global object for
+broker-token authentication:
 
 ```ts
-const db = durableObjects<Env>((env, context) =>
-  env.HOOKFISH_DB.getByName(
+const db = durableObjects<Env>((bindings, context) =>
+  bindings.HOOKFISH_DB.getByName(
     context.organization
       ? `organization:${context.organization}`
       : '__global__',
@@ -249,26 +228,33 @@ const db = durableObjects<Env>((env, context) =>
 )
 ```
 
-The global partition is part of the control plane. Organization partitions
-hold OAuth state, connections, dynamic providers, and secrets.
+Callbacks recover the organization from authenticated OAuth state before
+selecting the organization database. The callback and deployment client
+metadata URLs remain global:
+
+```text
+/api/connections/callback/mcp
+/api/connections/client-metadata.json
+```
+
+## Large trusted provider catalogs
+
+`createProviderSource()` remains available when the catalog itself contains
+many trusted OAuth provider implementations. It lazily resolves provider code
+by provider ID. It is not needed for a catalog of arbitrary remote MCP servers:
+use the single `mcp` provider and connection-local configuration for that case.
 
 ## Frontend organization views
 
-The bundled Hookfish dashboard does not currently have an organization picker
-or organization route. It always calls the global `/api/client/oauth/...`,
-`/api/admin/providers`, and `/api/secrets` endpoints. Enabling
-`organizationRouting` therefore does not make `/connections/acme` an
-organization view; that path is interpreted as a connection folder.
-
-A Smithery-style product should use an application route such as:
+The bundled dashboard does not select an organization context. A
+Smithery-style product should expose an application route such as:
 
 ```text
 /organizations/acme/connections
 ```
 
-That page should call the application's authenticated endpoint shown above.
-The application verifies membership and calls Hookfish's organization route
-server-to-server. Supporting organizations directly in the bundled dashboard
-would require organization-aware frontend routes and query keys, organization
-paths in the management client, and browser-facade support for allowlisted
-`/api/organization/:organization/oauth/...` operations.
+That page calls the application's authenticated endpoint. The application
+verifies membership and uses an organization-configured `Hookfish` SDK client
+server-side. Supporting organization selection directly in the bundled
+dashboard would require organization-aware frontend routes, query keys, and
+browser-facade authorization.

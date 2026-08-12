@@ -253,6 +253,15 @@ const javascriptReservedProviderIds = new Set([
   'yield',
 ])
 
+/** Whether a provider ID is a slash-free, non-reserved JavaScript identifier. */
+export function isValidProviderId(providerId: string): boolean {
+  return (
+    providerId.length <= 128 &&
+    /^[a-z][A-Za-z0-9]*$/.test(providerId) &&
+    !javascriptReservedProviderIds.has(providerId)
+  )
+}
+
 export class ProviderRegistry {
   private readonly providers = new Map<string, ConnectionProvider>()
 
@@ -262,11 +271,7 @@ export class ProviderRegistry {
 
   register(providers: Record<string, ConnectionProvider>): void {
     for (const [slug, provider] of Object.entries(providers)) {
-      if (
-        slug.length > 128 ||
-        !/^[a-z][A-Za-z0-9]*$/.test(slug) ||
-        javascriptReservedProviderIds.has(slug)
-      ) {
+      if (!isValidProviderId(slug)) {
         throw new Error(
           `Invalid provider id "${slug}". Use a non-reserved lower-camel JavaScript identifier up to 128 characters.`,
         )

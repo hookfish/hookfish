@@ -621,6 +621,15 @@ export type AccessConnectionResult = {
   refreshed: boolean
 }
 
+function includesRequestedScopes(
+  grantedScopes: readonly string[],
+  requestedScopes: readonly string[] | undefined,
+): boolean {
+  if (!requestedScopes) return true
+  const granted = new Set(grantedScopes)
+  return requestedScopes.every((scope) => granted.has(scope))
+}
+
 export async function accessConnection(
   db: Database,
   env: object,
@@ -676,7 +685,11 @@ export async function accessConnection(
     }
   }
 
-  if (!connection.secret || isExpired(connection)) {
+  if (
+    !connection.secret ||
+    isExpired(connection) ||
+    !includesRequestedScopes(connection.scopes, input.scopes)
+  ) {
     const authorization = await startAuthorization(
       db,
       env,
