@@ -134,9 +134,8 @@ pnpm cf-typecheck
 
 Wrangler persists local Durable Object state automatically. Each object applies
 the bundled SQLite schema lazily when it first starts, so there is no separate
-database URL or migration command for the Worker backend. Organization routing
-uses one named object per organization; global routes use a reserved global
-object.
+database URL or migration command for the Worker backend. The example uses one
+named object for the broker database.
 
 Store production credentials as Worker secrets and deploy:
 
@@ -167,12 +166,11 @@ to the selected backend. Before exposing the dashboard in production, pass an
 `authorizeBrowserRequest` runtime option to `HookfishServer.init` and enforce the
 application's session/authentication policy.
 
-The bundled dashboard currently shows global routes only. It has no
-organization selector, and `/connections/acme` means the `acme` resource
-folder rather than the `acme` organization. An organization-aware product
+The bundled dashboard shows the broker's resource tree. A multi-tenant product
 should expose its own authenticated route, such as
-`/organizations/acme/connections`, and call Hookfish's organization API from
-its server. See [docs/SMITHERY.md](docs/SMITHERY.md#frontend-organization-views).
+`/organizations/acme/connections`, verify membership, and call Hookfish from
+its server with an `organizations/acme/**` scoped broker token. See
+[docs/SMITHERY.md](docs/SMITHERY.md#frontend-organization-views).
 
 ## Frontend hooks
 
@@ -196,7 +194,7 @@ The facade only forwards stats, provider metadata, connection metadata, and
 disconnects. Authorization starts, credential retrieval and writes,
 secret-vault operations, and administration remain server-only. More detail is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
-catalog with organization-scoped connections, see
+catalog with tenant-prefixed connections, see
 [docs/SMITHERY.md](docs/SMITHERY.md).
 
 ## Commands

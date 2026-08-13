@@ -79,7 +79,7 @@ const applicationRoutes = app
 
     const response = await hookfishClient.connections.$get({
       query: {
-        namespace: `organization/${user.organizationId}`,
+        namespace: `organizations/${user.organizationId}`,
       },
     })
 

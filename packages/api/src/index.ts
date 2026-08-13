@@ -17,7 +17,6 @@ import { type DatabaseInput, migrateDatabase } from './db/binding'
 import type { HookfishEventHandler } from './events'
 import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config'
 import type { BrokerContext } from './oauth/middleware'
-import { ORGANIZATION_PATTERN } from './oauth/organization'
 import {
   type BoundProviderSource,
   createProviderResolver,
@@ -47,8 +46,6 @@ export type HookfishConfig<Bindings extends object = object> = {
   returnTo?: string
   /** Origins allowed by the per-authorization `return_to` option. */
   trustedOrigins?: readonly string[]
-  /** Add `/organization/:organization` connection and vault routes. Callbacks remain global. @default false */
-  organizationRouting?: boolean
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
 }
@@ -86,10 +83,9 @@ function createApiRoutes<Bindings extends object>(
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
-    'returnTo' | 'trustedOrigins' | 'organizationRouting' | 'onEvent'
+    'returnTo' | 'trustedOrigins' | 'onEvent'
   >,
   includeSwagger = true,
-  includeAllOpenApiRoutes = false,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -109,63 +105,6 @@ function createApiRoutes<Bindings extends object>(
       },
       servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
     })
-
-    for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
-      if (!pathname.startsWith('/organization/{organization}/')) continue
-      for (const operation of Object.values(pathItem)) {
-        if (
-          operation &&
-          typeof operation === 'object' &&
-          'operationId' in operation &&
-          typeof operation.operationId === 'string'
-        ) {
-          operation.operationId = `organization.${operation.operationId}`
-        }
-      }
-    }
-
-    // Callbacks and CIMD stay global when management is organization-routed.
-    if (options.organizationRouting) {
-      for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
-        const isGlobalManagementRoute =
-          pathname.startsWith('/connections/') &&
-          pathname !== '/connections/callback/{provider_id}' &&
-          pathname !== '/connections/client-metadata.json'
-        const isOrganizationCallback =
-          pathname ===
-          '/organization/{organization}/connections/callback/{provider_id}'
-        const isOrganizationClientMetadata =
-          pathname ===
-          '/organization/{organization}/connections/client-metadata.json'
-
-        if (
-          isOrganizationCallback ||
-          isOrganizationClientMetadata ||
-          (!includeAllOpenApiRoutes && isGlobalManagementRoute)
-        ) {
-          delete document.paths?.[pathname]
-          continue
-        }
-
-        if (pathname.startsWith('/organization/{organization}/')) {
-          pathItem.parameters = [
-            ...(pathItem.parameters ?? []),
-            {
-              name: 'organization',
-              in: 'path',
-              required: true,
-              description: 'Organization namespace for Hookfish resources.',
-              schema: {
-                type: 'string',
-                pattern: ORGANIZATION_PATTERN.source,
-                minLength: 1,
-                maxLength: 128,
-              },
-            },
-          ]
-        }
-      }
-    }
 
     if (!includeSwagger) {
       const operationMethods = [
@@ -210,7 +149,6 @@ function createApiRoutes<Bindings extends object>(
       '/connections',
       createConnectionRoutes(resolveProviders, database, {
         ...options,
-        routeMode: 'global',
       }),
     )
     .use('/secrets', cors())
@@ -219,37 +157,14 @@ function createApiRoutes<Bindings extends object>(
       '/',
       createSecretRoutes(database, {
         ...options,
-        routeMode: 'global',
       }),
     )
-
-  if (options.organizationRouting) {
-    api.use('/organization/:organization/connections/*', cors()).route(
-      '/organization/:organization/connections',
-      createConnectionRoutes(resolveProviders, database, {
-        ...options,
-        routeMode: 'organization',
-      }),
-    )
-    api
-      .use('/organization/:organization/secrets', cors())
-      .use('/organization/:organization/secrets/*', cors())
-      .route(
-        '/organization/:organization',
-        createSecretRoutes(database, {
-          ...options,
-          routeMode: 'organization',
-        }),
-      )
-  }
 
   return api
 }
 
 /**
  * Build the complete server contract used to generate the first-party SDK.
- * Unlike a deployment's `/api/openapi.json`, this includes both global and
- * organization-prefixed operations.
  */
 export async function createHookfishOpenAPIDocument(): Promise<unknown> {
   const unavailableDatabase: DatabaseInput<object> = {
@@ -260,15 +175,7 @@ export async function createHookfishOpenAPIDocument(): Promise<unknown> {
   const unavailableProviders = async (): Promise<BoundProviderSource> => {
     throw new Error('The OpenAPI document does not resolve providers.')
   }
-  const api = createApiRoutes(
-    unavailableProviders,
-    unavailableDatabase,
-    {
-      organizationRouting: true,
-    },
-    true,
-    true,
-  )
+  const api = createApiRoutes(unavailableProviders, unavailableDatabase, {})
   const response = await api.request('/openapi.json')
   if (!response.ok) {
     throw new Error(`Failed to create Hookfish OpenAPI: ${response.status}`)
@@ -398,7 +305,6 @@ export {
 export { z } from 'zod'
 export {
   type DatabaseBinding,
-  type DatabaseContext,
   type DatabaseInput,
   defineDatabase,
   migrateDatabase,

@@ -79,7 +79,7 @@ export async function GET(request: Request) {
 
   return hookfish.connections.$get({
     query: {
-      namespace: `organization/${session.organizationId}`,
+      namespace: `organizations/${session.organizationId}`,
     },
   })
 }

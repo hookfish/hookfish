@@ -10,8 +10,8 @@ import {
 
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
-const db = durableObjects<Env>((bindings, context) =>
-  bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
+const db = durableObjects<Env>((bindings) =>
+  bindings.HOOKFISH_DB.getByName('__global__'),
 )
 
 // To use Postgres instead:
@@ -31,7 +31,6 @@ export default defineHookfishConfig<Env>({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
-  organizationRouting: false, // Use /api/organization/:organization/connections routes.
   // onEvent: async (event) => auditLog.write(event),
 
   // For a large catalog of trusted provider implementations, replace the
@@ -51,7 +50,7 @@ export default defineHookfishConfig<Env>({
   //
   // Hookfish passes custom query and result fields through unchanged, so the
   // registry may instead use cursors or return every provider. See
-  // docs/SMITHERY.md for the dynamic-MCP catalog and organization pattern.
+  // docs/SMITHERY.md for the dynamic-MCP catalog and tenant-path pattern.
   providers: (env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({

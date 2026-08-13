@@ -39,7 +39,6 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.
-  organizationRouting: false, // Use /api/organization/:organization/connections routes.
   // onEvent: async (event) => auditLog.write(event),
 
   // For a large catalog of trusted provider implementations, replace the
@@ -59,7 +58,7 @@ export default defineHookfishConfig({
   //
   // Hookfish passes custom query and result fields through unchanged, so the
   // registry may instead use cursors or return every provider. See
-  // docs/SMITHERY.md for the dynamic-MCP catalog and organization pattern.
+  // docs/SMITHERY.md for the dynamic-MCP catalog and tenant-path pattern.
   providers: (env: typeof process.env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({

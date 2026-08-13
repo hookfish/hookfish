@@ -3,7 +3,7 @@ title: "Databases and migrations"
 description: "Configure PGlite, PostgreSQL, or the experimental Durable Objects adapter."
 ---
 
-Hookfish accepts a ready database, a promise, or a request-aware database
+Hookfish accepts a ready database, a promise, or a runtime-aware database
 binding. The published database package includes PGlite, PostgreSQL, and an
 experimental SQLite Durable Objects adapter.
 
@@ -59,15 +59,14 @@ For production Workers deployments, use PostgreSQL through Hyperdrive.
 
 ## Implement a custom adapter
 
-Use `defineDatabase` when your host owns the storage implementation or needs to
-resolve a partition at request time:
+Use `defineDatabase` when your host owns the storage implementation or resolves
+it from runtime bindings:
 
 ```ts
 import { defineDatabase } from '@hookfish/database'
 
 const db = defineDatabase(
-  (bindings, context) =>
-    bindings.databases.forOrganization(context.organization),
+  (bindings) => bindings.databases.primary,
   (bindings) => bindings.databases.migrate(),
 )
 ```

@@ -6,7 +6,6 @@ import {
   type ConnectionSummary,
   type ConnectionUpdate,
   type Database,
-  type DatabaseContext,
   defineDatabase,
   type NewBrokerAccessToken,
   type NewConnection,
@@ -21,7 +20,6 @@ import {
 
 type OAuthStateRow = {
   id: string
-  organization: string
   namespace: string
   provider_id: string
   code_verifier: string | null
@@ -40,7 +38,6 @@ type OAuthStateRow = {
 
 type ConnectionRow = {
   id: string
-  organization: string
   namespace: string
   provider_id: string
   configuration: string
@@ -62,7 +59,6 @@ type ConnectionRow = {
 
 type VaultSecretRow = {
   id: string
-  organization: string
   path: string
   value: string
   created_at: number
@@ -96,7 +92,6 @@ function decodeObject(value: string): Record<string, unknown> {
 function toOAuthState(row: OAuthStateRow): OAuthState {
   return {
     id: row.id,
-    organization: row.organization,
     namespace: row.namespace,
     providerId: row.provider_id,
     codeVerifier: row.code_verifier,
@@ -117,7 +112,6 @@ function toOAuthState(row: OAuthStateRow): OAuthState {
 function toConnection(row: ConnectionRow): Connection {
   return {
     id: row.id,
-    organization: row.organization,
     namespace: row.namespace,
     providerId: row.provider_id,
     configuration: decodeObject(row.configuration),
@@ -141,7 +135,6 @@ function toConnection(row: ConnectionRow): Connection {
 function toVaultSecret(row: VaultSecretRow): VaultSecret {
   return {
     id: row.id,
-    organization: row.organization,
     path: row.path,
     value: row.value,
     createdAt: new Date(row.created_at),
@@ -190,18 +183,176 @@ export class HookfishDurableObject<Env = object>
         'SELECT COALESCE(MAX(version), 0) AS version FROM _hookfish_schema_migrations',
       )
       .one().version
-    if (current >= 2) return
+    if (current >= 3) return
 
     this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec(`
-        DROP TABLE IF EXISTS oauth_states;
-        DROP TABLE IF EXISTS oauth_connections;
-        DROP TABLE IF EXISTS oauth_providers;
-        DROP TABLE IF EXISTS connections;
+      if (current < 2) {
+        this.ctx.storage.sql.exec(`
+          DROP TABLE IF EXISTS oauth_states;
+          DROP TABLE IF EXISTS oauth_connections;
+          DROP TABLE IF EXISTS oauth_providers;
+          DROP TABLE IF EXISTS connections;
 
-        CREATE TABLE connections (
+          CREATE TABLE connections (
+            id TEXT PRIMARY KEY,
+            organization TEXT NOT NULL,
+            namespace TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            configuration TEXT NOT NULL,
+            oauth_issuer TEXT,
+            oauth_client_id TEXT,
+            oauth_client_secret TEXT,
+            secret TEXT,
+            refresh_token TEXT,
+            token_type TEXT NOT NULL,
+            requested_scopes TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            expires_at INTEGER,
+            metadata TEXT NOT NULL,
+            external_account_id TEXT,
+            external_account_label TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(organization, namespace, provider_id)
+          );
+          CREATE INDEX connections_organization_idx ON connections(organization);
+          CREATE INDEX connections_provider_idx ON connections(provider_id);
+
+          CREATE TABLE oauth_states (
+            id TEXT PRIMARY KEY,
+            organization TEXT NOT NULL,
+            namespace TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            code_verifier TEXT,
+            redirect_uri TEXT NOT NULL,
+            return_to TEXT,
+            scopes TEXT NOT NULL,
+            issuer TEXT,
+            status TEXT NOT NULL,
+            error_status INTEGER,
+            error_code TEXT,
+            error_message TEXT,
+            completed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+          );
+          CREATE INDEX oauth_states_expires_idx ON oauth_states(expires_at);
+
+          CREATE TABLE IF NOT EXISTS broker_access_tokens (
+            name TEXT PRIMARY KEY,
+            token_id_hash TEXT NOT NULL UNIQUE,
+            scopes TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS broker_access_tokens_expires_idx
+            ON broker_access_tokens(expires_at);
+
+          CREATE TABLE IF NOT EXISTS vault_secrets (
+            id TEXT PRIMARY KEY,
+            organization TEXT NOT NULL,
+            path TEXT NOT NULL,
+            value TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(organization, path)
+          );
+          CREATE INDEX IF NOT EXISTS vault_secrets_organization_idx
+            ON vault_secrets(organization);
+        `)
+      }
+
+      this.ctx.storage.sql.exec(`
+          CREATE TABLE connections_v3 (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            configuration TEXT NOT NULL,
+            oauth_issuer TEXT,
+            oauth_client_id TEXT,
+            oauth_client_secret TEXT,
+            secret TEXT,
+            refresh_token TEXT,
+            token_type TEXT NOT NULL,
+            requested_scopes TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            expires_at INTEGER,
+            metadata TEXT NOT NULL,
+            external_account_id TEXT,
+            external_account_label TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(namespace, provider_id)
+          );
+          INSERT INTO connections_v3
+          SELECT id,
+            CASE
+              WHEN organization = '' THEN namespace
+              WHEN namespace = '' THEN 'organizations/' || organization
+              ELSE 'organizations/' || organization || '/' || namespace
+            END,
+            provider_id, configuration, oauth_issuer, oauth_client_id,
+            oauth_client_secret, secret, refresh_token, token_type,
+            requested_scopes, scopes, expires_at, metadata,
+            external_account_id, external_account_label, created_at, updated_at
+          FROM connections;
+          DROP TABLE connections;
+          ALTER TABLE connections_v3 RENAME TO connections;
+
+          CREATE TABLE oauth_states_v3 (
+            id TEXT PRIMARY KEY,
+            namespace TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            code_verifier TEXT,
+            redirect_uri TEXT NOT NULL,
+            return_to TEXT,
+            scopes TEXT NOT NULL,
+            issuer TEXT,
+            status TEXT NOT NULL,
+            error_status INTEGER,
+            error_code TEXT,
+            error_message TEXT,
+            completed_at INTEGER,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL
+          );
+          INSERT INTO oauth_states_v3
+          SELECT id,
+            CASE
+              WHEN organization = '' THEN namespace
+              WHEN namespace = '' THEN 'organizations/' || organization
+              ELSE 'organizations/' || organization || '/' || namespace
+            END,
+            provider_id, code_verifier, redirect_uri, return_to, scopes, issuer,
+            status, error_status, error_code, error_message, completed_at,
+            created_at, expires_at
+          FROM oauth_states;
+          DROP TABLE oauth_states;
+          ALTER TABLE oauth_states_v3 RENAME TO oauth_states;
+
+          CREATE TABLE vault_secrets_v3 (
+            id TEXT PRIMARY KEY,
+            path TEXT NOT NULL UNIQUE,
+            value TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+          INSERT INTO vault_secrets_v3
+          SELECT id,
+            CASE
+              WHEN organization = '' THEN path
+              ELSE 'organizations/' || path
+            END,
+            value, created_at, updated_at
+          FROM vault_secrets;
+          DROP TABLE vault_secrets;
+          ALTER TABLE vault_secrets_v3 RENAME TO vault_secrets;
+
+        `)
+
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS connections (
           id TEXT PRIMARY KEY,
-          organization TEXT NOT NULL,
           namespace TEXT NOT NULL,
           provider_id TEXT NOT NULL,
           configuration TEXT NOT NULL,
@@ -219,14 +370,12 @@ export class HookfishDurableObject<Env = object>
           external_account_label TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL,
-          UNIQUE(organization, namespace, provider_id)
+          UNIQUE(namespace, provider_id)
         );
-        CREATE INDEX connections_organization_idx ON connections(organization);
-        CREATE INDEX connections_provider_idx ON connections(provider_id);
+        CREATE INDEX IF NOT EXISTS connections_provider_idx ON connections(provider_id);
 
-        CREATE TABLE oauth_states (
+        CREATE TABLE IF NOT EXISTS oauth_states (
           id TEXT PRIMARY KEY,
-          organization TEXT NOT NULL,
           namespace TEXT NOT NULL,
           provider_id TEXT NOT NULL,
           code_verifier TEXT,
@@ -242,7 +391,7 @@ export class HookfishDurableObject<Env = object>
           created_at INTEGER NOT NULL,
           expires_at INTEGER NOT NULL
         );
-        CREATE INDEX oauth_states_expires_idx ON oauth_states(expires_at);
+        CREATE INDEX IF NOT EXISTS oauth_states_expires_idx ON oauth_states(expires_at);
 
         CREATE TABLE IF NOT EXISTS broker_access_tokens (
           name TEXT PRIMARY KEY,
@@ -256,19 +405,15 @@ export class HookfishDurableObject<Env = object>
 
         CREATE TABLE IF NOT EXISTS vault_secrets (
           id TEXT PRIMARY KEY,
-          organization TEXT NOT NULL,
-          path TEXT NOT NULL,
+          path TEXT NOT NULL UNIQUE,
           value TEXT NOT NULL,
           created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          UNIQUE(organization, path)
+          updated_at INTEGER NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS vault_secrets_organization_idx
-          ON vault_secrets(organization);
       `)
       this.ctx.storage.sql.exec(
         `INSERT INTO _hookfish_schema_migrations(version, applied_at)
-         VALUES (2, ?)`,
+         VALUES (3, ?)`,
         Date.now(),
       )
     })
@@ -278,12 +423,11 @@ export class HookfishDurableObject<Env = object>
     const now = Date.now()
     this.ctx.storage.sql.exec(
       `INSERT INTO oauth_states (
-        id, organization, namespace, provider_id, code_verifier, redirect_uri,
+        id, namespace, provider_id, code_verifier, redirect_uri,
         return_to, scopes, issuer, status, error_status, error_code,
         error_message, completed_at, created_at, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)`,
       input.id,
-      input.organization,
       input.namespace,
       input.providerId,
       input.codeVerifier ?? null,
@@ -297,20 +441,15 @@ export class HookfishDurableObject<Env = object>
     )
   }
 
-  supersedeOAuthStates(
-    organization: string,
-    namespace: string,
-    providerId: string,
-  ): void {
+  supersedeOAuthStates(namespace: string, providerId: string): void {
     this.ctx.storage.sql.exec(
       `UPDATE oauth_states SET status = 'failed', error_status = 409,
         error_code = 'authorization_superseded',
         error_message = 'A newer authorization flow was started.',
         completed_at = ?
-       WHERE organization = ? AND namespace = ? AND provider_id = ?
+       WHERE namespace = ? AND provider_id = ?
          AND status = 'pending'`,
       Date.now(),
-      organization,
       namespace,
       providerId,
     )
@@ -385,16 +524,11 @@ export class HookfishDurableObject<Env = object>
     ).rowsWritten
   }
 
-  getConnection(
-    organization: string,
-    namespace: string,
-    providerId: string,
-  ): Connection | undefined {
+  getConnection(namespace: string, providerId: string): Connection | undefined {
     const row = this.ctx.storage.sql
       .exec<ConnectionRow>(
-        `SELECT * FROM connections WHERE organization = ? AND namespace = ?
+        `SELECT * FROM connections WHERE namespace = ?
          AND provider_id = ? LIMIT 1`,
-        organization,
         namespace,
         providerId,
       )
@@ -403,22 +537,17 @@ export class HookfishDurableObject<Env = object>
   }
 
   putConnection(input: NewConnection): Connection {
-    const existing = this.getConnection(
-      input.organization,
-      input.namespace,
-      input.providerId,
-    )
+    const existing = this.getConnection(input.namespace, input.providerId)
     if (existing) return existing
     const now = Date.now()
     this.ctx.storage.sql.exec(
       `INSERT OR IGNORE INTO connections (
-        id, organization, namespace, provider_id, configuration, oauth_issuer,
+        id, namespace, provider_id, configuration, oauth_issuer,
         oauth_client_id, oauth_client_secret, secret, refresh_token, token_type,
         requested_scopes, scopes, expires_at, metadata, external_account_id,
         external_account_label, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       crypto.randomUUID(),
-      input.organization,
       input.namespace,
       input.providerId,
       JSON.stringify(input.configuration),
@@ -437,11 +566,7 @@ export class HookfishDurableObject<Env = object>
       now,
       now,
     )
-    const stored = this.getConnection(
-      input.organization,
-      input.namespace,
-      input.providerId,
-    )
+    const stored = this.getConnection(input.namespace, input.providerId)
     if (!stored) throw new Error('Connection could not be stored.')
     return stored
   }
@@ -485,8 +610,7 @@ export class HookfishDurableObject<Env = object>
   listConnections(filter: ConnectionFilter = {}): ConnectionSummary[] {
     return this.ctx.storage.sql
       .exec<ConnectionRow>(
-        'SELECT * FROM connections WHERE organization = ? ORDER BY namespace, provider_id',
-        filter.organization ?? '',
+        'SELECT * FROM connections ORDER BY namespace, provider_id',
       )
       .toArray()
       .map(toConnection)
@@ -541,31 +665,29 @@ export class HookfishDurableObject<Env = object>
 
   putVaultSecret(input: NewVaultSecret): VaultSecret {
     const now = Date.now()
-    const existing = this.getVaultSecret(input.organization, input.path)
+    const existing = this.getVaultSecret(input.path)
     const id = existing?.id ?? crypto.randomUUID()
     this.ctx.storage.sql.exec(
       `INSERT INTO vault_secrets (
-        id, organization, path, value, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(organization, path) DO UPDATE SET
+        id, path, value, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
         value = excluded.value, updated_at = excluded.updated_at`,
       id,
-      input.organization,
       input.path,
       input.value,
       existing?.createdAt.getTime() ?? now,
       now,
     )
-    const stored = this.getVaultSecret(input.organization, input.path)
+    const stored = this.getVaultSecret(input.path)
     if (!stored) throw new Error('Stored vault secret could not be read.')
     return stored
   }
 
-  getVaultSecret(organization: string, path: string): VaultSecret | undefined {
+  getVaultSecret(path: string): VaultSecret | undefined {
     const row = this.ctx.storage.sql
       .exec<VaultSecretRow>(
-        `SELECT * FROM vault_secrets WHERE organization = ? AND path = ? LIMIT 1`,
-        organization,
+        `SELECT * FROM vault_secrets WHERE path = ? LIMIT 1`,
         path,
       )
       .toArray()[0]
@@ -574,10 +696,7 @@ export class HookfishDurableObject<Env = object>
 
   listVaultSecrets(filter: VaultSecretFilter): VaultSecretMetadata[] {
     return this.ctx.storage.sql
-      .exec<VaultSecretRow>(
-        'SELECT * FROM vault_secrets WHERE organization = ? ORDER BY path',
-        filter.organization,
-      )
+      .exec<VaultSecretRow>('SELECT * FROM vault_secrets ORDER BY path')
       .toArray()
       .map(toVaultSecret)
       .filter(
@@ -595,11 +714,10 @@ export class HookfishDurableObject<Env = object>
       .map(({ path, createdAt, updatedAt }) => ({ path, createdAt, updatedAt }))
   }
 
-  deleteVaultSecret(organization: string, path: string): boolean {
+  deleteVaultSecret(path: string): boolean {
     return (
       this.ctx.storage.sql.exec(
-        'DELETE FROM vault_secrets WHERE organization = ? AND path = ?',
-        organization,
+        'DELETE FROM vault_secrets WHERE path = ?',
         path,
       ).rowsWritten > 0
     )
@@ -665,13 +783,10 @@ export class HookfishDurableObject<Env = object>
 
 export type DurableObjectDatabaseResolver<Bindings extends object> = (
   bindings: Bindings,
-  context: DatabaseContext,
 ) => Database
 
 export function durableObjects<Bindings extends object>(
   resolve: DurableObjectDatabaseResolver<Bindings>,
 ) {
-  return defineDatabase<Bindings>((bindings, context = {}) =>
-    resolve(bindings, context),
-  )
+  return defineDatabase<Bindings>((bindings) => resolve(bindings))
 }

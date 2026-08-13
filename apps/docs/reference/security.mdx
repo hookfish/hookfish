@@ -17,7 +17,8 @@ tenant authorization.
 - Keep authenticated raw `/api/*` operations behind a trusted service
   boundary while leaving the provider callback publicly reachable.
 - Authenticate users on your application API before calling Hookfish.
-- Select a scoped broker token for the current user or tenant in server code.
+- Select a broker token scoped to the current tenant's resource prefix, such as
+  `organizations/acme/**`, in server code.
 - Give services scoped, expiring broker tokens instead of the root key.
 - Keep connection access, secret writes, and vault-value operations server-only.
 - Export lifecycle events to an audit or telemetry system.

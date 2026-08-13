@@ -12,7 +12,6 @@ export type HookfishEvent = {
     | 'secret.retrieved'
     | 'secret.deleted'
   occurredAt: Date
-  organization?: string
   providerId?: string
   connectionPath?: string
   tokenName?: string
