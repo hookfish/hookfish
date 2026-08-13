@@ -1,5 +1,18 @@
 # hookfish
 
+## 0.12.0
+
+### Minor Changes
+
+- ee51ebd: Relicense from MIT to the Functional Source License 1.1 (Apache 2.0 future license) with an attribution requirement for end-user-facing applications. Use, modification, redistribution, and self-hosting stay permitted for every purpose except offering Hookfish as a competing commercial product or service, and each version converts to Apache 2.0 two years after release. `hookfish init` now writes the attribution note into the generated project's `AGENTS.md` and `README.md`. Releases published before this change remain available under MIT.
+- ee51ebd: Scaffold Cloudflare Workers with PostgreSQL through Hyperdrive instead of the experimental SQLite Durable Object adapter.
+
+### Patch Changes
+
+- Updated dependencies [ee51ebd]
+- Updated dependencies [ee51ebd]
+  - @hookfish/database@1.0.0
+
 ## 0.11.0
 
 ### Minor Changes
