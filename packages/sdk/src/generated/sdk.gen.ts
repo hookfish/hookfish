@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, SecretsDeleteErrors, SecretsDeleteResponses, SecretsGetErrors, SecretsGetResponses, SecretsListErrors, SecretsListResponses, SecretsPutErrors, SecretsPutResponses, StatsGetResponses } from './types.gen';
+import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, StatsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -245,76 +245,6 @@ export const connectionsCallback = <ThrowOnError extends boolean = false>(parame
             ] }]);
     return (options?.client ?? client).get<ConnectionsCallbackResponses, ConnectionsCallbackErrors, ThrowOnError>({
         url: '/connections/callback/{provider_id}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Delete a secret
- */
-export const secretsDelete = <ThrowOnError extends boolean = false>(parameters: {
-    secret_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<SecretsDeleteResponses, SecretsDeleteErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'secret_path' }] }]);
-    return (options?.client ?? client).delete<SecretsDeleteResponses, SecretsDeleteErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/secrets/{secret_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Retrieve a decrypted secret
- *
- * Server-only operation. This route is never exposed through the browser-safe client facade.
- */
-export const secretsGet = <ThrowOnError extends boolean = false>(parameters: {
-    secret_path: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<SecretsGetResponses, SecretsGetErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'secret_path' }] }]);
-    return (options?.client ?? client).get<SecretsGetResponses, SecretsGetErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/secrets/{secret_path}',
-        ...options,
-        ...params
-    });
-};
-
-/**
- * Store an encrypted secret
- */
-export const secretsPut = <ThrowOnError extends boolean = false>(parameters: {
-    secret_path: string;
-    value: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<SecretsPutResponses, SecretsPutErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'path', key: 'secret_path' }, { in: 'body', key: 'value' }] }]);
-    return (options?.client ?? client).put<SecretsPutResponses, SecretsPutErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/secrets/{secret_path}',
-        ...options,
-        ...params,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-            ...params.headers
-        }
-    });
-};
-
-/**
- * List secret metadata
- *
- * Lists accessible paths and timestamps, never secret values.
- */
-export const secretsList = <ThrowOnError extends boolean = false>(parameters?: {
-    path_prefix?: string;
-}, options?: Options<never, ThrowOnError>): RequestResult<SecretsListResponses, SecretsListErrors, ThrowOnError> => {
-    const params = buildClientParams([parameters], [{ args: [{ in: 'query', key: 'path_prefix' }] }]);
-    return (options?.client ?? client).get<SecretsListResponses, SecretsListErrors, ThrowOnError>({
-        security: [{ scheme: 'bearer', type: 'http' }],
-        url: '/secrets',
         ...options,
         ...params
     });

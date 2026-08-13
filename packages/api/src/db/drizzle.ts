@@ -4,26 +4,8 @@ import {
   connections,
   type DrizzleDatabase,
   oauthStates,
-  vaultSecrets,
 } from './schema'
 import type { Database } from './types'
-
-function pathScopeFilter(column: typeof vaultSecrets.path, scopes?: string[]) {
-  if (scopes?.includes('**') || !scopes) return undefined
-  if (scopes.length === 0) return sql<boolean>`false`
-
-  return or(
-    ...scopes.map((scope) => {
-      const root = scope.endsWith('/**') ? scope.slice(0, -3) : scope
-      return scope.endsWith('/**')
-        ? or(
-            eq(column, root),
-            sql<boolean>`starts_with(${column}, ${`${root}/`})`,
-          )
-        : eq(column, root)
-    }),
-  )
-}
 
 function connectionScopeFilter(scopes?: string[]) {
   if (scopes?.includes('**') || !scopes) return undefined
@@ -197,61 +179,6 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
       const deleted = await db
         .delete(connections)
         .where(eq(connections.id, id))
-        .returning()
-      return deleted.length > 0
-    },
-
-    async putVaultSecret(input) {
-      const [secret] = await db
-        .insert(vaultSecrets)
-        .values(input)
-        .onConflictDoUpdate({
-          target: [vaultSecrets.path],
-          set: { value: input.value, updatedAt: new Date() },
-        })
-        .returning()
-      return secret
-    },
-
-    async getVaultSecret(path) {
-      const [secret] = await db
-        .select()
-        .from(vaultSecrets)
-        .where(and(eq(vaultSecrets.path, path)))
-        .limit(1)
-      return secret
-    },
-
-    async listVaultSecrets(filter) {
-      const prefixFilter = filter.prefix
-        ? or(
-            eq(vaultSecrets.path, filter.prefix),
-            sql<boolean>`starts_with(${vaultSecrets.path}, ${`${filter.prefix}/`})`,
-          )
-        : undefined
-      return db
-        .select({
-          path: vaultSecrets.path,
-          createdAt: vaultSecrets.createdAt,
-          updatedAt: vaultSecrets.updatedAt,
-        })
-        .from(vaultSecrets)
-        .where(
-          and(
-            prefixFilter,
-            pathScopeFilter(vaultSecrets.path, filter.scopes),
-            filter.excludeInternalPrefix
-              ? sql<boolean>`not starts_with(${vaultSecrets.path}, ${filter.excludeInternalPrefix})`
-              : undefined,
-          ),
-        )
-        .orderBy(asc(vaultSecrets.path))
-    },
-
-    async deleteVaultSecret(path) {
-      const deleted = await db
-        .delete(vaultSecrets)
-        .where(and(eq(vaultSecrets.path, path)))
         .returning()
       return deleted.length > 0
     },

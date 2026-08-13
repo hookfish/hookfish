@@ -109,6 +109,36 @@ describe('scaffoldProject', () => {
     expect(environment).not.toContain('NOTION_CLIENT_ID')
   })
 
+  it.each(
+    scaffoldBackends,
+  )('records the Hookfish attribution requirement in the %s AGENTS.md', (backend) => {
+    const parentDirectory = temporaryDirectory()
+    const { directory, files } = scaffoldProject({
+      name: `broker-agents-${backend}`,
+      backend,
+      parentDirectory,
+    })
+    const agents = readFileSync(path.join(directory, 'AGENTS.md'), 'utf8')
+
+    expect(files).toContain('AGENTS.md')
+    expect(agents).toContain(
+      'uses [Hookfish](https://github.com/hookfish/hookfish)',
+    )
+    expect(agents).toContain(
+      'https://github.com/hookfish/hookfish/blob/main/LICENSE',
+    )
+    expect(agents).toContain('end-user-facing application')
+    expect(agents).toContain('you must credit')
+    expect(agents).toContain(
+      backend === 'cloudflare'
+        ? '`src/index.ts` configures'
+        : '`hookfish.config.ts` configures',
+    )
+    expect(readFileSync(path.join(directory, 'README.md'), 'utf8')).toContain(
+      '## Attribution',
+    )
+  })
+
   it('generates a distinct broker API key for each project', () => {
     const parentDirectory = temporaryDirectory()
     const first = scaffoldProject({
@@ -158,22 +188,55 @@ describe('scaffoldProject', () => {
     )
   })
 
-  it('uses a declarative SQLite Durable Object export for Cloudflare', () => {
+  it('uses PostgreSQL through Hyperdrive for Cloudflare', () => {
     const parentDirectory = temporaryDirectory()
     const { directory } = scaffoldProject({
       name: 'broker-cloudflare',
       backend: 'cloudflare',
       parentDirectory,
     })
-    const config = JSON.parse(
-      readFileSync(path.join(directory, 'wrangler.jsonc'), 'utf8'),
+    const configSource = readFileSync(
+      path.join(directory, 'wrangler.jsonc'),
+      'utf8',
+    )
+    const config = JSON.parse(configSource.replace(/^\s*\/\/.*$/gm, ''))
+    const worker = readFileSync(path.join(directory, 'src/index.ts'), 'utf8')
+    const migration = readFileSync(
+      path.join(directory, 'src/migrate.ts'),
+      'utf8',
+    )
+    const migrationEnvironment = readFileSync(
+      path.join(directory, '.env'),
+      'utf8',
+    )
+    const workerEnvironment = readFileSync(
+      path.join(directory, '.dev.vars'),
+      'utf8',
+    )
+    const tsconfig = JSON.parse(
+      readFileSync(path.join(directory, 'tsconfig.json'), 'utf8'),
     )
 
-    expect(config.exports.HookfishDurableObject).toEqual({
-      type: 'durable-object',
-      storage: 'sqlite',
-    })
+    expect(config.hyperdrive).toEqual([
+      { binding: 'HYPERDRIVE', id: '<YOUR_HYPERDRIVE_ID>' },
+    ])
+    expect(config.durable_objects).toBeUndefined()
+    expect(config.exports).toBeUndefined()
     expect(config.migrations).toBeUndefined()
+    expect(configSource).toContain('// Hyperdrive setup:')
+    expect(configSource).toContain(
+      'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE',
+    )
+    expect(worker).toContain(
+      "import { postgres } from '@hookfish/database/postgres'",
+    )
+    expect(worker).toContain('bindings.HYPERDRIVE.connectionString')
+    expect(worker).toContain('cache: false')
+    expect(migration).toContain('await migrateDatabase')
+    expect(migrationEnvironment).toContain('DATABASE_URL=')
+    expect(workerEnvironment).not.toContain('DATABASE_URL=')
+    expect(tsconfig.compilerOptions.lib).toEqual(['ES2023'])
+    expect(packageFile(directory).scripts.migrate).toContain('--env-file=.env')
     expect(packageFile(directory).scripts['dev:server']).toContain(
       '--var HOOKFISH_FRONTEND_URL:',
     )

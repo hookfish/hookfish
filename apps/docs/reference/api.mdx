@@ -1,6 +1,6 @@
 ---
 title: "HTTP API"
-description: "Reference the connection, broker-token, vault, callback, and browser-safe endpoints."
+description: "Reference the connection, broker-token, callback, and browser-safe endpoints."
 ---
 
 The running deployment publishes its OpenAPI 3.1 contract at
@@ -85,30 +85,19 @@ configuration fields become immutable, non-secret connection configuration;
 scope fields become requested OAuth scopes.
 Clients should render `input_schema.fields`.
 
-## Broker administration and legacy generic vault
+## Broker administration
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/admin/tokens` | Mint a named scoped broker token |
 | `GET` | `/api/admin/tokens` | List active token names; root only |
 | `DELETE` | `/api/admin/tokens/{name}` | Revoke a token; root only |
-| `GET` | `/api/secrets` | List generic vault metadata |
-| `PUT` | `/api/secrets/{secret_path}` | Store a generic encrypted value |
-| `GET` | `/api/secrets/{secret_path}` | Retrieve a generic encrypted value |
-| `DELETE` | `/api/secrets/{secret_path}` | Delete a generic encrypted value |
-
-<Note>
-  The generic vault remains available for compatibility but is no longer
-  exposed in the packaged dashboard. Prefer the generic `secret` connection
-  provider so every credential is consumed with `connections.access()`.
-</Note>
 
 ## Browser facade
 
 The optional `/api/client` facade exposes runtime stats, provider and
-connection metadata, and disconnect. It rejects access, `setSecret`, generic
-vault values, callbacks, and administration because successful access may
-contain a credential.
+connection metadata, and disconnect. It rejects access, `setSecret`, callbacks,
+and administration because successful access may contain a credential.
 
 Connection access responses set `Cache-Control: no-store`. List and get
 responses never include stored secrets, refresh tokens, OAuth client secrets,

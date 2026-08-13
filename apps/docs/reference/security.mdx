@@ -20,15 +20,15 @@ tenant authorization.
 - Select a broker token scoped to the current tenant's resource prefix, such as
   `organizations/acme/**`, in server code.
 - Give services scoped, expiring broker tokens instead of the root key.
-- Keep connection access, secret writes, and vault-value operations server-only.
+- Keep connection access and secret writes server-only.
 - Export lifecycle events to an audit or telemetry system.
 - Back up the database and encryption key through separate controlled systems.
 - Test restoration, scoped-token revocation, and provider reauthorization.
 
 ## Stored credentials
 
-Connection secrets, refresh tokens, per-connection DCR client secrets, and
-vault values are encrypted with AES-GCM before database storage. Connection
+Connection secrets, refresh tokens, and per-connection DCR client secrets are
+encrypted with AES-GCM before database storage. Connection
 metadata excludes all usable credentials.
 
 OAuth state is stored only as a SHA-256 hash and expires after ten minutes. A
@@ -49,8 +49,7 @@ operator screenshots, logs, and shared shell history.
 
 The browser should call your authenticated application API. After checking the
 session and permissions, your server calls Hookfish with the tenant's scoped
-broker token. Do not forward that token, provider tokens, or vault values to
-the browser.
+broker token. Do not forward that token or provider tokens to the browser.
 
 The optional `/api/client` facade has a restricted route allowlist, but its
 application authorizer does not select tenant-specific broker credentials.
@@ -72,6 +71,6 @@ On Cloudflare Workers, use PostgreSQL through Hyperdrive for production. The
 SQLite Durable Objects adapter is experimental.
 
 <Warning>
-  Never log connection-access responses, vault-value responses, authorization
-  headers, callback codes, or encryption keys.
+  Never log connection-access responses, authorization headers, callback codes,
+  or encryption keys.
 </Warning>

@@ -2,6 +2,7 @@
   "name": "@hookfish/example-cloudflare-worker",
   "private": true,
   "version": "0.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --env-file ../../../apps/frontend/.env --port ${PORT:-8787}",

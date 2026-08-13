@@ -25,7 +25,6 @@ import {
 } from './provider-source'
 import { createAdminRoutes } from './routes/admin'
 import { createConnectionRoutes } from './routes/connections'
-import { createSecretRoutes } from './routes/secrets'
 import { statsRoutes } from './routes/stats'
 
 export type { ProviderFactory, ProviderMap } from './provider-source'
@@ -148,14 +147,6 @@ function createApiRoutes<Bindings extends object>(
     .route(
       '/connections',
       createConnectionRoutes(resolveProviders, database, {
-        ...options,
-      }),
-    )
-    .use('/secrets', cors())
-    .use('/secrets/*', cors())
-    .route(
-      '/',
-      createSecretRoutes(database, {
         ...options,
       }),
     )
@@ -320,11 +311,7 @@ export type {
   NewBrokerAccessToken,
   NewConnection,
   NewOAuthState,
-  NewVaultSecret,
   OAuthState,
   OAuthStateUpdate,
-  VaultSecret,
-  VaultSecretFilter,
-  VaultSecretMetadata,
 } from './db/types'
 export type { HookfishEvent, HookfishEventHandler } from './events'

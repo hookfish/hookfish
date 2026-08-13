@@ -2,6 +2,7 @@
   "name": "hookfish-monorepo",
   "private": true,
   "version": "0.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
@@ -23,7 +24,8 @@
     "migrate": "node ./packages/cli/bin/hookfish.mjs migrate",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build:publish && changeset publish"
+    "sync-license": "node scripts/sync-license.mjs",
+    "release": "pnpm build:publish && pnpm sync-license && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",

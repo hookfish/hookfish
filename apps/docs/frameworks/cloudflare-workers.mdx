@@ -7,25 +7,19 @@ For production on Cloudflare Workers, use PostgreSQL through a Hyperdrive
 binding. Hyperdrive supplies the connection string consumed by Hookfish's
 PostgreSQL adapter and manages the underlying connection pool.
 
-<Warning>
-  The SQLite Durable Objects database adapter and the current
-  `--backend cloudflare` scaffold are experimental. Use them for evaluation,
-  not as the advised production storage path. Prefer Hyperdrive with
-  PostgreSQL.
-</Warning>
-
 ## Create the Worker
 
-Start from the Cloudflare scaffold, then replace its Durable Objects database
-configuration with Hyperdrive:
+The Cloudflare scaffold configures the PostgreSQL adapter and generates a
+placeholder Hyperdrive binding:
 
 ```bash
 pnpm dlx hookfish init my-broker --backend cloudflare
 cd my-broker
 ```
 
-Create a Hyperdrive configuration for your PostgreSQL database in the
-Cloudflare dashboard, then add its ID to `wrangler.jsonc`:
+Create a Hyperdrive configuration for your PostgreSQL database. Replace the
+placeholder ID in `wrangler.jsonc` with its configuration ID. The comments in
+that file include the remaining local setup and migration steps.
 
 ```jsonc
 {
@@ -37,6 +31,7 @@ Cloudflare dashboard, then add its ID to `wrangler.jsonc`:
   "observability": {
     "enabled": true
   },
+  // Replace this placeholder before running or deploying the Worker.
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -46,22 +41,15 @@ Cloudflare dashboard, then add its ID to `wrangler.jsonc`:
 }
 ```
 
-Remove the `durable_objects`, `exports`, and Durable Object migration entries
-from the generated configuration.
+## Generated database binding
 
-## Configure the database binding
-
-Replace `src/index.ts` with a Worker that resolves the Hyperdrive binding for
-each request:
+The generated `src/index.ts` resolves the Hyperdrive binding for each request:
 
 ```ts
 import { HookfishServer } from '@hookfish/api'
 import { postgres } from '@hookfish/database/postgres'
 import {
-  createGitHubProvider,
-  createLinearProvider,
   createMcpProvider,
-  createNotionProvider,
   createSecretProvider,
 } from '@hookfish/providers'
 
@@ -74,28 +62,18 @@ const db = postgres<Env>(
     prepare: true,
   },
 )
+const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
 const hookfish = await HookfishServer.init<Env>({
   db,
+  includeClient: true,
   includeSwagger: true,
-  returnTo: 'https://dashboard.example.com',
-  trustedOrigins: ['https://dashboard.example.com'],
-  providers: (env) => ({
-    github: createGitHubProvider({
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: env.GITHUB_CLIENT_SECRET,
-    }),
-    linear: createLinearProvider({
-      clientId: env.LINEAR_CLIENT_ID,
-      clientSecret: env.LINEAR_CLIENT_SECRET,
-    }),
+  returnTo: frontendUrl,
+  trustedOrigins: [frontendUrl],
+  providers: {
     mcp: createMcpProvider(),
-    notion: createNotionProvider({
-      clientId: env.NOTION_CLIENT_ID,
-      clientSecret: env.NOTION_CLIENT_SECRET,
-    }),
     secret: createSecretProvider(),
-  }),
+  },
 })
 
 export default {
@@ -126,15 +104,13 @@ local mode.
 
 ## Run migrations
 
-Run Hookfish's bundled PostgreSQL migrations from CI or another trusted
-environment that can connect directly to the database:
+Put a direct PostgreSQL connection string in the generated `.env` file. Run the
+generated migration command from CI or another trusted environment that can
+connect directly to the database:
 
-```ts
-import { migrateDatabase } from '@hookfish/database'
-import { postgres } from '@hookfish/database/postgres'
-
-const db = postgres(process.env.DATABASE_URL ?? '')
-await migrateDatabase(db, process.env)
+```bash
+# Set DATABASE_URL in .env, then run:
+pnpm migrate
 ```
 
 Do not run schema migrations through a user request or on every Worker startup.
@@ -146,8 +122,6 @@ Use Wrangler's interactive secret prompts:
 ```bash
 pnpm exec wrangler secret put OAUTH_ENCRYPTION_KEY
 pnpm exec wrangler secret put HOOKFISH_API_KEY
-pnpm exec wrangler secret put GITHUB_CLIENT_ID
-pnpm exec wrangler secret put GITHUB_CLIENT_SECRET
 pnpm typecheck
 pnpm deploy
 ```

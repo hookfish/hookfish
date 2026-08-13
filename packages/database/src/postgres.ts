@@ -6,7 +6,6 @@ import {
   defineDatabase,
   drizzleDatabase,
   oauthStates,
-  vaultSecrets,
 } from '@hookfish/api/database'
 import { migrationsFolder } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/postgres-js'
@@ -17,7 +16,6 @@ const schema = {
   brokerAccessTokens,
   connections,
   oauthStates,
-  vaultSecrets,
 }
 export type PostgresConnection<Bindings extends object> =
   | string

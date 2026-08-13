@@ -47,14 +47,6 @@ export type BrokerAccessToken = {
   expiresAt: Date
 }
 
-export type VaultSecret = {
-  id: string
-  path: string
-  value: string
-  createdAt: Date
-  updatedAt: Date
-}
-
 export type NewOAuthState = Pick<
   OAuthState,
   'id' | 'namespace' | 'providerId' | 'redirectUri' | 'scopes' | 'expiresAt'
@@ -129,19 +121,6 @@ export type ConnectionFilter = {
   resourceScopes?: string[]
 }
 
-export type NewVaultSecret = Pick<VaultSecret, 'path' | 'value'>
-
-export type VaultSecretFilter = {
-  prefix?: string
-  scopes?: string[]
-  excludeInternalPrefix?: string
-}
-
-export type VaultSecretMetadata = Pick<
-  VaultSecret,
-  'path' | 'createdAt' | 'updatedAt'
->
-
 export type NewBrokerAccessToken = Pick<
   BrokerAccessToken,
   'name' | 'tokenIdHash' | 'scopes' | 'expiresAt'
@@ -181,13 +160,6 @@ export interface Database {
     filter?: ConnectionFilter,
   ): DatabaseResult<ConnectionSummary[]>
   deleteConnection(id: string): DatabaseResult<boolean>
-
-  putVaultSecret(input: NewVaultSecret): DatabaseResult<VaultSecret>
-  getVaultSecret(path: string): DatabaseResult<VaultSecret | undefined>
-  listVaultSecrets(
-    filter: VaultSecretFilter,
-  ): DatabaseResult<VaultSecretMetadata[]>
-  deleteVaultSecret(path: string): DatabaseResult<boolean>
 
   getValidBrokerAccessToken(
     name: string,

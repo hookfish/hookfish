@@ -638,7 +638,7 @@ program
 
       const manager = packageManager(result.directory)
       process.stdout.write(
-        `\nNext steps:\n  cd ${name}\n  ${manager} run dev\n`,
+        `\nNext steps:\n  cd ${name}\n  ${manager} run dev\n\nHookfish is source-available under the Functional Source License 1.1.\nCredit Hookfish in end-user-facing applications. See AGENTS.md.\n`,
       )
     },
   )

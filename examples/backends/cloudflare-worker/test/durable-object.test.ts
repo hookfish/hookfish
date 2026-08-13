@@ -62,16 +62,20 @@ describe('HookfishDurableObject', () => {
     const acme = database('tenant:acme')
     const globex = database('tenant:globex')
 
-    await acme.putVaultSecret({
-      path: 'organizations/acme/provider/client-secret',
-      value: 'encrypted',
+    await acme.putConnection({
+      namespace: 'organizations/acme',
+      providerId: 'github',
+      configuration: {},
+      secret: 'encrypted',
+      requestedScopes: ['repo'],
+      scopes: ['repo'],
     })
 
     expect(
-      await acme.getVaultSecret('organizations/acme/provider/client-secret'),
-    ).toMatchObject({ value: 'encrypted' })
+      await acme.getConnection('organizations/acme', 'github'),
+    ).toMatchObject({ secret: 'encrypted' })
     expect(
-      await globex.getVaultSecret('organizations/acme/provider/client-secret'),
+      await globex.getConnection('organizations/acme', 'github'),
     ).toBeUndefined()
   })
 

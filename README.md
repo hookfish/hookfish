@@ -55,8 +55,8 @@ The generated `dev:server` script runs the platform-native development server
 parallel with `hookfish serve --backend-url <backend-url>`, which serves the
 packaged frontend and proxies `/api` to that backend. Use `--no-install` during
 initialization to skip dependency installation. The Cloudflare scaffold uses a
-SQLite-backed Durable Object; the Vercel scaffold expects Postgres through
-`DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
+PostgreSQL database through Hyperdrive; the Vercel scaffold expects Postgres
+through `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
 Each scaffold generates a gitignored local environment file with a unique
 encryption key and broker API key.
 
@@ -191,8 +191,8 @@ function RuntimeStats() {
 ```
 
 The facade only forwards stats, provider metadata, connection metadata, and
-disconnects. Authorization starts, credential retrieval and writes,
-secret-vault operations, and administration remain server-only. More detail is in
+disconnects. Authorization starts, credential retrieval and writes, and
+administration remain server-only. More detail is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
 catalog with tenant-prefixed connections, see
 [docs/SMITHERY.md](docs/SMITHERY.md).
@@ -218,3 +218,25 @@ pnpm fmt
 pnpm test
 pnpm deploy
 ```
+
+## License
+
+Hookfish is licensed under the [Functional Source License 1.1 with an
+attribution requirement](LICENSE).
+
+You may use, modify, self-host, and redistribute Hookfish for any purpose other
+than a Competing Use — making it available to others in a commercial product or
+service that substitutes for Hookfish. Internal use, non-commercial education,
+non-commercial research, and professional services around Hookfish are all
+permitted. Each version becomes available under the Apache License 2.0 two
+years after its release.
+
+If you ship Hookfish inside an end-user-facing application, credit Hookfish
+somewhere users can reasonably find it — an about page, a credits or
+third-party licenses screen, a footer, or your documentation. Text naming
+Hookfish, such as "Powered by Hookfish", linked to this repository satisfies
+the requirement. `hookfish init` writes this note into the generated project's
+`AGENTS.md` and `README.md`.
+
+To request a waiver, or a commercial license permitting a Competing Use,
+[open an issue](https://github.com/hookfish/hookfish/issues).

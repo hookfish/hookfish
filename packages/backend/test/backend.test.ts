@@ -76,7 +76,7 @@ describe('Hookfish backend', () => {
     expect(
       isAllowedBrowserApiRequest('GET', '/api/connections/callback/github'),
     ).toBe(false)
-    expect(isAllowedBrowserApiRequest('GET', '/api/secrets/key')).toBe(false)
+    expect(isAllowedBrowserApiRequest('GET', '/api/admin/tokens')).toBe(false)
   })
 
   it('serves health without forwarding', async () => {
