@@ -29,11 +29,16 @@ input schema renders fields such as an MCP resource name, URL, and scopes.
 
 The dashboard intentionally has no connection-type selector and no generic
 vault entry. Provider metadata is the source of truth. Connection lists contain
-metadata only and never stored credential values.
+metadata only and never stored credential values. View token is an explicit
+privileged action: it calls
+`connections.access()` only after the dialog opens, masks the returned provider
+credential by default, and provides separate reveal and copy controls.
 
 <Warning>
   Do not expose the packaged dashboard or a root broker key to your
-  application's users. Restrict the dashboard to trusted operators.
+  application's users. Restrict the dashboard to trusted operators. Anyone
+  with dashboard broker access can retrieve usable provider credentials with
+  View token.
 </Warning>
 
 ## Build a user-facing connection screen

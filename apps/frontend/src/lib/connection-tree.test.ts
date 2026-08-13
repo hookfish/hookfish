@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { connectionDirectory } from './connection-tree'
+import { connectionDirectory, validateConnectionPath } from './connection-tree'
 
 type Connection = Parameters<typeof connectionDirectory>[0][number]
 
@@ -21,6 +21,11 @@ function connection(path: string, providerId = 'github'): Connection {
 }
 
 describe('connection tree', () => {
+  it('accepts nested resource names as connection paths', () => {
+    expect(validateConnectionPath('team/production/notion')).toBeUndefined()
+    expect(validateConnectionPath('team//notion')).toBeDefined()
+  })
+
   it('groups descendants into folders and direct connections', () => {
     const directory = connectionDirectory(
       [

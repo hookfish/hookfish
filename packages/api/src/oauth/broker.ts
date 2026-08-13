@@ -754,6 +754,12 @@ export async function authorizeConnection(
     )
   }
 
+  const scopes =
+    input.scopes ??
+    (connection.requestedScopes.length > 0
+      ? connection.requestedScopes
+      : undefined)
+
   const authorization = await startAuthorization(
     db,
     env,
@@ -762,7 +768,7 @@ export async function authorizeConnection(
       redirectUri: input.redirectUri,
       clientMetadataUrl: input.clientMetadataUrl,
       returnTo: input.returnTo,
-      scopes: input.scopes,
+      scopes,
     },
     providers,
   )
