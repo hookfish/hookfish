@@ -126,4 +126,23 @@ describe('Hookfish', () => {
       'http://local/api/connections/authorize/user%2Fpersonal%2Fgmail%2Fmcp',
     ])
   })
+
+  // Reads the response the way callers do. The runtime shape was always the
+  // bare body, but the declared type used to describe a `{ data }` envelope,
+  // so this destructuring failed to compile.
+  it('resolves to the response body, as declared', async () => {
+    const hookfish = new Hookfish({
+      apiKey: 'broker-key',
+      baseUrl: 'http://local/api',
+      fetch: async () => Response.json(access),
+    })
+
+    const { secret, path } = await hookfish.connections.access(
+      'user/personal/gmail',
+    )
+    const token: string = secret
+
+    expect(token).toBe('gmail-token')
+    expect(path).toBe('user/personal/gmail')
+  })
 })

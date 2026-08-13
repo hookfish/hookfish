@@ -60,7 +60,9 @@ function randomId(): string {
   )
 }
 
-async function importSigningKey(rootApiKey: string): Promise<CryptoKey> {
+// The return type is inferred rather than annotated: `CryptoKey` is only an
+// ambient type under the DOM lib, and consumers may compile with a Node-only one.
+async function importSigningKey(rootApiKey: string) {
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(rootApiKey),
