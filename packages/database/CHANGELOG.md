@@ -1,5 +1,22 @@
 # @hookfish/database
 
+## 1.0.0
+
+### Major Changes
+
+- ee51ebd: Remove the generic secret vault. The `/api/secrets` routes, the `hookfish.secrets` SDK namespace, the `putVaultSecret`/`getVaultSecret`/`listVaultSecrets`/`deleteVaultSecret` database methods, and the `secret.stored`/`secret.retrieved`/`secret.deleted` events are gone. Store credentials through the generic `secret` connection provider and read them with `connections.access()`. The `vault_secrets` table is dropped by Postgres migration `0011` and Durable Object schema version 4.
+
+### Minor Changes
+
+- ee51ebd: Relicense from MIT to the Functional Source License 1.1 (Apache 2.0 future license) with an attribution requirement for end-user-facing applications. Use, modification, redistribution, and self-hosting stay permitted for every purpose except offering Hookfish as a competing commercial product or service, and each version converts to Apache 2.0 two years after release. `hookfish init` now writes the attribution note into the generated project's `AGENTS.md` and `README.md`. Releases published before this change remain available under MIT.
+
+### Patch Changes
+
+- Updated dependencies [ee51ebd]
+- Updated dependencies [ee51ebd]
+- Updated dependencies [d4495a1]
+  - @hookfish/api@1.0.0
+
 ## 0.4.0
 
 ### Minor Changes

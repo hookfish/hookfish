@@ -1,5 +1,23 @@
 # @hookfish/sdk
 
+## 1.0.0
+
+### Major Changes
+
+- ee51ebd: Remove the generic secret vault. The `/api/secrets` routes, the `hookfish.secrets` SDK namespace, the `putVaultSecret`/`getVaultSecret`/`listVaultSecrets`/`deleteVaultSecret` database methods, and the `secret.stored`/`secret.retrieved`/`secret.deleted` events are gone. Store credentials through the generic `secret` connection provider and read them with `connections.access()`. The `vault_secrets` table is dropped by Postgres migration `0011` and Durable Object schema version 4.
+
+### Minor Changes
+
+- ee51ebd: Relicense from MIT to the Functional Source License 1.1 (Apache 2.0 future license) with an attribution requirement for end-user-facing applications. Use, modification, redistribution, and self-hosting stay permitted for every purpose except offering Hookfish as a competing commercial product or service, and each version converts to Apache 2.0 two years after release. `hookfish init` now writes the attribution note into the generated project's `AGENTS.md` and `README.md`. Releases published before this change remain available under MIT.
+
+### Patch Changes
+
+- d4495a1: Fix three type errors that only surfaced in consumer builds, since both packages ship TypeScript sources.
+  
+  - `@hookfish/api`: pin the `authentication` literals in `GET /connections/providers` so inference cannot widen them to `string`, and stop annotating two internal helpers with `CryptoKey`, which is only ambient under the DOM lib.
+  - `@hookfish/sdk`: `connections.*`, `accessTokens.*` and `stats()` declared a `{ data, request, response }` envelope while resolving the bare response body. They now resolve and declare the body. Callers who worked around this by reading `.data` must read the body directly.
+  - `@hookfish/sdk`: the generated client no longer references `BodyInit`, so it compiles under a Node-only `lib`.
+
 ## 0.3.0
 
 ### Minor Changes
