@@ -23,7 +23,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "generate": "tsx ./scripts/generate-openapi.ts && openapi-ts",
+    "generate": "tsx ./scripts/generate-openapi.ts && openapi-ts && tsx ./scripts/patch-generated.ts",
     "typecheck": "tsc -b",
     "test": "vitest run"
   },

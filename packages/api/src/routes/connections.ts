@@ -467,7 +467,11 @@ export function createConnectionRoutes<Bindings extends object>(
         providers: result.providers.map(({ id, provider }) => ({
           id,
           label: provider.label ?? id,
-          authentication: isSecretProvider(provider) ? 'secret' : 'oauth',
+          // Annotated so the literals survive inference in consumer builds,
+          // where `c.json()` may widen them to `string`.
+          authentication: isSecretProvider(provider)
+            ? ('secret' as const)
+            : ('oauth' as const),
           input_schema: {
             fields: [...(provider.inputSchema?.fields ?? [])],
           },

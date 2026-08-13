@@ -83,6 +83,17 @@ export type ConnectionFilter = {
 
 type AccessTokenInput = Parameters<typeof adminTokensCreate>[0]
 
+/**
+ * Unwraps the response body every method resolves to. The generated signatures
+ * hard-code the client's default `'fields'` style, so requests are made in that
+ * style and unwrapped here; asking the client for `responseStyle: 'data'`
+ * instead would leave the declared type describing an envelope that never
+ * arrives.
+ */
+async function data<T>(result: Promise<{ data: T }>): Promise<T> {
+  return (await result).data
+}
+
 /** End-to-end typed client for a Hookfish broker. */
 export class Hookfish {
   private readonly client: Client
@@ -100,7 +111,6 @@ export class Hookfish {
 
   private readonly requestOptions = () => ({
     client: this.client,
-    responseStyle: 'data' as const,
     throwOnError: true as const,
   })
 
@@ -113,7 +123,7 @@ export class Hookfish {
         scopes: input.scopes,
         return_to: input.returnTo,
       }
-      return connectionsAccess(parameters, options)
+      return data(connectionsAccess(parameters, options))
     },
     authorize: (path: string, input: ConnectionAccessInput = {}) => {
       const options = this.requestOptions()
@@ -123,11 +133,13 @@ export class Hookfish {
         scopes: input.scopes,
         return_to: input.returnTo,
       }
-      return connectionsAuthorize(parameters, options)
+      return data(connectionsAuthorize(parameters, options))
     },
     setSecret: (path: string, secret: string) => {
       const options = this.requestOptions()
-      return connectionsSetSecret({ connection_path: path, secret }, options)
+      return data(
+        connectionsSetSecret({ connection_path: path, secret }, options),
+      )
     },
     list: (filter: ConnectionFilter = {}) => {
       const options = this.requestOptions()
@@ -135,29 +147,29 @@ export class Hookfish {
         namespace: filter.namespace,
         provider_id: filter.providerId,
       }
-      return connectionsList(parameters, options)
+      return data(connectionsList(parameters, options))
     },
     get: (path: string) => {
       const options = this.requestOptions()
-      return connectionsGet({ connection_path: path }, options)
+      return data(connectionsGet({ connection_path: path }, options))
     },
     disconnect: (path: string) => {
       const options = this.requestOptions()
-      return connectionsDisconnect({ connection_path: path }, options)
+      return data(connectionsDisconnect({ connection_path: path }, options))
     },
     providers: () => {
       const options = this.requestOptions()
-      return connectionsProviders(options)
+      return data(connectionsProviders(options))
     },
   }
 
   readonly accessTokens = {
-    list: () => adminTokensList(this.requestOptions()),
+    list: () => data(adminTokensList(this.requestOptions())),
     create: (input: AccessTokenInput) =>
-      adminTokensCreate(input, this.requestOptions()),
+      data(adminTokensCreate(input, this.requestOptions())),
     revoke: (name: string) =>
-      adminTokensRevoke({ name }, this.requestOptions()),
+      data(adminTokensRevoke({ name }, this.requestOptions())),
   }
 
-  readonly stats = () => statsGet(this.requestOptions())
+  readonly stats = () => data(statsGet(this.requestOptions()))
 }
