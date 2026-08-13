@@ -571,7 +571,7 @@ export function McpInspector() {
           </div>
           <div className="col-span-4 text-right font-mono text-[10px] uppercase tracking-[0.18em] lg:col-span-8">
             <a
-              href="https://github.com/kamath/hookfish"
+              href="https://github.com/hookfish/hookfish"
               target="_blank"
               rel="noreferrer"
               className="text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-950 dark:text-stone-400 dark:decoration-stone-700 dark:hover:text-stone-50"

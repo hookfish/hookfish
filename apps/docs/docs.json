@@ -98,7 +98,7 @@
       "anchors": [
         {
           "anchor": "GitHub",
-          "href": "https://github.com/kamath/hookfish",
+          "href": "https://github.com/hookfish/hookfish",
           "icon": "github"
         }
       ]
@@ -108,7 +108,7 @@
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/kamath/hookfish"
+        "href": "https://github.com/hookfish/hookfish"
       }
     ],
     "primary": {
@@ -131,7 +131,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/kamath/hookfish"
+      "github": "https://github.com/hookfish/hookfish"
     }
   },
   "styling": {
