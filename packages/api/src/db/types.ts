@@ -2,7 +2,6 @@ export type DatabaseResult<T> = T | PromiseLike<T>
 
 export type Connection = {
   id: string
-  organization: string
   namespace: string
   providerId: string
   configuration: Record<string, unknown>
@@ -24,7 +23,6 @@ export type Connection = {
 
 export type OAuthState = {
   id: string
-  organization: string
   namespace: string
   providerId: string
   codeVerifier: string | null
@@ -51,7 +49,6 @@ export type BrokerAccessToken = {
 
 export type VaultSecret = {
   id: string
-  organization: string
   path: string
   value: string
   createdAt: Date
@@ -60,13 +57,7 @@ export type VaultSecret = {
 
 export type NewOAuthState = Pick<
   OAuthState,
-  | 'id'
-  | 'organization'
-  | 'namespace'
-  | 'providerId'
-  | 'redirectUri'
-  | 'scopes'
-  | 'expiresAt'
+  'id' | 'namespace' | 'providerId' | 'redirectUri' | 'scopes' | 'expiresAt'
 > &
   Partial<Pick<OAuthState, 'codeVerifier' | 'returnTo' | 'issuer' | 'status'>>
 
@@ -79,7 +70,7 @@ export type OAuthStateUpdate = Partial<
 
 export type NewConnection = Pick<
   Connection,
-  'organization' | 'namespace' | 'providerId' | 'configuration'
+  'namespace' | 'providerId' | 'configuration'
 > &
   Partial<
     Pick<
@@ -133,19 +124,14 @@ export type ConnectionSummary = Pick<
 >
 
 export type ConnectionFilter = {
-  organization?: string
   providerId?: string
   namespace?: string
   resourceScopes?: string[]
 }
 
-export type NewVaultSecret = Pick<
-  VaultSecret,
-  'organization' | 'path' | 'value'
->
+export type NewVaultSecret = Pick<VaultSecret, 'path' | 'value'>
 
 export type VaultSecretFilter = {
-  organization: string
   prefix?: string
   scopes?: string[]
   excludeInternalPrefix?: string
@@ -165,7 +151,6 @@ export type NewBrokerAccessToken = Pick<
 export interface Database {
   createOAuthState(input: NewOAuthState): DatabaseResult<void>
   supersedeOAuthStates(
-    organization: string,
     namespace: string,
     providerId: string,
   ): DatabaseResult<void>
@@ -184,7 +169,6 @@ export interface Database {
   purgeExpiredOAuthStates(before: Date): DatabaseResult<number>
 
   getConnection(
-    organization: string,
     namespace: string,
     providerId: string,
   ): DatabaseResult<Connection | undefined>
@@ -199,14 +183,11 @@ export interface Database {
   deleteConnection(id: string): DatabaseResult<boolean>
 
   putVaultSecret(input: NewVaultSecret): DatabaseResult<VaultSecret>
-  getVaultSecret(
-    organization: string,
-    path: string,
-  ): DatabaseResult<VaultSecret | undefined>
+  getVaultSecret(path: string): DatabaseResult<VaultSecret | undefined>
   listVaultSecrets(
     filter: VaultSecretFilter,
   ): DatabaseResult<VaultSecretMetadata[]>
-  deleteVaultSecret(organization: string, path: string): DatabaseResult<boolean>
+  deleteVaultSecret(path: string): DatabaseResult<boolean>
 
   getValidBrokerAccessToken(
     name: string,

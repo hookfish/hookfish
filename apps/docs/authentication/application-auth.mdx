@@ -56,9 +56,8 @@ app.post('/integrations/github', async (ctx) => {
   const hookfish = new Hookfish({
     apiKey: await scopedBrokerTokenFor(user.organizationId),
     baseUrl: process.env.HOOKFISH_URL + '/api',
-    organization: user.organizationId,
   })
-  const path = `user/${user.id}/github`
+  const path = `organizations/${user.organizationId}/users/${user.id}/github`
 
   const { secret } = await hookfish.connections.access(path)
   return ctx.json(await loadGitHubProfile(secret))

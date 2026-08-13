@@ -1,9 +1,5 @@
 import { createMiddleware } from 'hono/factory'
-import {
-  type DatabaseContext,
-  type DatabaseInput,
-  resolveDatabase,
-} from '../db/binding'
+import { type DatabaseInput, resolveDatabase } from '../db/binding'
 import type { Database } from '../db/types'
 import { type AccessGrant, authenticateAccessToken } from './access-token'
 import { requireBrokerApiKey, resolveBrokerConfig } from './config'
@@ -14,21 +10,9 @@ export type BrokerContext<Bindings extends object = object> = {
   Bindings: Bindings
   Variables: {
     db: Database
-    getAuthDatabase: () => Promise<Database>
-    databaseContext: DatabaseContext
     accessGrant: AccessGrant
   }
 }
-
-type DatabaseContextRequest = {
-  param(name: string): string | undefined
-  query(name: string): string | undefined
-}
-
-type ResolveDatabaseContext<Bindings extends object> = (
-  request: DatabaseContextRequest,
-  bindings: Bindings,
-) => DatabaseContext | Promise<DatabaseContext>
 
 /**
  * Resolves the database for the request.
@@ -38,19 +22,9 @@ type ResolveDatabaseContext<Bindings extends object> = (
  */
 export function withDatabase<Bindings extends object>(
   database: DatabaseInput<Bindings>,
-  resolveContext: ResolveDatabaseContext<Bindings> = () => ({}),
 ) {
   return createMiddleware<BrokerContext<Bindings>>(async (c, next) => {
-    const context = await resolveContext(c.req, c.env)
-    c.set('databaseContext', context)
-    const db = await resolveDatabase(database, c.env, context)
-    c.set('db', db)
-    c.set(
-      'getAuthDatabase',
-      context.organization
-        ? () => resolveDatabase(database, c.env, {})
-        : () => Promise.resolve(db),
-    )
+    c.set('db', await resolveDatabase(database, c.env))
     await next()
   })
 }
@@ -76,11 +50,7 @@ export function requireApiKey<Bindings extends object>() {
 
     const accessGrant: AccessGrant = safeEqual(presented, expected)
       ? { kind: 'root', scopes: ['**'] }
-      : await authenticateAccessToken(
-          await c.get('getAuthDatabase')(),
-          expected,
-          presented,
-        )
+      : await authenticateAccessToken(c.get('db'), expected, presented)
 
     c.set('accessGrant', accessGrant)
 

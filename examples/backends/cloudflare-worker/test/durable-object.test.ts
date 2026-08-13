@@ -13,7 +13,6 @@ describe('HookfishDurableObject', () => {
     const expiresAt = new Date(Date.now() + 60_000)
     await db.createOAuthState({
       id: 'state-hash',
-      organization: '',
       namespace: 'user/personal',
       providerId: 'github',
       redirectUri: 'https://example.com/callback',
@@ -38,7 +37,6 @@ describe('HookfishDurableObject', () => {
   it('uniquely identifies a connection by namespace and provider', async () => {
     const db = database('connection-ownership')
     const connection = {
-      organization: '',
       namespace: 'shared',
       providerId: 'github',
       configuration: {},
@@ -53,7 +51,7 @@ describe('HookfishDurableObject', () => {
     expect(await db.putConnection(connection)).toMatchObject({
       providerId: 'github',
     })
-    expect(await db.getConnection('', 'shared', 'github')).toMatchObject({
+    expect(await db.getConnection('shared', 'github')).toMatchObject({
       providerId: 'github',
       requestedScopes: ['repo'],
       scopes: ['repo'],
@@ -61,20 +59,19 @@ describe('HookfishDurableObject', () => {
   })
 
   it('isolates named database partitions', async () => {
-    const acme = database('organization:acme')
-    const globex = database('organization:globex')
+    const acme = database('tenant:acme')
+    const globex = database('tenant:globex')
 
     await acme.putVaultSecret({
-      organization: 'acme',
-      path: 'acme/provider/client-secret',
+      path: 'organizations/acme/provider/client-secret',
       value: 'encrypted',
     })
 
     expect(
-      await acme.getVaultSecret('acme', 'acme/provider/client-secret'),
+      await acme.getVaultSecret('organizations/acme/provider/client-secret'),
     ).toMatchObject({ value: 'encrypted' })
     expect(
-      await globex.getVaultSecret('acme', 'acme/provider/client-secret'),
+      await globex.getVaultSecret('organizations/acme/provider/client-secret'),
     ).toBeUndefined()
   })
 
@@ -92,16 +89,13 @@ describe('HookfishDurableObject', () => {
     expect(await db.listBrokerAccessTokenNames()).toEqual(['worker'])
   })
 
-  it('uses the global partition to authorize organization requests', async () => {
-    const db = durableObjects<Env>((bindings, context) =>
-      bindings.HOOKFISH_DB.getByName(
-        `auth-routing:${context.organization ?? '__global__'}`,
-      ),
+  it('uses the configured partition for broker requests', async () => {
+    const db = durableObjects<Env>((bindings) =>
+      bindings.HOOKFISH_DB.getByName('broker'),
     )
     const hookfish = await HookfishServer.init<Env>({
       db,
       providers: {},
-      organizationRouting: true,
     })
     const request = (path: string, token: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers)
@@ -120,11 +114,11 @@ describe('HookfishDurableObject', () => {
     expect(mintedResponse.status).toBe(200)
     const minted: { access_token: string } = await mintedResponse.json()
 
-    const organizationResponse = await request(
-      '/api/organization/acme/connections',
+    const connectionsResponse = await request(
+      '/api/connections',
       minted.access_token,
     )
-    expect(organizationResponse.status).toBe(200)
-    expect(await organizationResponse.json()).toEqual({ connections: [] })
+    expect(connectionsResponse.status).toBe(200)
+    expect(await connectionsResponse.json()).toEqual({ connections: [] })
   })
 })

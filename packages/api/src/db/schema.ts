@@ -26,7 +26,6 @@ export const connections = pgTable(
   'connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    organization: text('organization').notNull().default(''),
     namespace: text('namespace').notNull(),
     providerId: text('provider_id').notNull(),
     configuration: jsonb('configuration')
@@ -68,11 +67,9 @@ export const connections = pgTable(
   },
   (table) => [
     uniqueIndex('connections_identity_idx').on(
-      table.organization,
       table.namespace,
       table.providerId,
     ),
-    index('connections_organization_idx').on(table.organization),
     index('connections_provider_idx').on(table.providerId),
   ],
 )
@@ -86,7 +83,6 @@ export const oauthStates = pgTable(
   'oauth_states',
   {
     id: text('id').primaryKey(),
-    organization: text('organization').notNull().default(''),
     namespace: text('namespace').notNull(),
     providerId: text('provider_id').notNull(),
     codeVerifier: text('code_verifier'),
@@ -134,7 +130,6 @@ export const vaultSecrets = pgTable(
   'vault_secrets',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    organization: text('organization').notNull().default(''),
     path: text('path').notNull(),
     value: text('value_encrypted').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -144,13 +139,7 @@ export const vaultSecrets = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [
-    uniqueIndex('vault_secrets_organization_path_idx').on(
-      table.organization,
-      table.path,
-    ),
-    index('vault_secrets_organization_idx').on(table.organization),
-  ],
+  (table) => [uniqueIndex('vault_secrets_path_idx').on(table.path)],
 )
 
 type Schema = {

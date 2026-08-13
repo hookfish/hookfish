@@ -104,7 +104,7 @@ describe('connections', () => {
     expect(completion.status).toBe(200)
 
     await expect(
-      harness.db.getConnection('', 'user/personal', 'stub'),
+      harness.db.getConnection('user/personal', 'stub'),
     ).resolves.toMatchObject({
       requestedScopes: ['read', 'write', 'admin'],
       scopes: ['read', 'write'],
@@ -225,11 +225,7 @@ describe('connections', () => {
     )
     expect(callback.status).toBe(200)
 
-    const connection = await harness.db.getConnection(
-      '',
-      'user/personal',
-      'stub',
-    )
+    const connection = await harness.db.getConnection('user/personal', 'stub')
     if (!connection) throw new Error('Connection was not stored.')
     await harness.db.updateConnection(connection.id, {
       expiresAt: new Date(Date.now() - 60_000),
@@ -358,7 +354,7 @@ describe('connections', () => {
 
     expect(response.status).toBe(401)
     await expect(
-      harness.db.getConnection('', 'user/personal', 'stub'),
+      harness.db.getConnection('user/personal', 'stub'),
     ).resolves.toMatchObject({ configuration: {} })
   })
 
@@ -403,7 +399,7 @@ describe('connections', () => {
 
     expect(response.status).toBe(401)
     await expect(
-      harness.db.getConnection('', 'user/personal/slack', 'mcp'),
+      harness.db.getConnection('user/personal/slack', 'mcp'),
     ).resolves.toMatchObject({
       configuration: {
         resource_url: 'https://mcp.example.com/slack',
@@ -428,25 +424,13 @@ describe('connections', () => {
     expect(reserved.status).toBe(400)
   })
 
-  it('routes connection state through isolated organization contexts', async () => {
-    await harness.close()
-    harness = await createHarness({ organizationRouting: true })
-
-    const global = await harness.fetch(
-      '/api/connections/access/team/service/secret',
-      { method: 'POST' },
-    )
-    expect(global.status).toBe(404)
-    await expect(global.json()).resolves.toMatchObject({
-      error: { code: 'organization_required' },
-    })
-
-    for (const [organization, secret] of [
+  it('isolates tenants through resource paths and scoped tokens', async () => {
+    for (const [tenant, secret] of [
       ['acme', 'acme-secret'],
       ['beta', 'beta-secret'],
     ]) {
       const stored = await harness.fetch(
-        `/api/organization/${organization}/connections/secret/team/service/secret`,
+        `/api/connections/secret/organizations/${tenant}/team/service/secret`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -456,30 +440,24 @@ describe('connections', () => {
       expect(stored.status).toBe(200)
     }
 
-    for (const [organization, secret] of [
+    for (const [tenant, secret] of [
       ['acme', 'acme-secret'],
       ['beta', 'beta-secret'],
     ]) {
       const access = await harness.fetch(
-        `/api/organization/${organization}/connections/access/team/service/secret`,
+        `/api/connections/access/organizations/${tenant}/team/service/secret`,
         { method: 'POST' },
       )
       expect(access.status).toBe(200)
       await expect(access.json()).resolves.toMatchObject({ secret })
     }
-  })
-
-  it('enforces scoped tokens on organization access and list routes', async () => {
-    await harness.close()
-    harness = await createHarness({ organizationRouting: true })
-
     for (const path of [
       'team/allowed/secret',
       'team/allowed/nested/secret',
       'team/denied/secret',
     ]) {
       const stored = await harness.fetch(
-        `/api/organization/acme/connections/secret/${path}`,
+        `/api/connections/secret/organizations/acme/${path}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -498,20 +476,24 @@ describe('connections', () => {
       expect(response.status).toBe(200)
       return accessTokenSchema.parse(await response.json())
     }
-    const exact = await mint('exact', ['team/allowed/secret'])
-    const subtree = await mint('subtree', ['team/allowed/**'])
+    const exact = await mint('exact', [
+      'organizations/acme/team/allowed/secret',
+    ])
+    const subtree = await mint('subtree', [
+      'organizations/acme/team/allowed/**',
+    ])
     const authorize = (token: string) => ({
       Authorization: `Bearer ${token}`,
     })
 
     const exactAccess = await harness.fetch(
-      '/api/organization/acme/connections/access/team/allowed/secret',
+      '/api/connections/access/organizations/acme/team/allowed/secret',
       { method: 'POST', headers: authorize(exact.access_token) },
     )
     expect(exactAccess.status).toBe(200)
 
     const exactDescendant = await harness.fetch(
-      '/api/organization/acme/connections/access/team/allowed/nested/secret',
+      '/api/connections/access/organizations/acme/team/allowed/nested/secret',
       { method: 'POST', headers: authorize(exact.access_token) },
     )
     expect(exactDescendant.status).toBe(403)
@@ -520,25 +502,31 @@ describe('connections', () => {
     })
 
     const subtreeAccess = await harness.fetch(
-      '/api/organization/acme/connections/access/team/allowed/nested/secret',
+      '/api/connections/access/organizations/acme/team/allowed/nested/secret',
       { method: 'POST', headers: authorize(subtree.access_token) },
     )
     expect(subtreeAccess.status).toBe(200)
 
     const denied = await harness.fetch(
-      '/api/organization/acme/connections/access/team/denied/secret',
+      '/api/connections/access/organizations/acme/team/denied/secret',
       { method: 'POST', headers: authorize(subtree.access_token) },
     )
     expect(denied.status).toBe(403)
 
-    const list = await harness.fetch('/api/organization/acme/connections', {
+    const crossTenant = await harness.fetch(
+      '/api/connections/access/organizations/beta/team/service/secret',
+      { method: 'POST', headers: authorize(subtree.access_token) },
+    )
+    expect(crossTenant.status).toBe(403)
+
+    const list = await harness.fetch('/api/connections', {
       headers: authorize(subtree.access_token),
     })
     expect(list.status).toBe(200)
     await expect(list.json()).resolves.toMatchObject({
       connections: [
-        { path: 'team/allowed/secret' },
-        { path: 'team/allowed/nested/secret' },
+        { path: 'organizations/acme/team/allowed/secret' },
+        { path: 'organizations/acme/team/allowed/nested/secret' },
       ],
     })
   })

@@ -1,7 +1,7 @@
 import { isValidProviderId } from '@hookfish/provider'
 import { BrokerError } from './errors'
 
-export const MAX_RESOURCE_PATH_LENGTH = 512
+export const MAX_RESOURCE_PATH_LENGTH = 768
 
 export type ConnectionPath = {
   path: string
@@ -111,23 +111,6 @@ export function normalizeResourcePath(path: string, resource: string): string {
   }
 
   return path
-}
-
-export function assertOrganizationResourcePath(
-  organization: string | undefined,
-  path: string,
-  resource: string,
-): void {
-  normalizeResourcePath(path, resource)
-  if (!organization) return
-
-  if (path === organization || path.startsWith(`${organization}/`)) return
-
-  throw new BrokerError(
-    403,
-    'organization_mismatch',
-    `${resource[0]?.toUpperCase()}${resource.slice(1)} "${path}" is outside organization "${organization}".`,
-  )
 }
 
 export function encodeResourcePath(path: string): string {

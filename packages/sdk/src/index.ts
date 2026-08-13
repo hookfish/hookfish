@@ -9,17 +9,6 @@ import {
   connectionsList,
   connectionsProviders,
   connectionsSetSecret,
-  organizationConnectionsAccess,
-  organizationConnectionsAuthorize,
-  organizationConnectionsDisconnect,
-  organizationConnectionsGet,
-  organizationConnectionsList,
-  organizationConnectionsProviders,
-  organizationConnectionsSetSecret,
-  organizationSecretsDelete,
-  organizationSecretsGet,
-  organizationSecretsList,
-  organizationSecretsPut,
   secretsDelete,
   secretsGet,
   secretsList,
@@ -36,8 +25,6 @@ type ApiKey = string | (() => MaybePromise<string>)
 export type HookfishOptions = Pick<Config, 'baseUrl' | 'fetch' | 'headers'> & {
   /** Root or scoped Hookfish broker credential. */
   apiKey: ApiKey
-  /** Route all supported resources through this organization namespace. */
-  organization?: string
 }
 
 type ErrorDetails = {
@@ -103,12 +90,10 @@ type SecretFilter = Parameters<typeof secretsList>[0]
 
 /** End-to-end typed client for a Hookfish broker. */
 export class Hookfish {
-  readonly organization: string | undefined
   private readonly client: Client
 
   constructor(options: HookfishOptions) {
-    const { apiKey, organization, ...clientOptions } = options
-    this.organization = organization
+    const { apiKey, ...clientOptions } = options
     this.client = createClient({
       ...clientOptions,
       auth: typeof apiKey === 'function' ? () => apiKey() : apiKey,
@@ -133,12 +118,7 @@ export class Hookfish {
         scopes: input.scopes,
         return_to: input.returnTo,
       }
-      return this.organization
-        ? organizationConnectionsAccess(
-            { ...parameters, organization: this.organization },
-            options,
-          )
-        : connectionsAccess(parameters, options)
+      return connectionsAccess(parameters, options)
     },
     authorize: (path: string, input: ConnectionAccessInput = {}) => {
       const options = this.requestOptions()
@@ -148,25 +128,11 @@ export class Hookfish {
         scopes: input.scopes,
         return_to: input.returnTo,
       }
-      return this.organization
-        ? organizationConnectionsAuthorize(
-            { ...parameters, organization: this.organization },
-            options,
-          )
-        : connectionsAuthorize(parameters, options)
+      return connectionsAuthorize(parameters, options)
     },
     setSecret: (path: string, secret: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationConnectionsSetSecret(
-            {
-              organization: this.organization,
-              connection_path: path,
-              secret,
-            },
-            options,
-          )
-        : connectionsSetSecret({ connection_path: path, secret }, options)
+      return connectionsSetSecret({ connection_path: path, secret }, options)
     },
     list: (filter: ConnectionFilter = {}) => {
       const options = this.requestOptions()
@@ -174,39 +140,19 @@ export class Hookfish {
         namespace: filter.namespace,
         provider_id: filter.providerId,
       }
-      return this.organization
-        ? organizationConnectionsList(
-            { ...parameters, organization: this.organization },
-            options,
-          )
-        : connectionsList(parameters, options)
+      return connectionsList(parameters, options)
     },
     get: (path: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationConnectionsGet(
-            { organization: this.organization, connection_path: path },
-            options,
-          )
-        : connectionsGet({ connection_path: path }, options)
+      return connectionsGet({ connection_path: path }, options)
     },
     disconnect: (path: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationConnectionsDisconnect(
-            { organization: this.organization, connection_path: path },
-            options,
-          )
-        : connectionsDisconnect({ connection_path: path }, options)
+      return connectionsDisconnect({ connection_path: path }, options)
     },
     providers: () => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationConnectionsProviders(
-            { organization: this.organization },
-            options,
-          )
-        : connectionsProviders(options)
+      return connectionsProviders(options)
     },
   }
 
@@ -214,39 +160,19 @@ export class Hookfish {
   readonly secrets = {
     list: (filter?: SecretFilter) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationSecretsList(
-            { ...filter, organization: this.organization },
-            options,
-          )
-        : secretsList(filter, options)
+      return secretsList(filter, options)
     },
     get: (path: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationSecretsGet(
-            { organization: this.organization, secret_path: path },
-            options,
-          )
-        : secretsGet({ secret_path: path }, options)
+      return secretsGet({ secret_path: path }, options)
     },
     put: (path: string, value: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationSecretsPut(
-            { organization: this.organization, secret_path: path, value },
-            options,
-          )
-        : secretsPut({ secret_path: path, value }, options)
+      return secretsPut({ secret_path: path, value }, options)
     },
     delete: (path: string) => {
       const options = this.requestOptions()
-      return this.organization
-        ? organizationSecretsDelete(
-            { organization: this.organization, secret_path: path },
-            options,
-          )
-        : secretsDelete({ secret_path: path }, options)
+      return secretsDelete({ secret_path: path }, options)
     },
   }
 

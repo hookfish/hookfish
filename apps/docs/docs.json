@@ -56,8 +56,7 @@
             "group": "Secure and scale",
             "pages": [
               "authentication/application-auth",
-              "authorization/token-scoping",
-              "authorization/organization-routing"
+              "authorization/token-scoping"
             ]
           },
           {

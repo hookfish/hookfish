@@ -11,12 +11,13 @@ expiring broker tokens instead.
 ```text
 user/personal/gmail       exact connection only
 user/personal/**          namespace and every descendant
+organizations/acme/**     every resource owned by Acme
 **                        every resource
 ```
 
 Plain paths are exact. Hookfish does not silently turn them into folders.
 Append `/**` when you intend to grant descendants. Paths are canonical
-slash-delimited identifiers up to 512 characters.
+slash-delimited identifiers up to 768 characters.
 
 ## Mint a token
 
@@ -45,6 +46,10 @@ curl --request POST \
 
 The same token cannot access `user/personal/gmail/mcp`. Grant
 `user/personal/**` only if the service needs that subtree.
+
+For a multi-tenant application, begin every connection and secret path with a
+tenant prefix such as `organizations/acme`. Mint tokens against that same
+prefix so a credential for one tenant cannot address another tenant's paths.
 
 Revoke a name with `DELETE /api/admin/tokens/{name}`. Rotating the root key
 invalidates all scoped tokens because it signs them.

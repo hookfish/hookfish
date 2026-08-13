@@ -11,7 +11,6 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: 'https://app.example.com/settings/integrations',
   trustedOrigins: ['https://app.example.com'],
-  organizationRouting: false,
   onEvent: async (event) => auditLog.write(event),
 })
 ```
@@ -24,7 +23,6 @@ export default defineHookfishConfig({
 | `includeSwagger` | `true` | Include server-only operations in OpenAPI |
 | `returnTo` | Completion page | Fixed post-callback destination |
 | `trustedOrigins` | `[]` | Allow per-access `returnTo` destinations and browser CORS |
-| `organizationRouting` | `false` | Add organization-prefixed management routes |
 | `onEvent` | Unset | Receive best-effort lifecycle events |
 
 There is no provider-management switch. Provider implementations are trusted

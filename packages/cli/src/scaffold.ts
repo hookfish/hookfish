@@ -129,7 +129,6 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
-  organizationRouting: false,
   ${providerConfig},
 })
 `
@@ -169,7 +168,6 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
-  organizationRouting: false,
   ${providerConfig},
 })
 `
@@ -232,8 +230,8 @@ import {
 
 export { HookfishDurableObject }
 
-const db = durableObjects<Env>((bindings, context) =>
-  bindings.HOOKFISH_DB.getByName(context.organization ?? '__global__'),
+const db = durableObjects<Env>((bindings) =>
+  bindings.HOOKFISH_DB.getByName('__global__'),
 )
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 const hookfish = await HookfishServer.init<Env>({
@@ -242,7 +240,6 @@ const hookfish = await HookfishServer.init<Env>({
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
-  organizationRouting: false,
   providers: {
     mcp: createMcpProvider(),
     secret: createSecretProvider(),

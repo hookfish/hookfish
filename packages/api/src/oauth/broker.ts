@@ -17,11 +17,11 @@ import {
   decryptSecret,
   encryptSecret,
   hashToken,
+  randomToken,
   requireEncryptionKey,
 } from './crypto'
 import { BrokerError } from './errors'
 import { formatConnectionPath } from './resource-path'
-import { createAuthorizationState } from './state'
 
 const STATE_TTL_MS = 10 * 60 * 1000
 const REFRESH_LEEWAY_MS = 60 * 1000
@@ -121,20 +121,14 @@ function normalizeConfiguration(
 export async function ensureConnection(
   db: Database,
   input: {
-    organization?: string
     namespace: string
     providerId: string
     configuration?: Record<string, unknown>
   },
   providers: BoundProviderSource = defaultBoundProviderSource,
 ): Promise<Connection> {
-  const organization = input.organization ?? ''
   const provider = await getProvider(providers, input.providerId)
-  const existing = await db.getConnection(
-    organization,
-    input.namespace,
-    input.providerId,
-  )
+  const existing = await db.getConnection(input.namespace, input.providerId)
 
   if (existing) {
     if (input.configuration !== undefined) {
@@ -152,7 +146,6 @@ export async function ensureConnection(
 
   const normalized = normalizeConfiguration(provider, input.configuration ?? {})
   const stored = await db.putConnection({
-    organization,
     namespace: input.namespace,
     providerId: input.providerId,
     configuration: normalized,
@@ -191,13 +184,12 @@ async function configureOAuthProvider(
 
   let prepared = connection
   if (!prepared.oauthClientId) {
-    const lockKey = `${connection.organization}\0${connection.namespace}\0${connection.providerId}`
+    const lockKey = `${connection.namespace}\0${connection.providerId}`
     let pending = provisioningLocks.get(lockKey)
     if (!pending) {
       pending = (async () => {
         const latest =
           (await db.getConnection(
-            connection.organization,
             connection.namespace,
             connection.providerId,
           )) ?? connection
@@ -279,10 +271,7 @@ export async function startAuthorization(
   const scopes = input.scopes?.length
     ? input.scopes
     : [...(configured.provider.defaultScopes ?? [])]
-  const state = await createAuthorizationState(
-    env,
-    configured.connection.organization || undefined,
-  )
+  const state = randomToken(32)
   const stateHash = await hashToken(state)
   const expiresAt = new Date(Date.now() + STATE_TTL_MS)
   const authorization = await callProvider(() =>
@@ -294,13 +283,11 @@ export async function startAuthorization(
   )
 
   await db.supersedeOAuthStates(
-    configured.connection.organization,
     configured.connection.namespace,
     configured.connection.providerId,
   )
   await db.createOAuthState({
     id: stateHash,
-    organization: configured.connection.organization,
     namespace: configured.connection.namespace,
     providerId: configured.connection.providerId,
     codeVerifier: authorization.codeVerifier,
@@ -402,7 +389,6 @@ export async function completeAuthorization(
     }
     if (existing.status === 'completed') {
       const connection = await db.getConnection(
-        existing.organization,
         existing.namespace,
         existing.providerId,
       )
@@ -440,7 +426,6 @@ export async function completeAuthorization(
       )
     }
     const connection = await db.getConnection(
-      pending.organization,
       pending.namespace,
       pending.providerId,
     )
@@ -626,7 +611,6 @@ export async function accessConnection(
   db: Database,
   env: object,
   input: {
-    organization?: string
     namespace: string
     providerId: string
     configuration?: Record<string, unknown>
@@ -733,7 +717,6 @@ export async function authorizeConnection(
   db: Database,
   env: object,
   input: {
-    organization?: string
     namespace: string
     providerId: string
     configuration?: Record<string, unknown>
@@ -787,7 +770,6 @@ export async function setConnectionSecret(
   db: Database,
   env: object,
   input: {
-    organization?: string
     namespace: string
     providerId: string
     value: string
