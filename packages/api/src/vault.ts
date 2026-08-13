@@ -6,12 +6,8 @@ import {
 } from './oauth/crypto'
 import { BrokerError } from './oauth/errors'
 
-const MAX_SECRET_PATH_LENGTH = 512
+export const MAX_SECRET_PATH_LENGTH = 768
 const INTERNAL_PREFIX = '__hookfish/'
-
-export function organizationKey(organization?: string): string {
-  return organization ?? ''
-}
 
 function hasUnsafePathCharacters(value: string): boolean {
   for (const character of value) {
@@ -79,19 +75,6 @@ export function normalizeSecretPath(
   return normalized
 }
 
-export function assertOrganizationSecretPath(
-  organization: string | undefined,
-  path: string,
-): void {
-  if (!organization) return
-  if (path === organization || path.startsWith(`${organization}/`)) return
-  throw new BrokerError(
-    403,
-    'organization_mismatch',
-    `Secret path "${path}" is outside organization "${organization}".`,
-  )
-}
-
 export function providerClientSecretPath(providerId: string): string {
   return `${INTERNAL_PREFIX}providers/${providerId}/client-secret`
 }
@@ -101,11 +84,9 @@ export async function putVaultSecret(
   env: object,
   path: string,
   value: string,
-  organization?: string,
   internal = false,
 ) {
   const normalized = normalizeSecretPath(path, internal)
-  if (!internal) assertOrganizationSecretPath(organization, normalized)
   if (!value) {
     throw new BrokerError(
       400,
@@ -115,7 +96,6 @@ export async function putVaultSecret(
   }
   const encrypted = await encryptSecret(requireEncryptionKey(env), value)
   const stored = await db.putVaultSecret({
-    organization: organizationKey(organization),
     path: normalized,
     value: encrypted,
   })
@@ -126,15 +106,10 @@ export async function getVaultSecret(
   db: Database,
   env: object,
   path: string,
-  organization?: string,
   internal = false,
 ): Promise<{ path: string; value: string }> {
   const normalized = normalizeSecretPath(path, internal)
-  if (!internal) assertOrganizationSecretPath(organization, normalized)
-  const stored = await db.getVaultSecret(
-    organizationKey(organization),
-    normalized,
-  )
+  const stored = await db.getVaultSecret(normalized)
   if (!stored) {
     throw new BrokerError(
       404,
@@ -151,7 +126,6 @@ export async function getVaultSecret(
 export async function listVaultSecrets(
   db: Database,
   options: {
-    organization?: string
     prefix?: string
     scopes?: string[]
   } = {},
@@ -159,9 +133,7 @@ export async function listVaultSecrets(
   const prefix = options.prefix
     ? normalizeSecretPath(options.prefix)
     : undefined
-  if (prefix) assertOrganizationSecretPath(options.organization, prefix)
   return db.listVaultSecrets({
-    organization: organizationKey(options.organization),
     prefix,
     scopes: options.scopes,
     excludeInternalPrefix: INTERNAL_PREFIX,
@@ -171,10 +143,8 @@ export async function listVaultSecrets(
 export async function deleteVaultSecret(
   db: Database,
   path: string,
-  organization?: string,
   internal = false,
 ): Promise<boolean> {
   const normalized = normalizeSecretPath(path, internal)
-  if (!internal) assertOrganizationSecretPath(organization, normalized)
-  return db.deleteVaultSecret(organizationKey(organization), normalized)
+  return db.deleteVaultSecret(normalized)
 }

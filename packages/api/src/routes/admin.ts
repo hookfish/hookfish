@@ -9,6 +9,7 @@ import {
   mintAccessToken,
   normalizeTokenName,
 } from '../oauth/access-token'
+import { MAX_RESOURCE_PATH_LENGTH } from '../oauth/resource-path'
 import { requireBrokerApiKey, resolveBrokerConfig } from '../oauth/config'
 import { BrokerError, isBrokerError } from '../oauth/errors'
 import {
@@ -66,7 +67,7 @@ const mintTokenRoute = createRoute({
               .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
               .openapi({ example: 'team-worker' }),
             scopes: z
-              .array(z.string().min(1).max(512))
+              .array(z.string().min(1).max(MAX_RESOURCE_PATH_LENGTH))
               .min(1)
               .max(32)
               .openapi({

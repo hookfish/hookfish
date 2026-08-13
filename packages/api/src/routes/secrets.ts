@@ -12,19 +12,18 @@ import {
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
-import { ORGANIZATION_PATTERN } from '../oauth/organization'
 import {
-  assertOrganizationSecretPath,
   deleteVaultSecret,
   getVaultSecret,
   listVaultSecrets,
+  MAX_SECRET_PATH_LENGTH,
   normalizeSecretPath,
   putVaultSecret,
 } from '../vault'
 
 const brokerAuth = [{ brokerApiKey: [] }]
 const pathParam = z.object({
-  secret_path: z.string().min(1).max(512),
+  secret_path: z.string().min(1).max(MAX_SECRET_PATH_LENGTH),
 })
 const errorSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
@@ -67,7 +66,7 @@ const listRoute = createRoute({
   security: brokerAuth,
   request: {
     query: z.object({
-      path_prefix: z.string().min(1).max(512).optional(),
+      path_prefix: z.string().min(1).max(MAX_SECRET_PATH_LENGTH).optional(),
     }),
   },
   responses: {
@@ -171,32 +170,7 @@ const deleteRuntimeRoute = createRoute({
 })
 
 type SecretRouteOptions = {
-  organizationRouting?: boolean
-  routeMode: 'global' | 'organization'
   onEvent?: HookfishEventHandler
-}
-
-function requestOrganization(
-  request: { param(name: string): string | undefined },
-  options: SecretRouteOptions,
-): string | undefined {
-  if (options.routeMode === 'global') return undefined
-  if (!options.organizationRouting) {
-    throw new BrokerError(
-      404,
-      'organization_routing_disabled',
-      'Organization-prefixed secret routes are disabled.',
-    )
-  }
-  const organization = request.param('organization')
-  if (!organization || !ORGANIZATION_PATTERN.test(organization)) {
-    throw new BrokerError(
-      400,
-      'invalid_organization',
-      'Organization must be 1-128 characters using letters, numbers, dots, underscores, or hyphens.',
-    )
-  }
-  return organization
 }
 
 function serializeMetadata(secret: {
@@ -217,9 +191,7 @@ export function createSecretRoutes<Bindings extends object>(
 ) {
   const routes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>()
-  const connectDatabase = withDatabase(database, (request) => ({
-    organization: requestOrganization(request, options),
-  }))
+  const connectDatabase = withDatabase(database)
   routes.use('/secrets', connectDatabase, authenticate)
   routes.use('/secrets/*', connectDatabase, authenticate)
   routes.openAPIRegistry.registerPath(putRoute)
@@ -228,11 +200,8 @@ export function createSecretRoutes<Bindings extends object>(
 
   const listApi = routes.openapi(listRoute, async (c) => {
     const { path_prefix: requestedPrefix } = c.req.valid('query')
-    const { organization } = c.get('databaseContext')
-    const prefix = requestedPrefix ?? organization
-    if (prefix) {
-      const normalized = normalizeSecretPath(prefix)
-      assertOrganizationSecretPath(organization, normalized)
+    if (requestedPrefix) {
+      const normalized = normalizeSecretPath(requestedPrefix)
       assertNamespaceAccess(c.get('accessGrant'), normalized)
     } else if (!c.get('accessGrant').scopes.includes('**')) {
       throw new BrokerError(
@@ -242,8 +211,7 @@ export function createSecretRoutes<Bindings extends object>(
       )
     }
     const secrets = await listVaultSecrets(c.get('db'), {
-      organization,
-      prefix,
+      prefix: requestedPrefix,
       scopes: c.get('accessGrant').scopes,
     })
     c.header('Cache-Control', 'no-store')
@@ -252,20 +220,16 @@ export function createSecretRoutes<Bindings extends object>(
 
   const putApi = listApi.openapi(putRuntimeRoute, async (c) => {
     const path = normalizeSecretPath(c.req.valid('param').secret_path)
-    const { organization } = c.get('databaseContext')
-    assertOrganizationSecretPath(organization, path)
     assertConnectionAccess(c.get('accessGrant'), path)
     const stored = await putVaultSecret(
       c.get('db'),
       resolveBrokerConfig(c.env),
       path,
       c.req.valid('json').value,
-      organization,
     )
     await emitHookfishEvent(options.onEvent, {
       type: 'secret.stored',
       occurredAt: new Date(),
-      organization,
       secretPath: path,
     })
     c.header('Cache-Control', 'no-store')
@@ -274,19 +238,15 @@ export function createSecretRoutes<Bindings extends object>(
 
   const getApi = putApi.openapi(getRuntimeRoute, async (c) => {
     const path = normalizeSecretPath(c.req.valid('param').secret_path)
-    const { organization } = c.get('databaseContext')
-    assertOrganizationSecretPath(organization, path)
     assertConnectionAccess(c.get('accessGrant'), path)
     const secret = await getVaultSecret(
       c.get('db'),
       resolveBrokerConfig(c.env),
       path,
-      organization,
     )
     await emitHookfishEvent(options.onEvent, {
       type: 'secret.retrieved',
       occurredAt: new Date(),
-      organization,
       secretPath: path,
     })
     c.header('Cache-Control', 'no-store')
@@ -296,15 +256,12 @@ export function createSecretRoutes<Bindings extends object>(
 
   const deleteApi = getApi.openapi(deleteRuntimeRoute, async (c) => {
     const path = normalizeSecretPath(c.req.valid('param').secret_path)
-    const { organization } = c.get('databaseContext')
-    assertOrganizationSecretPath(organization, path)
     assertConnectionAccess(c.get('accessGrant'), path)
-    const deleted = await deleteVaultSecret(c.get('db'), path, organization)
+    const deleted = await deleteVaultSecret(c.get('db'), path)
     if (deleted) {
       await emitHookfishEvent(options.onEvent, {
         type: 'secret.deleted',
         occurredAt: new Date(),
-        organization,
         secretPath: path,
       })
     }

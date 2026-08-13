@@ -1,6 +1,9 @@
 import type { Database } from '../db/types'
 import { BrokerError } from './errors'
-import { normalizeResourcePath } from './resource-path'
+import {
+  MAX_RESOURCE_PATH_LENGTH,
+  normalizeResourcePath,
+} from './resource-path'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const TOKEN_VERSION = 1
@@ -92,7 +95,7 @@ export function normalizeResourceScope(scope: string): string {
 
   if (
     normalized.length === 0 ||
-    normalized.length > 512 ||
+    normalized.length > MAX_RESOURCE_PATH_LENGTH ||
     normalized.startsWith('/') ||
     normalized.endsWith('/') ||
     normalized.includes('//')

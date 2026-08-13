@@ -3,17 +3,6 @@ import type { Database } from './types'
 export type MaybePromise<T> = T | Promise<T>
 
 /**
- * Selects the logical storage partition for one request.
- *
- * Shared databases use `organization` as a row-level tenant key. A partitioned
- * adapter can use the same value to select an isolated store, such as a named
- * Durable Object, before executing the broker operation.
- */
-export type DatabaseContext = Readonly<{
-  organization?: string
-}>
-
-/**
  * Resolves the database available to one request.
  *
  * Bindings are deliberately opaque to the API. A Node adapter can ignore them,
@@ -21,10 +10,7 @@ export type DatabaseContext = Readonly<{
  * connection) without coupling Hookfish to that runtime.
  */
 export interface DatabaseBinding<Bindings extends object = object> {
-  getDatabase(
-    bindings: Bindings,
-    context?: DatabaseContext,
-  ): MaybePromise<Database>
+  getDatabase(bindings: Bindings): MaybePromise<Database>
   migrate?(bindings: Bindings): MaybePromise<void>
 }
 
@@ -35,10 +21,7 @@ export type DatabaseInput<Bindings extends object = object> =
   | DatabaseBinding<Bindings>
 
 export function defineDatabase<Bindings extends object = object>(
-  getDatabase: (
-    bindings: Bindings,
-    context?: DatabaseContext,
-  ) => MaybePromise<Database>,
+  getDatabase: (bindings: Bindings) => MaybePromise<Database>,
   migrate?: (bindings: Bindings) => MaybePromise<void>,
 ): DatabaseBinding<Bindings> {
   return migrate ? { getDatabase, migrate } : { getDatabase }
@@ -58,9 +41,8 @@ function isDatabaseBinding<Bindings extends object>(
 export async function resolveDatabase<Bindings extends object>(
   input: DatabaseInput<Bindings>,
   bindings: Bindings,
-  context: DatabaseContext = {},
 ): Promise<Database> {
-  if (isDatabaseBinding(input)) return input.getDatabase(bindings, context)
+  if (isDatabaseBinding(input)) return input.getDatabase(bindings)
   return input
 }
 

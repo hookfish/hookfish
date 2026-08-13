@@ -43,9 +43,9 @@ import {
 } from '@hookfish/api/database'
 ```
 
-For trusted application code, construct `Hookfish` from `@hookfish/sdk`.
-Pass `organization` once to select organization-prefixed operations for every
-supported resource:
+For trusted application code, construct `Hookfish` from `@hookfish/sdk`. Put
+the tenant identifier in each resource path when your application is
+multi-tenant:
 
 ```ts
 import { Hookfish } from '@hookfish/sdk'
@@ -53,10 +53,11 @@ import { Hookfish } from '@hookfish/sdk'
 const hookfish = new Hookfish({
   apiKey: process.env.HOOKFISH_API_KEY,
   baseUrl: 'https://broker.example.com/api',
-  organization: 'acme',
 })
 
-const { secret } = await hookfish.connections.access('billing/github')
+const { secret } = await hookfish.connections.access(
+  'organizations/acme/billing/github',
+)
 ```
 
 Use `@hookfish/api` for the broker runtime and lower-level composition. Import

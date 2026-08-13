@@ -6,8 +6,8 @@ A registry product has two different kinds of data:
 - Connections and encrypted credentials that belong to one organization.
 
 Keep the catalog in the application. Hookfish owns connection state, OAuth
-callbacks, encrypted credentials, refresh, revocation, and organization-scoped
-persistence.
+callbacks, encrypted credentials, refresh, revocation, and tenant-prefixed
+resource paths.
 
 ```text
 Application
@@ -21,7 +21,7 @@ Hookfish
   Per-connection MCP URL and scopes
   OAuth state and callbacks
   Encrypted credentials and client registration
-  Organization routing and broker authorization
+  Resource-path broker authorization
 ```
 
 ## Data model
@@ -42,20 +42,21 @@ Catalog entries never contain user tokens. A dynamic MCP connection uses a path
 whose final segment is the trusted `mcp` provider:
 
 ```text
-catalog/notion/mcp
-└── namespace ─┘ └ provider ID
+organizations/acme/catalog/notion/mcp
+└────────────── namespace ─────────┘ └ provider ID
 ```
 
-With organization routing, Hookfish stores the identity as:
+Hookfish stores the identity as:
 
 ```text
-(organization, namespace, providerId)
-('acme', 'catalog/notion', 'mcp')
+(namespace, providerId)
+('organizations/acme/catalog/notion', 'mcp')
 ```
 
-The organization is not embedded in the connection path. Treat catalog IDs as
-stable path segments. Hide disabled entries from discovery and block new
-connections in the application.
+Putting the organization in the path gives every tenant a distinct subtree and
+lets broker scopes enforce the same boundary. Treat catalog IDs as stable path
+segments. Hide disabled entries from discovery and block new connections in
+the application.
 
 ## Configure Hookfish once
 
@@ -69,7 +70,6 @@ import { createMcpProvider } from '@hookfish/providers'
 
 export default defineHookfishConfig({
   db: pglite('./pgdata'),
-  organizationRouting: true,
   providers: {
     mcp: createMcpProvider(),
   },
@@ -128,10 +128,11 @@ app.post('/organizations/:organization/servers/:server/connect', async (ctx) => 
   const hookfish = new Hookfish({
     apiKey: await hookfishTokenFor(organization, server),
     baseUrl: `${HOOKFISH_URL}/api`,
-    organization,
   })
+  const connectionPath =
+    `organizations/${organization}/catalog/${catalogServer.id}/mcp`
   const connection = await hookfish.connections.access(
-    `catalog/${catalogServer.id}/mcp`,
+    connectionPath,
     {
       configuration: { resource_url: catalogServer.resourceUrl },
       scopes: catalogServer.scopes,
@@ -166,7 +167,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
     token: async () =>
       (
         await hookfish.connections.access(
-          `catalog/${catalogServer.id}/mcp`,
+          `organizations/${organization}/catalog/${catalogServer.id}/mcp`,
           {
             configuration: { resource_url: mcpUrl.href },
             scopes: catalogServer.scopes,
@@ -176,7 +177,7 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, {
       ).secret,
     onUnauthorized: async () => {
       await hookfish.connections.authorize(
-        `catalog/${catalogServer.id}/mcp`,
+        `organizations/${organization}/catalog/${catalogServer.id}/mcp`,
         {
           configuration: { resource_url: mcpUrl.href },
           scopes: catalogServer.scopes,
@@ -224,35 +225,28 @@ connection or catalog subtree:
 ```json
 {
   "name": "acme-catalog-worker",
-  "scopes": ["catalog/**"],
+  "scopes": ["organizations/acme/catalog/**"],
   "expires_in": 3600
 }
 ```
 
-Broker resource scopes apply to connection paths. Organization routing selects
-the storage context separately; it does not add the organization to a resource
-scope. The application must ensure that a token intended for Acme is used only
-after Acme membership has been verified.
+Broker resource scopes apply to the complete connection path. A token for
+`organizations/acme/catalog/**` cannot access Beta's subtree. The application
+must still verify Acme membership before choosing that token and path.
 
-## Database partitioning
+## Tenant isolation
 
-A shared Postgres database stores the organization as a row key. On Cloudflare,
-map each organization to a Durable Object and reserve a global object for
-broker-token authentication:
+Store all tenant-prefixed paths in the configured Hookfish database. On
+Cloudflare, select one Durable Object for that broker deployment:
 
 ```ts
-const db = durableObjects<Env>((bindings, context) =>
-  bindings.HOOKFISH_DB.getByName(
-    context.organization
-      ? `organization:${context.organization}`
-      : '__global__',
-  ),
+const db = durableObjects<Env>((bindings) =>
+  bindings.HOOKFISH_DB.getByName('hookfish'),
 )
 ```
 
-Callbacks recover the organization from authenticated OAuth state before
-selecting the organization database. The callback and deployment client
-metadata URLs remain global:
+OAuth callbacks recover the connection from authenticated state in the same
+database. The callback and deployment client metadata URLs are:
 
 ```text
 /api/connections/callback/mcp
@@ -268,15 +262,14 @@ use the single `mcp` provider and connection-local configuration for that case.
 
 ## Frontend organization views
 
-The bundled dashboard does not select an organization context. A
-Smithery-style product should expose an application route such as:
+The bundled dashboard displays the broker resource tree. A Smithery-style
+product should expose an application route such as:
 
 ```text
 /organizations/acme/connections
 ```
 
 That page calls the application's authenticated endpoint. The application
-verifies membership and uses an organization-configured `Hookfish` SDK client
-server-side. Supporting organization selection directly in the bundled
-dashboard would require organization-aware frontend routes, query keys, and
-browser-facade authorization.
+verifies membership and uses the matching tenant-prefixed path and scoped
+broker token server-side. A custom product UI can hide the
+`organizations/acme` prefix from its users.

@@ -54,25 +54,6 @@ describe('Hookfish', () => {
     })
   })
 
-  it('selects organization-prefixed operations', async () => {
-    let request: Request | undefined
-    const hookfish = new Hookfish({
-      apiKey: 'broker-key',
-      baseUrl: 'http://local/api',
-      organization: 'acme',
-      fetch: async (input, init) => {
-        request = new Request(input, init)
-        return Response.json(access)
-      },
-    })
-
-    await hookfish.connections.access('user/personal/gmail')
-
-    expect(request?.url).toBe(
-      'http://local/api/organization/acme/connections/access/user%2Fpersonal%2Fgmail',
-    )
-  })
-
   it('exposes fresh authorization details on HookfishError', async () => {
     const hookfish = new Hookfish({
       apiKey: 'broker-key',

@@ -23,13 +23,12 @@ import {
   requireApiKey,
   withDatabase,
 } from '../oauth/middleware'
-import { ORGANIZATION_PATTERN } from '../oauth/organization'
 import {
   formatConnectionPath,
+  MAX_RESOURCE_PATH_LENGTH,
   normalizeProviderId,
   parseConnectionPath,
 } from '../oauth/resource-path'
-import { organizationFromAuthorizationState } from '../oauth/state'
 import type { BoundProviderSource } from '../provider-source'
 
 const brokerAuth = [{ brokerApiKey: [] }]
@@ -37,37 +36,7 @@ const brokerAuth = [{ brokerApiKey: [] }]
 type ConnectionRouteOptions = {
   returnTo?: string
   trustedOrigins?: readonly string[]
-  organizationRouting?: boolean
   onEvent?: HookfishEventHandler
-  routeMode: 'global' | 'organization'
-}
-
-function requestOrganization(
-  request: { param(name: string): string | undefined },
-  options: ConnectionRouteOptions,
-): string | undefined {
-  if (options.routeMode === 'global') {
-    if (options.organizationRouting) {
-      throw new BrokerError(
-        404,
-        'organization_required',
-        'Use an organization-prefixed connection route.',
-      )
-    }
-    return undefined
-  }
-  if (!options.organizationRouting) {
-    throw new BrokerError(
-      404,
-      'organization_routing_disabled',
-      'Organization-prefixed routes are disabled.',
-    )
-  }
-  const organization = request.param('organization')
-  if (!organization || !ORGANIZATION_PATTERN.test(organization)) {
-    throw new BrokerError(400, 'invalid_organization', 'Invalid organization.')
-  }
-  return organization
 }
 
 const errorSchema = z.object({
@@ -113,7 +82,7 @@ const commonErrors = {
 }
 
 const connectionPathParam = z.object({
-  connection_path: z.string().min(1).max(512),
+  connection_path: z.string().min(1).max(MAX_RESOURCE_PATH_LENGTH),
 })
 
 const connectionAccessInput = z.object({
@@ -446,26 +415,15 @@ export function createConnectionRoutes<Bindings extends object>(
 ) {
   const routes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>()
-  const connectManagementDatabase = withDatabase(database, (request) => ({
-    organization: requestOrganization(request, options),
-  }))
-  const connectCallbackDatabase = withDatabase(
-    database,
-    async (request, bindings) => ({
-      organization: await organizationFromAuthorizationState(
-        resolveBrokerConfig(bindings),
-        request.query('state'),
-      ),
-    }),
-  )
+  const connectDatabase = withDatabase(database)
 
-  routes.use('/providers', connectManagementDatabase, authenticate)
-  routes.use('/access/*', connectManagementDatabase, authenticate)
-  routes.use('/authorize/*', connectManagementDatabase, authenticate)
-  routes.use('/secret/*', connectManagementDatabase, authenticate)
-  routes.use('/', connectManagementDatabase, authenticate)
-  routes.use('/entry/*', connectManagementDatabase, authenticate)
-  routes.use('/callback/*', connectCallbackDatabase)
+  routes.use('/providers', connectDatabase, authenticate)
+  routes.use('/access/*', connectDatabase, authenticate)
+  routes.use('/authorize/*', connectDatabase, authenticate)
+  routes.use('/secret/*', connectDatabase, authenticate)
+  routes.use('/', connectDatabase, authenticate)
+  routes.use('/entry/*', connectDatabase, authenticate)
+  routes.use('/callback/*', connectDatabase)
 
   for (const route of [
     accessRoute,
@@ -478,13 +436,6 @@ export function createConnectionRoutes<Bindings extends object>(
   }
 
   const metadataApi = routes.openapi(clientMetadataRoute, (c) => {
-    if (options.routeMode === 'organization') {
-      throw new BrokerError(
-        404,
-        'global_client_metadata_required',
-        'Use the global client metadata URL.',
-      )
-    }
     const clientId = resolveClientMetadataUri(
       resolveBrokerConfig(c.env),
       c.req.url,
@@ -537,7 +488,6 @@ export function createConnectionRoutes<Bindings extends object>(
         c.get('db'),
         config,
         {
-          organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
           configuration: body.configuration,
@@ -560,7 +510,6 @@ export function createConnectionRoutes<Bindings extends object>(
         await emitHookfishEvent(options.onEvent, {
           type: 'authorization.started',
           occurredAt: new Date(),
-          organization: c.get('databaseContext').organization,
           providerId: parsed.providerId,
           connectionPath: parsed.path,
         })
@@ -570,7 +519,6 @@ export function createConnectionRoutes<Bindings extends object>(
     await emitHookfishEvent(options.onEvent, {
       type: 'connection.secret_accessed',
       occurredAt: new Date(),
-      organization: c.get('databaseContext').organization,
       providerId: parsed.providerId,
       connectionPath: parsed.path,
       refreshed: result.refreshed,
@@ -599,7 +547,6 @@ export function createConnectionRoutes<Bindings extends object>(
         c.get('db'),
         config,
         {
-          organization: c.get('databaseContext').organization,
           namespace: parsed.namespace,
           providerId: parsed.providerId,
           configuration: body.configuration,
@@ -622,7 +569,6 @@ export function createConnectionRoutes<Bindings extends object>(
         await emitHookfishEvent(options.onEvent, {
           type: 'authorization.started',
           occurredAt: new Date(),
-          organization: c.get('databaseContext').organization,
           providerId: parsed.providerId,
           connectionPath: parsed.path,
         })
@@ -639,7 +585,6 @@ export function createConnectionRoutes<Bindings extends object>(
       c.get('db'),
       resolveBrokerConfig(c.env),
       {
-        organization: c.get('databaseContext').organization,
         namespace: parsed.namespace,
         providerId: parsed.providerId,
         value: body.secret,
@@ -649,7 +594,6 @@ export function createConnectionRoutes<Bindings extends object>(
     await emitHookfishEvent(options.onEvent, {
       type: 'connection.secret_stored',
       occurredAt: new Date(),
-      organization: c.get('databaseContext').organization,
       providerId: parsed.providerId,
       connectionPath: parsed.path,
     })
@@ -658,9 +602,7 @@ export function createConnectionRoutes<Bindings extends object>(
 
   const listApi = secretApi.openapi(listRoute, async (c) => {
     const query = c.req.valid('query')
-    const organization = c.get('databaseContext').organization
     const connections = await c.get('db').listConnections({
-      organization,
       namespace: query.namespace,
       providerId: query.provider_id
         ? normalizeProviderId(query.provider_id)
@@ -675,11 +617,7 @@ export function createConnectionRoutes<Bindings extends object>(
     assertConnectionAccess(c.get('accessGrant'), parsed.path)
     const connection = await c
       .get('db')
-      .getConnection(
-        c.get('databaseContext').organization ?? '',
-        parsed.namespace,
-        parsed.providerId,
-      )
+      .getConnection(parsed.namespace, parsed.providerId)
     if (!connection)
       throw new BrokerError(
         404,
@@ -694,11 +632,7 @@ export function createConnectionRoutes<Bindings extends object>(
     assertConnectionAccess(c.get('accessGrant'), parsed.path)
     const connection = await c
       .get('db')
-      .getConnection(
-        c.get('databaseContext').organization ?? '',
-        parsed.namespace,
-        parsed.providerId,
-      )
+      .getConnection(parsed.namespace, parsed.providerId)
     if (!connection)
       return c.json({ deleted: false, revocation: 'unsupported' as const }, 200)
     const config = resolveBrokerConfig(c.env)
@@ -713,7 +647,6 @@ export function createConnectionRoutes<Bindings extends object>(
     await emitHookfishEvent(options.onEvent, {
       type: 'connection.disconnected',
       occurredAt: new Date(),
-      organization: c.get('databaseContext').organization,
       providerId: parsed.providerId,
       connectionPath: parsed.path,
     })
@@ -721,13 +654,6 @@ export function createConnectionRoutes<Bindings extends object>(
   })
 
   const callbackApi = disconnectApi.openapi(callbackRoute, async (c) => {
-    if (options.routeMode === 'organization') {
-      throw new BrokerError(
-        404,
-        'global_callback_required',
-        'Use the global callback URL.',
-      )
-    }
     const providerId = normalizeProviderId(c.req.valid('param').provider_id)
     const query = c.req.valid('query')
     if (!query.state)
@@ -748,7 +674,6 @@ export function createConnectionRoutes<Bindings extends object>(
       await emitHookfishEvent(options.onEvent, {
         type: 'authorization.failed',
         occurredAt: new Date(),
-        organization: failed.state.organization || undefined,
         providerId,
         connectionPath: formatConnectionPath(
           failed.state.namespace,
@@ -796,7 +721,6 @@ export function createConnectionRoutes<Bindings extends object>(
     await emitHookfishEvent(options.onEvent, {
       type: 'authorization.connected',
       occurredAt: new Date(),
-      organization: completed.connection.organization || undefined,
       providerId,
       connectionPath: path,
       replayed: completed.replayed,

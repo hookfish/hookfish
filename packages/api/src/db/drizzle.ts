@@ -47,7 +47,7 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
       await db.insert(oauthStates).values(input)
     },
 
-    async supersedeOAuthStates(organization, namespace, providerId) {
+    async supersedeOAuthStates(namespace, providerId) {
       await db
         .update(oauthStates)
         .set({
@@ -59,7 +59,6 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         })
         .where(
           and(
-            eq(oauthStates.organization, organization),
             eq(oauthStates.namespace, namespace),
             eq(oauthStates.providerId, providerId),
             eq(oauthStates.status, 'pending'),
@@ -113,13 +112,12 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
       return deleted.length
     },
 
-    async getConnection(organization, namespace, providerId) {
+    async getConnection(namespace, providerId) {
       const [connection] = await db
         .select()
         .from(connections)
         .where(
           and(
-            eq(connections.organization, organization),
             eq(connections.namespace, namespace),
             eq(connections.providerId, providerId),
           ),
@@ -133,11 +131,7 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .insert(connections)
         .values(input)
         .onConflictDoNothing({
-          target: [
-            connections.organization,
-            connections.namespace,
-            connections.providerId,
-          ],
+          target: [connections.namespace, connections.providerId],
         })
         .returning()
       if (inserted) return inserted
@@ -147,7 +141,6 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .from(connections)
         .where(
           and(
-            eq(connections.organization, input.organization),
             eq(connections.namespace, input.namespace),
             eq(connections.providerId, input.providerId),
           ),
@@ -190,7 +183,6 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .from(connections)
         .where(
           and(
-            eq(connections.organization, filter.organization ?? ''),
             filter.providerId
               ? eq(connections.providerId, filter.providerId)
               : undefined,
@@ -214,23 +206,18 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .insert(vaultSecrets)
         .values(input)
         .onConflictDoUpdate({
-          target: [vaultSecrets.organization, vaultSecrets.path],
+          target: [vaultSecrets.path],
           set: { value: input.value, updatedAt: new Date() },
         })
         .returning()
       return secret
     },
 
-    async getVaultSecret(organization, path) {
+    async getVaultSecret(path) {
       const [secret] = await db
         .select()
         .from(vaultSecrets)
-        .where(
-          and(
-            eq(vaultSecrets.organization, organization),
-            eq(vaultSecrets.path, path),
-          ),
-        )
+        .where(and(eq(vaultSecrets.path, path)))
         .limit(1)
       return secret
     },
@@ -251,7 +238,6 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .from(vaultSecrets)
         .where(
           and(
-            eq(vaultSecrets.organization, filter.organization),
             prefixFilter,
             pathScopeFilter(vaultSecrets.path, filter.scopes),
             filter.excludeInternalPrefix
@@ -262,15 +248,10 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .orderBy(asc(vaultSecrets.path))
     },
 
-    async deleteVaultSecret(organization, path) {
+    async deleteVaultSecret(path) {
       const deleted = await db
         .delete(vaultSecrets)
-        .where(
-          and(
-            eq(vaultSecrets.organization, organization),
-            eq(vaultSecrets.path, path),
-          ),
-        )
+        .where(and(eq(vaultSecrets.path, path)))
         .returning()
       return deleted.length > 0
     },

@@ -143,11 +143,7 @@ export type TestHarness = {
 }
 
 export async function createHarness(
-  options: {
-    returnTo?: string
-    trustedOrigins?: readonly string[]
-    organizationRouting?: boolean
-  } = {},
+  options: { returnTo?: string; trustedOrigins?: readonly string[] } = {},
 ): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'hookfish-connections-'))
   const stub = await startOAuthStub()

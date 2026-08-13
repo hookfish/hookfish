@@ -17,7 +17,9 @@ service/prod/openai/secret
 ```
 
 Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers.
-The database enforces one row per `(organization, namespace, providerId)`.
+The database enforces one row per `(namespace, providerId)`. Multi-tenant
+applications put the tenant identifier in the namespace, such as
+`organizations/acme/user/personal`.
 
 ## SDK
 

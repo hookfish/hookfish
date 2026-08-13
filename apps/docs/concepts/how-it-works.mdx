@@ -30,9 +30,11 @@ ambiguity. Hookfish stores the prefix as the namespace internally; provider
 metadata tells a connection UI whether part of that prefix is a required
 resource identity.
 
-Hookfish stores identity as `(organization, namespace, providerId)` with a
-unique constraint. It does not accept caller-generated opaque IDs, slots,
-or provider templates in request bodies.
+Hookfish stores identity as `(namespace, providerId)` with a unique constraint.
+For a multi-tenant application, include the tenant in the namespace, such as
+`organizations/acme/user/personal/github`. This also lets broker resource
+scopes enforce tenant isolation. Hookfish does not accept caller-generated
+opaque IDs, slots, or provider templates in request bodies.
 
 ## One access operation
 
