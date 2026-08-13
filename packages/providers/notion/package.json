@@ -3,7 +3,7 @@
   "version": "0.1.4",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kamath/hookfish.git",
+    "url": "https://github.com/hookfish/hookfish.git",
     "directory": "packages/providers/notion"
   },
   "publishConfig": {

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kamath/hookfish.git",
+    "url": "https://github.com/hookfish/hookfish.git",
     "directory": "packages/sdk"
   },
   "publishConfig": {
