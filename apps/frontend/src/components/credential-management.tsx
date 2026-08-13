@@ -10,8 +10,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { Field, FieldLabel } from '@/components/ui/field'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Spinner } from '@/components/ui/spinner'
+import { validateBrokerToken } from '@/lib/management-api'
 
 export function BrokerAccess({
   token,
@@ -22,13 +24,24 @@ export function BrokerAccess({
 }) {
   const [draft, setDraft] = useState(token)
   const [open, setOpen] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextToken = draft.trim()
     if (!nextToken) return
-    onTokenChange(nextToken)
-    setOpen(false)
+    setPending(true)
+    setError(undefined)
+    try {
+      await validateBrokerToken(nextToken)
+      onTokenChange(nextToken)
+      setOpen(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setPending(false)
+    }
   }
 
   function clear() {
@@ -41,7 +54,9 @@ export function BrokerAccess({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
+        if (pending) return
         setDraft(token)
+        setError(undefined)
         setOpen(nextOpen)
       }}
     >
@@ -62,7 +77,7 @@ export function BrokerAccess({
               session.
             </DialogDescription>
           </DialogHeader>
-          <Field>
+          <Field data-invalid={Boolean(error)}>
             <FieldLabel htmlFor="broker-token">Broker API key</FieldLabel>
             <Input
               id="broker-token"
@@ -71,18 +86,32 @@ export function BrokerAccess({
               required
               autoComplete="off"
               placeholder="Enter a broker API key…"
-              onChange={(event) => setDraft(event.target.value)}
+              disabled={pending}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                setError(undefined)
+              }}
             />
+            <FieldError>{error}</FieldError>
           </Field>
           <DialogFooter>
             {token ? (
-              <Button type="button" variant="outline" onClick={clear}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={clear}
+              >
                 Clear access
               </Button>
             ) : null}
-            <Button type="submit">
-              <KeyRoundIcon />
-              {token ? 'Update access' : 'Enable access'}
+            <Button type="submit" disabled={pending || !draft.trim()}>
+              {pending ? <Spinner /> : <KeyRoundIcon />}
+              {pending
+                ? 'Validating…'
+                : token
+                  ? 'Update access'
+                  : 'Enable access'}
             </Button>
           </DialogFooter>
         </form>
@@ -97,11 +126,23 @@ export function BrokerAccessPrompt({
   onTokenChange: (token: string) => void
 }) {
   const [draft, setDraft] = useState('')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const token = draft.trim()
-    if (token) onTokenChange(token)
+    if (!token) return
+    setPending(true)
+    setError(undefined)
+    try {
+      await validateBrokerToken(token)
+      onTokenChange(token)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -123,7 +164,7 @@ export function BrokerAccessPrompt({
           className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end"
           onSubmit={submit}
         >
-          <Field>
+          <Field data-invalid={Boolean(error)}>
             <FieldLabel htmlFor="connections-broker-token">
               Broker API key
             </FieldLabel>
@@ -133,12 +174,17 @@ export function BrokerAccessPrompt({
               value={draft}
               required
               autoComplete="off"
-              onChange={(event) => setDraft(event.target.value)}
+              disabled={pending}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                setError(undefined)
+              }}
             />
+            <FieldError>{error}</FieldError>
           </Field>
-          <Button type="submit">
-            <KeyRoundIcon />
-            Open connections
+          <Button type="submit" disabled={pending || !draft.trim()}>
+            {pending ? <Spinner /> : <KeyRoundIcon />}
+            {pending ? 'Validating…' : 'Open connections'}
           </Button>
         </form>
       </div>

@@ -1,15 +1,20 @@
 import { useQueryClient } from '@tanstack/react-query'
 import {
+  CheckIcon,
   ChevronRightIcon,
+  ClipboardIcon,
+  EyeIcon,
+  EyeOffIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
   Link2Icon,
   ListIcon,
   PlusIcon,
+  RefreshCwIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
-import { type FormEvent, Fragment, useMemo, useState } from 'react'
+import { type FormEvent, Fragment, useMemo, useRef, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -82,6 +87,7 @@ import {
   connectionDirectory,
   joinConnectionPath,
   validateConnectionName,
+  validateConnectionPath,
 } from '@/lib/connection-tree'
 import { hookfish } from '@/lib/hookfish'
 import {
@@ -91,6 +97,7 @@ import {
 } from '@/lib/local-folders'
 import {
   authorizeConnection,
+  getConnectionToken,
   type PendingAuthorization,
   setConnectionSecret,
 } from '@/lib/management-api'
@@ -113,6 +120,27 @@ type ProviderMetadata = {
   label: string
   authentication: 'oauth' | 'secret'
   input_schema: { fields: ProviderInputField[] }
+}
+
+function validateProviderInput(
+  field: ProviderInputField,
+  value: string,
+): string | undefined {
+  const normalized = value.trim()
+  if (!normalized) {
+    return field.required ? `${field.label} is required.` : undefined
+  }
+  if (field.target === 'identity') {
+    return validateConnectionPath(normalized)
+  }
+  if (field.type === 'url') {
+    try {
+      new URL(normalized)
+    } catch {
+      return 'Enter a valid absolute URL.'
+    }
+  }
+  return undefined
 }
 
 function directResources<T extends { path: string }>(
@@ -284,15 +312,18 @@ function AddResourceDialog({
   const identity = identityField
     ? (values[identityField.name] ?? '').trim()
     : ''
-  const identityError = identity ? validateConnectionName(identity) : undefined
+  const fieldErrors = new Map(
+    fields.map((field) => [
+      field.name,
+      validateProviderInput(field, values[field.name] ?? ''),
+    ]),
+  )
   const namespace = identity
     ? joinConnectionPath(currentPath, identity)
     : currentPath
   const path = providerId ? joinConnectionPath(namespace, providerId) : ''
   const pathTaken = existingPaths.includes(path) || pendingPaths.includes(path)
-  const missingRequiredField = fields.some(
-    (field) => field.required && !(values[field.name] ?? '').trim(),
-  )
+  const invalidProviderInput = [...fieldErrors.values()].some(Boolean)
 
   function fieldValue(field: ProviderInputField): string | string[] {
     const value = (values[field.name] ?? '').trim()
@@ -305,14 +336,7 @@ function AddResourceDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (
-      identityError ||
-      missingRequiredField ||
-      !selectedProvider ||
-      !path ||
-      pathTaken
-    )
-      return
+    if (invalidProviderInput || !selectedProvider || !path || pathTaken) return
     setPending(true)
     setError(null)
     try {
@@ -360,11 +384,10 @@ function AddResourceDialog({
   }
 
   const invalid =
-    Boolean(identityError) ||
-    missingRequiredField ||
+    invalidProviderInput ||
     pathTaken ||
     !selectedProvider ||
-    (selectedProvider.authentication === 'secret' && !secret)
+    (selectedProvider.authentication === 'secret' && !secret.trim())
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
@@ -398,15 +421,26 @@ function AddResourceDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {selectedProvider ? (
+                <FieldDescription>
+                  {selectedProvider.authentication === 'oauth'
+                    ? 'OAuth provider — authorization is required before use.'
+                    : 'Secret provider — enter a credential to save it.'}
+                </FieldDescription>
+              ) : null}
             </Field>
             {fields.map((field) => {
               const fieldId = `provider-input-${field.name}`
               const value = values[field.name] ?? ''
-              const fieldError =
-                field.target === 'identity' ? identityError : undefined
+              const fieldError = fieldErrors.get(field.name)
               return (
                 <Field key={field.name} data-invalid={Boolean(fieldError)}>
-                  <FieldLabel htmlFor={fieldId}>{field.label}</FieldLabel>
+                  <FieldLabel htmlFor={fieldId}>
+                    {field.label}
+                    {field.target === 'scopes' && !field.required
+                      ? ' (optional)'
+                      : ''}
+                  </FieldLabel>
                   <Input
                     id={fieldId}
                     type={field.type === 'url' ? 'url' : 'text'}
@@ -421,15 +455,20 @@ function AddResourceDialog({
                       }))
                     }
                   />
-                  {field.description ? (
-                    <FieldDescription>{field.description}</FieldDescription>
+                  {field.description || field.target === 'identity' ? (
+                    <FieldDescription>
+                      {field.description ??
+                        'Use slashes to create a nested path directly, such as team/production.'}
+                    </FieldDescription>
                   ) : null}
-                  <FieldError>{fieldError}</FieldError>
+                  <FieldError className="text-destructive">
+                    {fieldError}
+                  </FieldError>
                 </Field>
               )
             })}
             {selectedProvider?.authentication === 'secret' ? (
-              <Field>
+              <Field data-invalid={!secret.trim()}>
                 <FieldLabel htmlFor="resource-secret">Secret value</FieldLabel>
                 <Input
                   id="resource-secret"
@@ -442,6 +481,9 @@ function AddResourceDialog({
                 <FieldDescription>
                   Encrypted at rest and never displayed again.
                 </FieldDescription>
+                <FieldError className="text-destructive">
+                  {!secret.trim() ? 'Secret value is required.' : undefined}
+                </FieldError>
               </Field>
             ) : null}
             {path ? (
@@ -487,16 +529,102 @@ function AddResourceDialog({
 
 function ConnectionItem({
   connection,
-  pending,
+  authorization,
+  disconnecting,
+  managementToken,
+  oauth,
+  onAuthorization,
   onDisconnect,
 }: {
   connection: Connection
-  pending: boolean
+  authorization?: PendingAuthorization
+  disconnecting: boolean
+  managementToken: string
+  oauth: boolean
+  onAuthorization: (authorization: PendingAuthorization) => void
   onDisconnect: () => void
 }) {
-  const name = connection.namespace.split('/').at(-1) ?? connection.path
+  const name = connection.namespace.split('/').at(-1) || connection.path
   const account =
     connection.external_account_label ?? connection.external_account_id
+  const [tokenOpen, setTokenOpen] = useState(false)
+  const [token, setToken] = useState<string>()
+  const [tokenVisible, setTokenVisible] = useState(false)
+  const [tokenPending, setTokenPending] = useState(false)
+  const [tokenCopied, setTokenCopied] = useState(false)
+  const [tokenError, setTokenError] = useState<string>()
+  const [tokenAuthorization, setTokenAuthorization] =
+    useState<PendingAuthorization>()
+  const tokenRequest = useRef(0)
+  const [reauthorizing, setReauthorizing] = useState(false)
+  const [reauthorizeError, setReauthorizeError] = useState<string>()
+
+  async function loadToken(requestId: number) {
+    setTokenPending(true)
+    setTokenError(undefined)
+    setTokenAuthorization(undefined)
+    try {
+      const result = await getConnectionToken(
+        managementToken,
+        connection.path,
+        connection.provider_id,
+      )
+      if (requestId !== tokenRequest.current) return
+      if (result.ready) {
+        setToken(result.secret)
+      } else {
+        setTokenAuthorization(result.authorization)
+        onAuthorization(result.authorization)
+      }
+    } catch (cause) {
+      if (requestId !== tokenRequest.current) return
+      setTokenError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      if (requestId === tokenRequest.current) setTokenPending(false)
+    }
+  }
+
+  function updateTokenOpen(open: boolean) {
+    const requestId = ++tokenRequest.current
+    setTokenOpen(open)
+    setToken(undefined)
+    setTokenVisible(false)
+    setTokenCopied(false)
+    setTokenError(undefined)
+    setTokenAuthorization(undefined)
+    if (open) void loadToken(requestId)
+  }
+
+  async function copyToken() {
+    if (!token) return
+    try {
+      await navigator.clipboard.writeText(token)
+      setTokenCopied(true)
+    } catch {
+      setTokenError('Could not copy the token to the clipboard.')
+    }
+  }
+
+  async function reauthorize() {
+    setReauthorizing(true)
+    setReauthorizeError(undefined)
+    try {
+      const nextAuthorization = await authorizeConnection(
+        managementToken,
+        connection.path,
+        connection.provider_id,
+        { returnTo: window.location.href },
+      )
+      onAuthorization(nextAuthorization)
+      window.location.assign(nextAuthorization.authorizeUrl)
+    } catch (cause) {
+      setReauthorizeError(
+        cause instanceof Error ? cause.message : String(cause),
+      )
+      setReauthorizing(false)
+    }
+  }
+
   return (
     <Item variant="outline">
       <ItemMedia variant="icon">
@@ -506,6 +634,9 @@ function ConnectionItem({
         <ItemTitle>
           {name}
           <Badge variant="outline">{connection.provider_id}</Badge>
+          {authorization ? (
+            <Badge variant="secondary">Auth required</Badge>
+          ) : null}
         </ItemTitle>
         <ItemDescription>
           {account ? `${account} · ` : ''}
@@ -513,11 +644,39 @@ function ConnectionItem({
         </ItemDescription>
       </ItemContent>
       <ItemActions>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disconnecting}
+          onClick={() => updateTokenOpen(true)}
+        >
+          <EyeIcon />
+          View token
+        </Button>
+        {oauth && !authorization ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reauthorizing || disconnecting}
+            onClick={() => void reauthorize()}
+          >
+            {reauthorizing ? <Spinner /> : <RefreshCwIcon />}
+            {reauthorizing ? 'Re-authorizing…' : 'Re-authorize'}
+          </Button>
+        ) : null}
+        {authorization ? (
+          <Button asChild size="sm">
+            <a href={authorization.authorizeUrl}>
+              Authorize
+              <ChevronRightIcon />
+            </a>
+          </Button>
+        ) : null}
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="sm" variant="destructive" disabled={pending}>
-              {pending ? <Spinner /> : null}
-              {pending ? 'Disconnecting…' : 'Disconnect'}
+            <Button size="sm" variant="destructive" disabled={disconnecting}>
+              {disconnecting ? <Spinner /> : null}
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -540,6 +699,101 @@ function ConnectionItem({
           </AlertDialogContent>
         </AlertDialog>
       </ItemActions>
+      {reauthorizeError ? (
+        <div className="basis-full text-sm text-destructive" role="alert">
+          {reauthorizeError}
+        </div>
+      ) : null}
+      <Dialog open={tokenOpen} onOpenChange={updateTokenOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connection token</DialogTitle>
+            <DialogDescription>
+              The token for <code>{connection.path}</code> is hidden until you
+              explicitly reveal it.
+            </DialogDescription>
+          </DialogHeader>
+          {tokenPending ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner />
+              Loading token…
+            </div>
+          ) : null}
+          {token ? (
+            <Field>
+              <FieldLabel htmlFor={`connection-token-${connection.path}`}>
+                Token
+              </FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  id={`connection-token-${connection.path}`}
+                  type={tokenVisible ? 'text' : 'password'}
+                  value={token}
+                  readOnly
+                  autoComplete="off"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  aria-label={tokenVisible ? 'Hide token' : 'Reveal token'}
+                  title={tokenVisible ? 'Hide token' : 'Reveal token'}
+                  onClick={() => setTokenVisible((visible) => !visible)}
+                >
+                  {tokenVisible ? <EyeOffIcon /> : <EyeIcon />}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  aria-label="Copy token"
+                  title="Copy token"
+                  onClick={() => void copyToken()}
+                >
+                  {tokenCopied ? <CheckIcon /> : <ClipboardIcon />}
+                </Button>
+              </div>
+              <FieldDescription>
+                {tokenCopied
+                  ? 'Copied to clipboard.'
+                  : 'Use the eye button to display the token.'}
+              </FieldDescription>
+            </Field>
+          ) : null}
+          {tokenAuthorization ? (
+            <Alert>
+              <AlertTitle>Authorization required</AlertTitle>
+              <AlertDescription>
+                Authorize this connection before viewing its token.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {tokenError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Could not load token</AlertTitle>
+              <AlertDescription>{tokenError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => updateTokenOpen(false)}
+            >
+              Close
+            </Button>
+            {tokenAuthorization ? (
+              <Button asChild>
+                <a href={tokenAuthorization.authorizeUrl}>
+                  Authorize
+                  <ChevronRightIcon />
+                </a>
+              </Button>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Item>
   )
 }
@@ -647,6 +901,12 @@ export function OAuthConnections({
     view === 'tree'
       ? directory.connections
       : [...connectionItems].sort((a, b) => a.path.localeCompare(b.path))
+  const visibleConnectionPaths = new Set(
+    visibleConnections.map((connection) => connection.path),
+  )
+  const standalonePending = visiblePending.filter(
+    (authorization) => !visibleConnectionPaths.has(authorization.path),
+  )
   const empty =
     !connections.isPending &&
     (view === 'tree' ? directory.folders.length === 0 : true) &&
@@ -662,6 +922,13 @@ export function OAuthConnections({
     await queryClient.invalidateQueries({
       queryKey: hookfish.keys.connectionsRoot(),
     })
+  }
+
+  function rememberAuthorization(authorization: PendingAuthorization) {
+    setPendingAuthorizations((items) => [
+      ...items.filter((item) => item.path !== authorization.path),
+      authorization,
+    ])
   }
 
   return (
@@ -805,14 +1072,24 @@ export function OAuthConnections({
                 <ConnectionItem
                   key={connection.path}
                   connection={connection}
-                  pending={
+                  authorization={activePending.find(
+                    (item) => item.path === connection.path,
+                  )}
+                  disconnecting={
                     disconnect.isPending &&
                     disconnect.variables === connection.path
                   }
+                  managementToken={managementToken}
+                  oauth={
+                    providers.data?.providers.find(
+                      (provider) => provider.id === connection.provider_id,
+                    )?.authentication === 'oauth'
+                  }
+                  onAuthorization={rememberAuthorization}
                   onDisconnect={() => disconnect.mutate(connection.path)}
                 />
               ))}
-              {visiblePending.map((authorization) => (
+              {standalonePending.map((authorization) => (
                 <PendingItem
                   key={authorization.path}
                   authorization={authorization}
@@ -843,12 +1120,10 @@ export function OAuthConnections({
         providers={providers.data?.providers ?? []}
         existingPaths={[...connectionItems.map((item) => item.path)]}
         pendingPaths={activePending.map((item) => item.path)}
-        onAuthorized={(authorization) =>
-          setPendingAuthorizations((items) => [
-            ...items.filter((item) => item.path !== authorization.path),
-            authorization,
-          ])
-        }
+        onAuthorized={(authorization) => {
+          rememberAuthorization(authorization)
+          void refreshConnections()
+        }}
         onSaved={refreshConnections}
         onOpenChange={setResourceOpen}
       />

@@ -138,6 +138,20 @@ describe('connections', () => {
     )
     expect(permitted.status).toBe(200)
 
+    const reauthorization = await harness.fetch(
+      '/api/connections/authorize/user/personal/stub',
+      { method: 'POST' },
+    )
+    expect(reauthorization.status).toBe(401)
+    const reauthorizationBody = authorizationRequiredSchema.parse(
+      await reauthorization.json(),
+    )
+    expect(
+      new URL(reauthorizationBody.error.authorize_url).searchParams
+        .get('scope')
+        ?.split(' '),
+    ).toEqual(['read', 'write', 'admin'])
+
     const newScope = await harness.fetch(
       '/api/connections/access/user/personal/stub',
       {

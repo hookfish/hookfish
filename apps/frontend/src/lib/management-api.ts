@@ -13,6 +13,10 @@ export type PendingAuthorization = {
   expiresAt: string
 }
 
+export type ConnectionToken =
+  | { ready: true; secret: string }
+  | { ready: false; authorization: PendingAuthorization }
+
 class ManagementApiError extends Error {
   readonly code: string | undefined
   readonly details: Record<string, unknown> | undefined
@@ -70,6 +74,43 @@ export async function setConnectionSecret(
     method: 'PUT',
     body: JSON.stringify({ secret }),
   })
+}
+
+export async function validateBrokerToken(token: string): Promise<void> {
+  await request(token, '/connections/providers')
+}
+
+export async function getConnectionToken(
+  token: string,
+  path: string,
+  providerId: string,
+): Promise<ConnectionToken> {
+  try {
+    const result = await request<{ secret: string }>(
+      token,
+      `/connections/access/${encodePath(path)}`,
+      { method: 'POST' },
+    )
+    return { ready: true, secret: result.secret }
+  } catch (error) {
+    if (
+      error instanceof ManagementApiError &&
+      error.code === 'authorization_required' &&
+      typeof error.details?.authorize_url === 'string' &&
+      typeof error.details.expires_at === 'string'
+    ) {
+      return {
+        ready: false,
+        authorization: {
+          path,
+          providerId,
+          authorizeUrl: error.details.authorize_url,
+          expiresAt: error.details.expires_at,
+        },
+      }
+    }
+    throw error
+  }
 }
 
 export async function authorizeConnection(

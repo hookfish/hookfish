@@ -56,6 +56,11 @@ The optional `/api/client` facade has a restricted route allowlist, but its
 application authorizer does not select tenant-specific broker credentials.
 Prefer app-owned routes for user-facing, multi-tenant access.
 
+The packaged operator dashboard is different from the browser facade. It uses
+the broker token entered by the operator to call the raw API, and its explicit
+View token action can retrieve, reveal, and copy a live provider credential.
+Restrict dashboard and broker-token access to trusted operators.
+
 ## Database and key recovery
 
 Database backups without `OAUTH_ENCRYPTION_KEY` cannot restore encrypted
