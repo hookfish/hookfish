@@ -1,5 +1,13 @@
 # @hookfish/hooks
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [dd135f9]
+- Updated dependencies [7f7dcc6]
+  - @hookfish/api@0.6.0
+
 ## 0.3.1
 
 ### Patch Changes
