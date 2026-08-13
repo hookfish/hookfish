@@ -1,4 +1,4 @@
-import type { ConnectionsFilter } from './client'
+import type { ConnectionsFilter } from './client.js'
 
 export function createHookfishKeys(scope: string) {
   const root = ['hookfish', scope] as const

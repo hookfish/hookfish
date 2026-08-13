@@ -5,22 +5,26 @@ import {
   type QueryFunction,
   type QueryKey,
   queryOptions,
+  type UseMutationOptions,
+  type UseQueryOptions,
 } from '@tanstack/react-query'
-import type { ConnectionsFilter, HookfishClient } from './client'
-import { type HookfishApiError, throwHookfishApiError } from './errors'
-import type { HookfishKeys } from './keys'
+import type { ConnectionsFilter, HookfishClient } from './client.js'
+import { type HookfishApiError, throwHookfishApiError } from './errors.js'
+import type { HookfishKeys } from './keys.js'
 
 function apiQueryOptions<TData, TQueryKey extends QueryKey>(options: {
   queryKey: TQueryKey
   queryFn: QueryFunction<TData, TQueryKey>
-}) {
+}): UseQueryOptions<TData, HookfishApiError, TData, TQueryKey> & {
+  queryKey: TQueryKey
+} {
   return queryOptions<TData, HookfishApiError, TData, TQueryKey>(options)
 }
 
 function apiMutationOptions<TData, TVariables>(options: {
   mutationKey: MutationKey
   mutationFn: MutationFunction<TData, TVariables>
-}) {
+}): UseMutationOptions<TData, HookfishApiError, TVariables> {
   return mutationOptions<TData, HookfishApiError, TVariables>(options)
 }
 

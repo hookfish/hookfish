@@ -1,4 +1,4 @@
-import { BrokerError } from './errors'
+import { BrokerError } from './errors.js'
 
 /**
  * WebCrypto is available in supported Node versions.

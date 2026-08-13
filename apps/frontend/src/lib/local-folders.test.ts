@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  LOCAL_FOLDERS_KEY,
   addLocalFolder,
+  LOCAL_FOLDERS_KEY,
   normalizeLocalFolders,
   readLocalFolders,
 } from './local-folders'

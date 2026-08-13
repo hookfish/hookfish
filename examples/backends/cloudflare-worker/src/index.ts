@@ -1,6 +1,6 @@
 import { HookfishServer } from '@hookfish/api'
 import { HookfishDurableObject } from '@hookfish/database/durable-object'
-import config from '../hookfish.config'
+import config from '../hookfish.config.ts'
 
 export { HookfishDurableObject }
 

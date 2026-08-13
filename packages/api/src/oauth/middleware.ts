@@ -1,10 +1,10 @@
 import { createMiddleware } from 'hono/factory'
-import { type DatabaseInput, resolveDatabase } from '../db/binding'
-import type { Database } from '../db/types'
-import { type AccessGrant, authenticateAccessToken } from './access-token'
-import { requireBrokerApiKey, resolveBrokerConfig } from './config'
-import { safeEqual } from './crypto'
-import { BrokerError } from './errors'
+import { type DatabaseInput, resolveDatabase } from '../db/binding.js'
+import type { Database } from '../db/types.js'
+import { type AccessGrant, authenticateAccessToken } from './access-token.js'
+import { requireBrokerApiKey, resolveBrokerConfig } from './config.js'
+import { safeEqual } from './crypto.js'
+import { BrokerError } from './errors.js'
 
 export type BrokerContext<Bindings extends object = object> = {
   Bindings: Bindings

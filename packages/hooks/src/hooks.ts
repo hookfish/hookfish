@@ -1,8 +1,10 @@
 import {
-  type UseMutationOptions,
-  type UseQueryOptions,
-  type QueryKey,
   type QueryClient,
+  type QueryKey,
+  type UseMutationOptions,
+  type UseMutationResult,
+  type UseQueryOptions,
+  type UseQueryResult,
   useMutation,
   useQuery,
   useQueryClient,
@@ -14,10 +16,10 @@ import type {
   DisconnectConnectionResponse,
   ProvidersResponse,
   StatsResponse,
-} from './client'
-import type { HookfishApiError } from './errors'
-import type { HookfishKeys } from './keys'
-import type { HookfishOptions } from './options'
+} from './client.js'
+import type { HookfishApiError } from './errors.js'
+import type { HookfishKeys } from './keys.js'
+import type { HookfishOptions } from './options.js'
 
 type QueryOverrides<TQueryFnData, TData, TQueryKey extends QueryKey> = Omit<
   UseQueryOptions<TQueryFnData, HookfishApiError, TData, TQueryKey>,
@@ -45,7 +47,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
       TData,
       ReturnType<HookfishKeys['stats']>
     >,
-  ) {
+  ): UseQueryResult<TData, HookfishApiError> {
     const query = options.stats()
     return useQuery({
       ...overrides,
@@ -60,7 +62,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
       TData,
       ReturnType<HookfishKeys['providers']>
     >,
-  ) {
+  ): UseQueryResult<TData, HookfishApiError> {
     const query = options.providers()
     return useQuery({
       ...overrides,
@@ -76,7 +78,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
       TData,
       ReturnType<HookfishKeys['connections']>
     >,
-  ) {
+  ): UseQueryResult<TData, HookfishApiError> {
     const query = options.connections(filter)
     return useQuery({
       ...overrides,
@@ -92,7 +94,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
       TData,
       ReturnType<HookfishKeys['connection']>
     >,
-  ) {
+  ): UseQueryResult<TData, HookfishApiError> {
     const query = options.connection(path)
     return useQuery({
       ...overrides,
@@ -103,7 +105,7 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
 
   function useDisconnectConnection(
     overrides?: MutationOverrides<DisconnectConnectionResponse, string>,
-  ) {
+  ): UseMutationResult<DisconnectConnectionResponse, HookfishApiError, string> {
     const queryClient = useQueryClient()
     const onSuccess = overrides?.onSuccess
 

@@ -6,46 +6,6 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".output/**", ".vinxi/**"]
     },
-    "@hookfish/api#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/backend#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/database#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/hooks#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/providers#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/provider#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/sdk#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/provider-github#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/provider-linear#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "@hookfish/provider-notion#build": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
     "@hookfish/provider-github#test": {
       "dependsOn": ["^build"],
       "outputs": []
@@ -75,7 +35,7 @@
       "outputs": [".next/**", "!.next/cache/**"]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"],
+      "dependsOn": ["^build"],
       "outputs": []
     },
     "test": {
@@ -84,11 +44,13 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "dependsOn": ["^build"]
     },
     "preview": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "dependsOn": ["^build"]
     },
     "deploy": {
       "dependsOn": ["build"],
@@ -100,6 +62,10 @@
     },
     "cf-typecheck": {
       "cache": false,
+      "outputs": []
+    },
+    "verify-runtime": {
+      "dependsOn": ["^build"],
       "outputs": []
     }
   }

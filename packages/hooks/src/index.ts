@@ -1,18 +1,28 @@
 import {
   createHookfishClient,
+  type HookfishClient,
   type HookfishClientOptions,
   normalizeApiBaseUrl,
-} from './client'
-import { createReactHooks } from './hooks'
-import { createHookfishKeys } from './keys'
-import { createHookfishOptions } from './options'
+} from './client.js'
+import { createReactHooks } from './hooks.js'
+import { createHookfishKeys, type HookfishKeys } from './keys.js'
+import { createHookfishOptions, type HookfishOptions } from './options.js'
 
 export type CreateHookfishHooksOptions = HookfishClientOptions & {
   /** Distinguishes caches when one QueryClient uses multiple API instances. */
   queryKeyScope?: string
 }
 
-export function createHookfishHooks(options: CreateHookfishHooksOptions = {}) {
+/** Annotated so the declaration can name every member of the returned bag. */
+export type HookfishHooks = {
+  client: HookfishClient
+  keys: HookfishKeys
+  options: HookfishOptions
+} & ReturnType<typeof createReactHooks>
+
+export function createHookfishHooks(
+  options: CreateHookfishHooksOptions = {},
+): HookfishHooks {
   const { queryKeyScope, ...clientOptions } = options
   const client = createHookfishClient(clientOptions)
   const scope =
@@ -29,20 +39,18 @@ export function createHookfishHooks(options: CreateHookfishHooksOptions = {}) {
   }
 }
 
-export type HookfishHooks = ReturnType<typeof createHookfishHooks>
-
 export {
-  createHookfishClient,
-  normalizeApiBaseUrl,
   type ConnectionResponse,
   type ConnectionsFilter,
   type ConnectionsResponse,
+  createHookfishClient,
   type DisconnectConnectionResponse,
   type HookfishClient,
   type HookfishClientOptions,
+  normalizeApiBaseUrl,
   type ProvidersResponse,
   type StatsResponse,
-} from './client'
-export { HookfishApiError } from './errors'
-export { createHookfishKeys, type HookfishKeys } from './keys'
-export { createHookfishOptions, type HookfishOptions } from './options'
+} from './client.js'
+export { HookfishApiError } from './errors.js'
+export { createHookfishKeys, type HookfishKeys } from './keys.js'
+export { createHookfishOptions, type HookfishOptions } from './options.js'

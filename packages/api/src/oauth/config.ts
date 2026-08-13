@@ -4,8 +4,8 @@ import {
   type ProviderRegistry,
 } from '@hookfish/provider'
 import { z } from 'zod'
-import { BrokerError } from './errors'
-import { encodeResourcePath } from './resource-path'
+import { BrokerError } from './errors.js'
+import { encodeResourcePath } from './resource-path.js'
 
 /**
  * Conventional Hookfish environment fields. Runtime bindings may add

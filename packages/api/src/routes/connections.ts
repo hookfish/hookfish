@@ -1,8 +1,8 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { isSecretProvider } from '@hookfish/provider'
-import type { DatabaseInput } from '../db/binding'
-import { emitHookfishEvent, type HookfishEventHandler } from '../events'
-import { assertConnectionAccess } from '../oauth/access-token'
+import type { DatabaseInput } from '../db/binding.js'
+import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
+import { assertConnectionAccess } from '../oauth/access-token.js'
 import {
   accessConnection,
   authorizeConnection,
@@ -10,26 +10,26 @@ import {
   disconnectConnection,
   failAuthorization,
   setConnectionSecret,
-} from '../oauth/broker'
+} from '../oauth/broker.js'
 import {
   resolveBrokerConfig,
   resolveClientMetadataUri,
   resolveConnectionCallbackUri,
   validateReturnTo,
-} from '../oauth/config'
-import { BrokerError, isBrokerError } from '../oauth/errors'
+} from '../oauth/config.js'
+import { BrokerError, isBrokerError } from '../oauth/errors.js'
 import {
   type BrokerContext,
   requireApiKey,
   withDatabase,
-} from '../oauth/middleware'
+} from '../oauth/middleware.js'
 import {
   formatConnectionPath,
   MAX_RESOURCE_PATH_LENGTH,
   normalizeProviderId,
   parseConnectionPath,
-} from '../oauth/resource-path'
-import type { BoundProviderSource } from '../provider-source'
+} from '../oauth/resource-path.js'
+import type { BoundProviderSource } from '../provider-source.js'
 
 const brokerAuth = [{ brokerApiKey: [] }]
 

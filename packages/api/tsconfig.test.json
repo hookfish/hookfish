@@ -2,7 +2,9 @@
   "extends": "./tsconfig.lib.json",
   "compilerOptions": {
     "tsBuildInfoFile": "../../node_modules/.tmp/api-test.tsbuildinfo",
-    "composite": false
+    "composite": false,
+    "noEmit": true,
+    "rootDir": "../.."
   },
   "include": ["test", "vitest.config.ts"]
 }
