@@ -78,6 +78,13 @@
       "when": 1786578762604,
       "tag": "0010_lean_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786592860618,
+      "tag": "0011_drop_vault_secrets",
+      "breakpoints": true
     }
   ]
 }

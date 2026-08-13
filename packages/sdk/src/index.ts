@@ -9,10 +9,6 @@ import {
   connectionsList,
   connectionsProviders,
   connectionsSetSecret,
-  secretsDelete,
-  secretsGet,
-  secretsList,
-  secretsPut,
   statsGet,
 } from './generated'
 import { type Client, type Config, createClient } from './generated/client'
@@ -86,7 +82,6 @@ export type ConnectionFilter = {
 }
 
 type AccessTokenInput = Parameters<typeof adminTokensCreate>[0]
-type SecretFilter = Parameters<typeof secretsList>[0]
 
 /** End-to-end typed client for a Hookfish broker. */
 export class Hookfish {
@@ -153,26 +148,6 @@ export class Hookfish {
     providers: () => {
       const options = this.requestOptions()
       return connectionsProviders(options)
-    },
-  }
-
-  /** Generic vault secrets, separate from provider-backed connections. */
-  readonly secrets = {
-    list: (filter?: SecretFilter) => {
-      const options = this.requestOptions()
-      return secretsList(filter, options)
-    },
-    get: (path: string) => {
-      const options = this.requestOptions()
-      return secretsGet({ secret_path: path }, options)
-    },
-    put: (path: string, value: string) => {
-      const options = this.requestOptions()
-      return secretsPut({ secret_path: path, value }, options)
-    },
-    delete: (path: string) => {
-      const options = this.requestOptions()
-      return secretsDelete({ secret_path: path }, options)
     },
   }
 

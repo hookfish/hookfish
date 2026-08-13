@@ -8,7 +8,6 @@ import {
   defineDatabase,
   drizzleDatabase,
   oauthStates,
-  vaultSecrets,
 } from '@hookfish/api/database'
 import { migrationsFolder as bundledMigrations } from '@hookfish/api/migrations'
 import { drizzle } from 'drizzle-orm/pglite'
@@ -18,7 +17,6 @@ const schema = {
   brokerAccessTokens,
   connections,
   oauthStates,
-  vaultSecrets,
 }
 
 export type PgliteDatabaseOptions = {

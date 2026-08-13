@@ -27,8 +27,8 @@ uses its metadata to render the remaining controls. OAuth providers render an
 authorization action, secret providers render a credential input, and the
 input schema renders fields such as an MCP resource name, URL, and scopes.
 
-The dashboard intentionally has no connection-type selector and no generic
-vault entry. Provider metadata is the source of truth. Connection lists contain
+The dashboard intentionally has no connection-type selector. Provider metadata
+is the source of truth. Connection lists contain
 metadata only and never stored credential values. View token is an explicit
 privileged action: it calls
 `connections.access()` only after the dialog opens, masks the returned provider
@@ -65,6 +65,6 @@ browser example.
 
 Hookfish can mount an allowlisted `/api/client` facade with `includeClient:
 true`. The facade may expose provider and connection metadata plus disconnect,
-but never connection access, authorization starts, secret writes, vault values,
-callbacks, or administration. Unlike the packaged operator dashboard, it does
+but never connection access, authorization starts, secret writes, callbacks, or
+administration. Unlike the packaged operator dashboard, it does
 not accept a broker token from the browser to unlock the full API.

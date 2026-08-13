@@ -29,11 +29,10 @@ export default defineHookfishConfig({
 | Authorization | `authorization.started`, `authorization.connected`, `authorization.failed` |
 | Connections | `connection.secret_accessed`, `connection.secret_stored`, `connection.disconnected` |
 | Broker tokens | `broker_token.created`, `broker_token.revoked` |
-| Secrets | `secret.stored`, `secret.retrieved`, `secret.deleted` |
 
-Events can include a provider ID, connection path, token name, secret path,
-error code, refresh flag, or replay flag depending on the operation. They do
-not include access tokens, refresh tokens, client secrets, or vault values.
+Events can include a provider ID, connection path, token name, error code,
+refresh flag, or replay flag depending on the operation. They do not include
+access tokens, refresh tokens, client secrets, or stored secret values.
 
 ## Delivery behavior
 

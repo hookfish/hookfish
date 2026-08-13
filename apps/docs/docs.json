@@ -90,6 +90,10 @@
           {
             "group": "Security",
             "pages": ["reference/security"]
+          },
+          {
+            "group": "License",
+            "pages": ["reference/license"]
           }
         ]
       }

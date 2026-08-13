@@ -11,12 +11,7 @@ import {
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-export type {
-  BrokerAccessToken,
-  Connection,
-  OAuthState,
-  VaultSecret,
-} from './types'
+export type { BrokerAccessToken, Connection, OAuthState } from './types'
 
 /**
  * One row per structured connection identity. Credentials are encrypted at
@@ -125,28 +120,10 @@ export const brokerAccessTokens = pgTable(
   ],
 )
 
-/** Encrypted arbitrary credentials. Plaintext values never touch the database. */
-export const vaultSecrets = pgTable(
-  'vault_secrets',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    path: text('path').notNull(),
-    value: text('value_encrypted').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [uniqueIndex('vault_secrets_path_idx').on(table.path)],
-)
-
 type Schema = {
   brokerAccessTokens: typeof brokerAccessTokens
   connections: typeof connections
   oauthStates: typeof oauthStates
-  vaultSecrets: typeof vaultSecrets
 }
 
 /** Drizzle client type used internally by the Postgres and PGlite adapters. */

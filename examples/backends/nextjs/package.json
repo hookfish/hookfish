@@ -2,6 +2,7 @@
   "name": "@hookfish/example-nextjs",
   "private": true,
   "version": "0.0.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "dev": "next dev --hostname ${HOST:-127.0.0.1} --port ${PORT:-3000}",

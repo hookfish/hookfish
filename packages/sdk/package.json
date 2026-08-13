@@ -1,6 +1,7 @@
 {
   "name": "@hookfish/sdk",
   "version": "0.3.0",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "https://github.com/hookfish/hookfish.git",

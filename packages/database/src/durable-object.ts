@@ -10,12 +10,8 @@ import {
   type NewBrokerAccessToken,
   type NewConnection,
   type NewOAuthState,
-  type NewVaultSecret,
   type OAuthState,
   type OAuthStateUpdate,
-  type VaultSecret,
-  type VaultSecretFilter,
-  type VaultSecretMetadata,
 } from '@hookfish/api/database'
 
 type OAuthStateRow = {
@@ -53,14 +49,6 @@ type ConnectionRow = {
   metadata: string
   external_account_id: string | null
   external_account_label: string | null
-  created_at: number
-  updated_at: number
-}
-
-type VaultSecretRow = {
-  id: string
-  path: string
-  value: string
   created_at: number
   updated_at: number
 }
@@ -132,16 +120,6 @@ function toConnection(row: ConnectionRow): Connection {
   }
 }
 
-function toVaultSecret(row: VaultSecretRow): VaultSecret {
-  return {
-    id: row.id,
-    path: row.path,
-    value: row.value,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.updated_at),
-  }
-}
-
 function toBrokerAccessToken(row: BrokerAccessTokenRow): BrokerAccessToken {
   return {
     name: row.name,
@@ -183,11 +161,26 @@ export class HookfishDurableObject<Env = object>
         'SELECT COALESCE(MAX(version), 0) AS version FROM _hookfish_schema_migrations',
       )
       .one().version
-    if (current >= 3) return
+    if (current >= 4) return
 
     this.ctx.storage.transactionSync(() => {
-      if (current < 2) {
+      if (current < 3) this.migrateToV3(current)
+      if (current < 4) {
         this.ctx.storage.sql.exec(`
+          DROP TABLE IF EXISTS vault_secrets;
+        `)
+        this.ctx.storage.sql.exec(
+          `INSERT INTO _hookfish_schema_migrations(version, applied_at)
+           VALUES (4, ?)`,
+          Date.now(),
+        )
+      }
+    })
+  }
+
+  private migrateToV3(current: number): void {
+    if (current < 2) {
+      this.ctx.storage.sql.exec(`
           DROP TABLE IF EXISTS oauth_states;
           DROP TABLE IF EXISTS oauth_connections;
           DROP TABLE IF EXISTS oauth_providers;
@@ -247,22 +240,10 @@ export class HookfishDurableObject<Env = object>
           );
           CREATE INDEX IF NOT EXISTS broker_access_tokens_expires_idx
             ON broker_access_tokens(expires_at);
-
-          CREATE TABLE IF NOT EXISTS vault_secrets (
-            id TEXT PRIMARY KEY,
-            organization TEXT NOT NULL,
-            path TEXT NOT NULL,
-            value TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL,
-            UNIQUE(organization, path)
-          );
-          CREATE INDEX IF NOT EXISTS vault_secrets_organization_idx
-            ON vault_secrets(organization);
         `)
-      }
+    }
 
-      this.ctx.storage.sql.exec(`
+    this.ctx.storage.sql.exec(`
           CREATE TABLE connections_v3 (
             id TEXT PRIMARY KEY,
             namespace TEXT NOT NULL,
@@ -329,28 +310,9 @@ export class HookfishDurableObject<Env = object>
           FROM oauth_states;
           DROP TABLE oauth_states;
           ALTER TABLE oauth_states_v3 RENAME TO oauth_states;
-
-          CREATE TABLE vault_secrets_v3 (
-            id TEXT PRIMARY KEY,
-            path TEXT NOT NULL UNIQUE,
-            value TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-          );
-          INSERT INTO vault_secrets_v3
-          SELECT id,
-            CASE
-              WHEN organization = '' THEN path
-              ELSE 'organizations/' || path
-            END,
-            value, created_at, updated_at
-          FROM vault_secrets;
-          DROP TABLE vault_secrets;
-          ALTER TABLE vault_secrets_v3 RENAME TO vault_secrets;
-
         `)
 
-      this.ctx.storage.sql.exec(`
+    this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS connections (
           id TEXT PRIMARY KEY,
           namespace TEXT NOT NULL,
@@ -402,21 +364,12 @@ export class HookfishDurableObject<Env = object>
         );
         CREATE INDEX IF NOT EXISTS broker_access_tokens_expires_idx
           ON broker_access_tokens(expires_at);
-
-        CREATE TABLE IF NOT EXISTS vault_secrets (
-          id TEXT PRIMARY KEY,
-          path TEXT NOT NULL UNIQUE,
-          value TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
       `)
-      this.ctx.storage.sql.exec(
-        `INSERT INTO _hookfish_schema_migrations(version, applied_at)
-         VALUES (3, ?)`,
-        Date.now(),
-      )
-    })
+    this.ctx.storage.sql.exec(
+      `INSERT INTO _hookfish_schema_migrations(version, applied_at)
+       VALUES (3, ?)`,
+      Date.now(),
+    )
   }
 
   createOAuthState(input: NewOAuthState): void {
@@ -660,66 +613,6 @@ export class HookfishDurableObject<Env = object>
     return (
       this.ctx.storage.sql.exec('DELETE FROM connections WHERE id = ?', id)
         .rowsWritten > 0
-    )
-  }
-
-  putVaultSecret(input: NewVaultSecret): VaultSecret {
-    const now = Date.now()
-    const existing = this.getVaultSecret(input.path)
-    const id = existing?.id ?? crypto.randomUUID()
-    this.ctx.storage.sql.exec(
-      `INSERT INTO vault_secrets (
-        id, path, value, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(path) DO UPDATE SET
-        value = excluded.value, updated_at = excluded.updated_at`,
-      id,
-      input.path,
-      input.value,
-      existing?.createdAt.getTime() ?? now,
-      now,
-    )
-    const stored = this.getVaultSecret(input.path)
-    if (!stored) throw new Error('Stored vault secret could not be read.')
-    return stored
-  }
-
-  getVaultSecret(path: string): VaultSecret | undefined {
-    const row = this.ctx.storage.sql
-      .exec<VaultSecretRow>(
-        `SELECT * FROM vault_secrets WHERE path = ? LIMIT 1`,
-        path,
-      )
-      .toArray()[0]
-    return row ? toVaultSecret(row) : undefined
-  }
-
-  listVaultSecrets(filter: VaultSecretFilter): VaultSecretMetadata[] {
-    return this.ctx.storage.sql
-      .exec<VaultSecretRow>('SELECT * FROM vault_secrets ORDER BY path')
-      .toArray()
-      .map(toVaultSecret)
-      .filter(
-        (secret) =>
-          (!filter.prefix ||
-            secret.path === filter.prefix ||
-            secret.path.startsWith(`${filter.prefix}/`)) &&
-          (!filter.scopes ||
-            filter.scopes.some((scope) =>
-              pathMatchesScope(secret.path, scope),
-            )) &&
-          (!filter.excludeInternalPrefix ||
-            !secret.path.startsWith(filter.excludeInternalPrefix)),
-      )
-      .map(({ path, createdAt, updatedAt }) => ({ path, createdAt, updatedAt }))
-  }
-
-  deleteVaultSecret(path: string): boolean {
-    return (
-      this.ctx.storage.sql.exec(
-        'DELETE FROM vault_secrets WHERE path = ?',
-        path,
-      ).rowsWritten > 0
     )
   }
 

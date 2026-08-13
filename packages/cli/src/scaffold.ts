@@ -74,8 +74,21 @@ DATABASE_URL=
 # HOOKFISH_FRONTEND_URL=https://dashboard.example.com
 `
 
-function localEnvironment(): string {
-  return environmentExample
+const cloudflareEnvironmentExample = environmentExample.replace(
+  `# Required for the Vercel backend. Other backends ignore this by default.
+DATABASE_URL=
+
+`,
+  '',
+)
+
+const cloudflareMigrationEnvironment = `# Direct PostgreSQL connection used only by \`pnpm migrate\`.
+# The Worker connects through Hyperdrive instead. Never commit this file.
+DATABASE_URL=
+`
+
+function localEnvironment(template = environmentExample): string {
+  return template
     .replace(
       'OAUTH_ENCRYPTION_KEY=',
       `OAUTH_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
@@ -219,19 +232,22 @@ export default app
 `
 
 const cloudflareServer = `import { HookfishServer } from '@hookfish/api'
-import {
-  durableObjects,
-  HookfishDurableObject,
-} from '@hookfish/database/durable-object'
+import { postgres } from '@hookfish/database/postgres'
 import {
   createMcpProvider,
   createSecretProvider,
 } from '@hookfish/providers'
 
-export { HookfishDurableObject }
-
-const db = durableObjects<Env>((bindings) =>
-  bindings.HOOKFISH_DB.getByName('__global__'),
+// Hyperdrive manages the connection pool. Disable Hookfish's client cache so
+// every Worker request gets a request-scoped client backed by that pool.
+const db = postgres<Env>(
+  (bindings) => bindings.HYPERDRIVE.connectionString,
+  {
+    cache: false,
+    fetchTypes: false,
+    max: 5,
+    prepare: true,
+  },
 )
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 const hookfish = await HookfishServer.init<Env>({
@@ -251,6 +267,18 @@ export default {
     return hookfish.fetch(request, env, context)
   },
 } satisfies ExportedHandler<Env>
+`
+
+const cloudflareMigration = `import { migrateDatabase } from '@hookfish/database'
+import { postgres } from '@hookfish/database/postgres'
+
+const connectionString = process.env.DATABASE_URL
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to run PostgreSQL migrations.')
+}
+
+await migrateDatabase(postgres(connectionString), process.env)
+console.log('Hookfish PostgreSQL migrations completed.')
 `
 
 function packageJson(
@@ -299,7 +327,9 @@ function packageJson(
       scripts.typecheck =
         'wrangler types --env-file wrangler-typegen.env && tsc --noEmit'
       scripts.deploy = 'wrangler deploy'
+      scripts.migrate = 'node --env-file=.env --import tsx src/migrate.ts'
       devDependencies['@types/node'] = '^24.12.3'
+      devDependencies.tsx = '^4.23.1'
       devDependencies.wrangler = '^4.118.0'
       break
     case 'docker':
@@ -327,7 +357,7 @@ function cloudflareTsconfig(): string {
   return `{
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023", "WebWorker"],
+    "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strictNullChecks": true,
@@ -340,11 +370,40 @@ function cloudflareTsconfig(): string {
 `
 }
 
+function cloudflareWranglerConfig(name: string): string {
+  return `{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": ${JSON.stringify(name)},
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+
+  // Hyperdrive setup:
+  // 1. Create a PostgreSQL database and a Hyperdrive configuration for it.
+  // 2. Replace the placeholder ID below with the Hyperdrive configuration ID.
+  // 3. For local development, export
+  //    CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE with the
+  //    direct PostgreSQL URL before running \`pnpm dev\`.
+  // 4. Put the direct PostgreSQL URL in .env and run \`pnpm migrate\` before
+  //    starting the Worker or deploying it.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "<YOUR_HYPERDRIVE_ID>"
+    }
+  ]
+}
+`
+}
+
 function readme(name: string, backend: ScaffoldBackend): string {
   const localEnvironmentFile = backend === 'cloudflare' ? '.dev.vars' : '.env'
   const production =
     backend === 'cloudflare'
-      ? `Store production values with \`wrangler secret put <NAME>\`, then run \`pnpm deploy\`.`
+      ? `Create a PostgreSQL database and a Hyperdrive configuration, then follow the setup comments in \`wrangler.jsonc\`. Put the direct PostgreSQL URL in \`.env\`, run \`pnpm migrate\`, store production values with \`wrangler secret put <NAME>\`, and run \`pnpm deploy\`.`
       : backend === 'vercel'
         ? `Set the variables from \`.env.example\` in Vercel, then run \`pnpm deploy\`. Vercel uses Postgres through \`DATABASE_URL\`.`
         : backend === 'docker'
@@ -371,6 +430,52 @@ A gitignored \`${localEnvironmentFile}\` is generated with unique local encrypti
 ## Deploy
 
 ${production}
+
+## Attribution
+
+Hookfish is licensed under the Functional Source License 1.1 with an
+attribution requirement: ${licenseUrl}
+
+Ship this as an end-user-facing application and you must credit Hookfish
+somewhere users can find it — an about page, a credits or third-party licenses
+screen, or a footer. \`AGENTS.md\` carries the same note for coding agents.
+`
+}
+
+const repositoryUrl = 'https://github.com/hookfish/hookfish'
+const licenseUrl = `${repositoryUrl}/blob/main/LICENSE`
+
+function agents(name: string, backend: ScaffoldBackend): string {
+  const configFile =
+    backend === 'cloudflare' ? '`src/index.ts`' : '`hookfish.config.ts`'
+
+  return `# ${name}
+
+## Hookfish
+
+This project uses [Hookfish](${repositoryUrl}) as its OAuth and
+encrypted-secret broker. ${configFile} configures the broker, and
+\`hookfish serve\` serves the packaged dashboard against it.
+
+## License and attribution
+
+Hookfish is licensed under the Functional Source License 1.1 with an
+attribution requirement: ${licenseUrl}
+
+If you ship this project as an end-user-facing application — anything with an
+interface people outside your own organization use directly — you must credit
+Hookfish somewhere those users can reasonably find it, such as an about page, a
+settings or credits screen, a third-party licenses page, a footer, or published
+documentation. Text naming Hookfish, for example "Powered by Hookfish", linked
+to ${repositoryUrl}, satisfies the requirement. No credit is
+required for internal use, non-commercial education, or non-commercial
+research.
+
+You may not offer this project to others as a commercial product or service
+that competes with Hookfish.
+
+Keep this section when you edit this file, and add the credit as soon as you
+build an end-user-facing interface on top of this broker.
 `
 }
 
@@ -381,6 +486,7 @@ function backendFiles(
 ): Record<string, string> {
   const files: Record<string, string> = {
     '.gitignore': gitignore,
+    'AGENTS.md': agents(name, backend),
     'README.md': readme(name, backend),
     'package.json': `${JSON.stringify(packageJson(name, backend, dependencyTag), null, 2)}\n`,
     'pnpm-workspace.yaml': `allowBuilds:
@@ -389,41 +495,19 @@ function backendFiles(
   }
 
   if (backend === 'cloudflare') {
-    files['.dev.vars'] = localEnvironment()
-    files['.dev.vars.example'] = environmentExample
+    files['.dev.vars'] = localEnvironment(cloudflareEnvironmentExample)
+    files['.dev.vars.example'] = cloudflareEnvironmentExample
+    files['.env'] = cloudflareMigrationEnvironment
+    files['.env.example'] = cloudflareMigrationEnvironment
     files['src/index.ts'] = cloudflareServer
+    files['src/migrate.ts'] = cloudflareMigration
     files['tsconfig.json'] = cloudflareTsconfig()
     files['wrangler-typegen.env'] = `OAUTH_ENCRYPTION_KEY=
 HOOKFISH_API_KEY=
 OAUTH_REDIRECT_BASE_URL=
 HOOKFISH_FRONTEND_URL=
 `
-    files['wrangler.jsonc'] = `${JSON.stringify(
-      {
-        $schema: './node_modules/wrangler/config-schema.json',
-        name,
-        main: './src/index.ts',
-        compatibility_date: '2026-08-11',
-        compatibility_flags: ['nodejs_compat'],
-        observability: { enabled: true },
-        durable_objects: {
-          bindings: [
-            {
-              name: 'HOOKFISH_DB',
-              class_name: 'HookfishDurableObject',
-            },
-          ],
-        },
-        exports: {
-          HookfishDurableObject: {
-            type: 'durable-object',
-            storage: 'sqlite',
-          },
-        },
-      },
-      null,
-      2,
-    )}\n`
+    files['wrangler.jsonc'] = cloudflareWranglerConfig(name)
     return files
   }
 
