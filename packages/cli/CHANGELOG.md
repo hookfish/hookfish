@@ -1,5 +1,12 @@
 # hookfish
 
+## 0.12.1
+
+### Patch Changes
+
+- Updated dependencies [8c7c612]
+  - @hookfish/database@1.1.0
+
 ## 0.12.0
 
 ### Minor Changes
