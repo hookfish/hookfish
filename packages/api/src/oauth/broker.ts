@@ -8,20 +8,20 @@ import {
   type ProviderTokenResponse,
 } from '@hookfish/provider'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import type { Connection, Database, OAuthState } from '../db/types'
+import type { Connection, Database, OAuthState } from '../db/types.js'
 import {
   type BoundProviderSource,
   defaultBoundProviderSource,
-} from '../provider-source'
+} from '../provider-source.js'
 import {
   decryptSecret,
   encryptSecret,
   hashToken,
   randomToken,
   requireEncryptionKey,
-} from './crypto'
-import { BrokerError } from './errors'
-import { formatConnectionPath } from './resource-path'
+} from './crypto.js'
+import { BrokerError } from './errors.js'
+import { formatConnectionPath } from './resource-path.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000
 const REFRESH_LEEWAY_MS = 60 * 1000

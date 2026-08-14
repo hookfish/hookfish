@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
-import type { DatabaseInput } from '../db/binding'
-import { emitHookfishEvent, type HookfishEventHandler } from '../events'
+import type { DatabaseInput } from '../db/binding.js'
+import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
 import {
   assertCanDelegate,
   assertRootAccess,
@@ -8,15 +8,15 @@ import {
   MAX_ACCESS_TOKEN_TTL_SECONDS,
   mintAccessToken,
   normalizeTokenName,
-} from '../oauth/access-token'
-import { MAX_RESOURCE_PATH_LENGTH } from '../oauth/resource-path'
-import { requireBrokerApiKey, resolveBrokerConfig } from '../oauth/config'
-import { BrokerError, isBrokerError } from '../oauth/errors'
+} from '../oauth/access-token.js'
+import { requireBrokerApiKey, resolveBrokerConfig } from '../oauth/config.js'
+import { BrokerError, isBrokerError } from '../oauth/errors.js'
 import {
   type BrokerContext,
   requireApiKey,
   withDatabase,
-} from '../oauth/middleware'
+} from '../oauth/middleware.js'
+import { MAX_RESOURCE_PATH_LENGTH } from '../oauth/resource-path.js'
 
 const brokerAuth = [{ brokerApiKey: [] }]
 

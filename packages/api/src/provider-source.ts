@@ -1,9 +1,9 @@
 import {
+  type ConnectionProvider,
   createProviderRegistry,
   defaultProviderRegistry,
   isProviderRegistry,
   isProviderSource,
-  type ConnectionProvider,
   type ProviderRegistry,
   type ProviderSource,
   type ProviderSourceEntry,

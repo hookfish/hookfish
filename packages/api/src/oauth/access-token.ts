@@ -1,9 +1,9 @@
-import type { Database } from '../db/types'
-import { BrokerError } from './errors'
+import type { Database } from '../db/types.js'
+import { BrokerError } from './errors.js'
 import {
   MAX_RESOURCE_PATH_LENGTH,
   normalizeResourcePath,
-} from './resource-path'
+} from './resource-path.js'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const TOKEN_VERSION = 1

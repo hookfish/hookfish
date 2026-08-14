@@ -12,24 +12,25 @@
   },
   "type": "module",
   "files": [
+    "dist",
     "src"
   ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./pglite": {
-      "types": "./src/pglite.ts",
-      "default": "./src/pglite.ts"
+      "types": "./dist/pglite.d.ts",
+      "default": "./dist/pglite.js"
     },
     "./postgres": {
-      "types": "./src/postgres.ts",
-      "default": "./src/postgres.ts"
+      "types": "./dist/postgres.d.ts",
+      "default": "./dist/postgres.js"
     },
     "./durable-object": {
-      "types": "./src/durable-object.ts",
-      "default": "./src/durable-object.ts"
+      "types": "./dist/durable-object.d.ts",
+      "default": "./dist/durable-object.js"
     }
   },
   "scripts": {

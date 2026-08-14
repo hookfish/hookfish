@@ -1,5 +1,5 @@
 import { isValidProviderId } from '@hookfish/provider'
-import { BrokerError } from './errors'
+import { BrokerError } from './errors.js'
 
 export const MAX_RESOURCE_PATH_LENGTH = 768
 

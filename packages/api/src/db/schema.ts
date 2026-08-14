@@ -11,7 +11,7 @@ import {
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-export type { BrokerAccessToken, Connection, OAuthState } from './types'
+export type { BrokerAccessToken, Connection, OAuthState } from './types.js'
 
 /**
  * One row per structured connection identity. Credentials are encrypted at

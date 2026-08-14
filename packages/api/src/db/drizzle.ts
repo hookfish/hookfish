@@ -4,8 +4,8 @@ import {
   connections,
   type DrizzleDatabase,
   oauthStates,
-} from './schema'
-import type { Database } from './types'
+} from './schema.js'
+import type { Database } from './types.js'
 
 function connectionScopeFilter(scopes?: string[]) {
   if (scopes?.includes('**') || !scopes) return undefined

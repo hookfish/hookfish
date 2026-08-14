@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
 import { createProviderRegistry } from '@hookfish/provider'
+import { describe, expect, it, vi } from 'vitest'
 import { McpProvider } from '../src'
 
 const resourceUrl = 'https://mcp.example.com/team/mcp'

@@ -12,22 +12,22 @@ import {
   createHookfishBackend,
   type HookfishBackendOptions,
   isAllowedClientRequest,
-} from './client'
-import { type DatabaseInput, migrateDatabase } from './db/binding'
-import type { HookfishEventHandler } from './events'
-import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config'
-import type { BrokerContext } from './oauth/middleware'
+} from './client.js'
+import { type DatabaseInput, migrateDatabase } from './db/binding.js'
+import type { HookfishEventHandler } from './events.js'
+import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config.js'
+import type { BrokerContext } from './oauth/middleware.js'
 import {
   type BoundProviderSource,
   createProviderResolver,
   materializeProviderRegistry,
   type ProviderInput,
-} from './provider-source'
-import { createAdminRoutes } from './routes/admin'
-import { createConnectionRoutes } from './routes/connections'
-import { statsRoutes } from './routes/stats'
+} from './provider-source.js'
+import { createAdminRoutes } from './routes/admin.js'
+import { createConnectionRoutes } from './routes/connections.js'
+import { statsRoutes } from './routes/stats.js'
 
-export type { ProviderFactory, ProviderMap } from './provider-source'
+export type { ProviderFactory, ProviderMap } from './provider-source.js'
 
 export type HookfishProviders<Bindings extends object = object> =
   ProviderInput<Bindings>
@@ -299,7 +299,7 @@ export {
   type DatabaseInput,
   defineDatabase,
   migrateDatabase,
-} from './db/binding'
+} from './db/binding.js'
 export type {
   BrokerAccessToken,
   Connection,
@@ -313,5 +313,5 @@ export type {
   NewOAuthState,
   OAuthState,
   OAuthStateUpdate,
-} from './db/types'
-export type { HookfishEvent, HookfishEventHandler } from './events'
+} from './db/types.js'
+export type { HookfishEvent, HookfishEventHandler } from './events.js'

@@ -1,6 +1,6 @@
 import type { ExecutionContext } from 'hono'
 
-import { requireBrokerApiKey } from './oauth/config'
+import { requireBrokerApiKey } from './oauth/config.js'
 
 const allowedMethods = ['GET', 'DELETE'] as const
 type AllowedMethod = (typeof allowedMethods)[number]

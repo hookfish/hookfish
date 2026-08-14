@@ -1,4 +1,9 @@
 import {
+  type Client,
+  type Config,
+  createClient,
+} from './generated/client/index.js'
+import {
   adminTokensCreate,
   adminTokensList,
   adminTokensRevoke,
@@ -10,10 +15,9 @@ import {
   connectionsProviders,
   connectionsSetSecret,
   statsGet,
-} from './generated'
-import { type Client, type Config, createClient } from './generated/client'
+} from './generated/index.js'
 
-export * from './generated'
+export * from './generated/index.js'
 
 type MaybePromise<T> = T | Promise<T>
 type ApiKey = string | (() => MaybePromise<string>)

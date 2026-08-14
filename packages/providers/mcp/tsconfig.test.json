@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.lib.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../../node_modules/.tmp/provider-mcp-test.tsbuildinfo",
+    "composite": false,
+    "noEmit": true,
+    "rootDir": "../../.."
+  },
+  "include": ["test"]
+}

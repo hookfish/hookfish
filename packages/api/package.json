@@ -12,6 +12,7 @@
   },
   "type": "module",
   "files": [
+    "dist",
     "src",
     "drizzle",
     "OAUTH.md"
@@ -19,23 +20,23 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "default": "./dist/index.js"
     },
     "./database": {
       "types": "./src/db/index.ts",
-      "default": "./src/db/index.ts"
+      "default": "./dist/db/index.js"
     },
     "./client": {
       "types": "./src/client.ts",
-      "default": "./src/client.ts"
+      "default": "./dist/client.js"
     },
     "./migrations": {
       "types": "./src/migrations.ts",
-      "default": "./src/migrations.ts"
+      "default": "./dist/migrations.js"
     },
     "./oauth/config": {
       "types": "./src/oauth/config.ts",
-      "default": "./src/oauth/config.ts"
+      "default": "./dist/oauth/config.js"
     }
   },
   "scripts": {
