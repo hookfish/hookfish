@@ -22,6 +22,19 @@ Concrete providers can appear directly after an optional namespace, as in
 implementation, as in `user/personal/gmail/mcp` or
 `service/prod/openai/secret`. The final segment always selects trusted code.
 
+`user/personal/gmail/mcp` therefore has four parts:
+
+- Namespace: `user/personal`
+- Resource identity: `gmail`
+- Provider implementation: `mcp`
+- Authentication: OAuth
+
+The `gmail` identity distinguishes this generic MCP connection from other
+resources under the same namespace. A concrete Gmail provider at
+`user/personal/gmail` is a different connection, because its final segment is
+`gmail`. Hookfish stores the MCP URL on first access and rejects a later access
+that supplies a different URL for the same path.
+
 Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers
 such as `gmail`, `githubEnterprise`, `mcp`, or `secret`.
 
@@ -61,6 +74,47 @@ authorization URL. It supersedes earlier pending URLs for that connection.
 Call `connections.authorize()` to start a fresh flow unconditionally, such as
 after an upstream MCP server rejects a credential whose stored expiration has
 not passed.
+
+## How errors reach the response
+
+Because the SDK throws on every unusable connection, your happy path stays
+linear. `HookfishError` implements `getResponse()` — the interface Hono's
+default error handler already calls — so a thrown error becomes a correct HTTP
+response without a `try`/`catch` at the call site.
+
+Each error becomes the status its caller can act on, not the status Hookfish
+returned internally:
+
+| Situation | Response |
+| --- | --- |
+| Connection needs consent | `428` with `authorize_url` |
+| Stored secret is missing | `428` with the connection path |
+| Provider declined a scope | `428` with `missing_scopes` |
+| Upstream token exchange failed | `502` |
+| Wrong path, unscoped token, missing configuration | `500` with an opaque body |
+
+A connection that needs consent is deliberately not a `401`. Your application
+already uses `401` for its own expired sessions, and most browser clients
+redirect to a login page when they see one.
+
+To handle the flow inline instead — rendering a **Connect** link rather than
+returning a status — catch the error and read its URL:
+
+```ts
+import { HookfishAuthorizationRequiredError } from '@hookfish/sdk'
+
+try {
+  const { secret } = await hookfish.connections.access('user/personal/github')
+  return c.html('<p>GitHub connected.</p>')
+} catch (error) {
+  if (error instanceof HookfishAuthorizationRequiredError) {
+    return c.html(`<a href="${error.authorizeUrl}">Connect GitHub</a>`)
+  }
+  throw error
+}
+```
+
+See [errors](/reference/errors) for the complete code table.
 
 ## Lifecycle
 
