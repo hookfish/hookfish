@@ -32,9 +32,9 @@ await hookfish.connections.access('acme/engineering/github', {
 })
 ```
 
-The provider implementation defines these values. For MCP, scopes supplied
-with the resource URL become the connection's immutable MCP configuration and
-the requested upstream permissions.
+The provider implementation defines these values. Fixed providers can set
+their normal scope set in trusted configuration. Dynamic access can request
+scopes beside per-connection MCP configuration.
 
 Hookfish records requested and granted provider scopes separately. Access with
 a scope that was never requested starts authorization. If the provider already

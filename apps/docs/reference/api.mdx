@@ -6,6 +6,9 @@ description: "Reference the connection, broker-token, callback, and browser-safe
 The running deployment publishes its OpenAPI 3.1 contract at
 `/api/openapi.json` and Swagger UI at `/api/docs`.
 
+These paths use the default `basePath` of `/api`. A custom base path moves the
+API, OAuth callbacks, OpenAPI document, and browser facade together.
+
 Send a root or scoped broker credential on authenticated server requests:
 
 ```http
@@ -40,6 +43,8 @@ An access body may contain:
 
 `configuration` contains non-secret input accepted by the trusted provider.
 Provider selection always comes from the final path segment, never the body.
+Fixed provider methods keep configuration such as an MCP resource URL in
+trusted deployment code and do not send it in the access body.
 
 The provider list describes credential acquisition and input controls:
 

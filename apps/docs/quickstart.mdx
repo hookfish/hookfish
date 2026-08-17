@@ -3,13 +3,13 @@ title: "Quickstart"
 description: "Scaffold a Hookfish backend, add one Hono route, and read a Gmail inbox."
 ---
 
-This guide scaffolds a Hookfish backend, adds a single Hono route to it, and
-reads a Gmail inbox through `https://gmail.run.tools`. Hookfish brokers the
-OAuth flow, so the route contains no token handling and no error plumbing.
+This guide scaffolds a Hookfish backend, adds one application route, and reads
+a Gmail inbox through `https://gmail.run.tools`. Hookfish handles OAuth,
+constructs the authenticated MCP client, and maps connection state to the
+route's HTTP response.
 
-You do not need to create a Google OAuth application. Hookfish uses the MCP
-server's OAuth discovery metadata and its supported client-registration
-mechanism.
+Hookfish uses the MCP server's OAuth discovery metadata and supported
+client-registration mechanism to complete the connection.
 
 ## Prerequisites
 
@@ -18,118 +18,103 @@ mechanism.
 - A Google account with Gmail enabled
 
 <Steps>
-  <Step title="Scaffold the backend">
+  <Step title="Scaffold the application">
     ```bash
     npm i -g hookfish@latest
     hookfish init my-app --backend node
     cd my-app
-    pnpm add @hookfish/sdk hono
     ```
 
-    The scaffold registers the trusted `mcp` and `secret` provider
-    implementations and writes gitignored `OAUTH_ENCRYPTION_KEY` and
-    `HOOKFISH_API_KEY` values to `.env`. It stores connections in PGlite under
+    The scaffold creates a Hono application with Hookfish mounted at `/api`.
+    It writes gitignored `OAUTH_ENCRYPTION_KEY` and `HOOKFISH_API_KEY` values
+    to `.env`, registers the generic `mcp` provider, trusts the backend origin
+    for callback returns, and stores local connections in PGlite under
     `data/hookfish`.
   </Step>
 
-  <Step title="Trust the application origin">
-    Your route runs on port `8787`, and Hookfish only redirects to origins you
-    trust. Add it to `trustedOrigins` in `hookfish.config.ts`:
+  <Step title="Add the inbox route">
+    Add the route to the generated `src/index.ts` before the call to `serve`:
 
     ```ts
-    trustedOrigins: [frontendUrl, 'http://127.0.0.1:8787'],
-    ```
-  </Step>
-
-  <Step title="Add the route">
-    The generated `src/index.ts` serves the Hookfish API and nothing else.
-    Replace it with a Hono application that mounts Hookfish at `/api` and adds
-    your own route alongside it:
-
-    ```ts
-    import { serve } from '@hono/node-server'
-    import { HookfishServer } from '@hookfish/api'
-    import { Hookfish } from '@hookfish/sdk'
-    import { Hono } from 'hono'
-    import config from '../hookfish.config'
-
     const hookfishServer = await HookfishServer.init(config)
-    const port = Number(process.env.PORT ?? 8787)
-
-    const hookfish = new Hookfish({
-      apiKey: process.env.HOOKFISH_API_KEY!,
-      baseUrl: `http://127.0.0.1:${port}/api`,
-      fetch: (request) => hookfishServer.fetch(request, process.env),
-    })
-
+    const hookfish = hookfishServer.client()
     const app = new Hono()
-    app.all('/api/*', (c) => hookfishServer.fetch(c.req.raw, process.env))
+
+    app.mount(hookfishServer.basePath, hookfishServer.handler)
 
     app.get('/inbox', async (c) => {
-      await using gmail = await hookfish.mcp('user/personal/gmail/mcp', {
-        url: 'https://gmail.run.tools',
-        returnTo: `http://127.0.0.1:${port}/inbox`,
+      await using gmail = await hookfish.mcp('user/personal/gmail', {
+        resourceUrl: 'https://gmail.run.tools',
+        returnTo: 'http://127.0.0.1:8787/inbox',
       })
 
-      return c.json(await gmail.callTool({
-        name: 'Gmail_SearchEmailsByQuery',
-        arguments: { query: 'in:inbox', max_results: 10 },
-      }))
+      return c.json(
+        await gmail.callTool({
+          name: 'Gmail_SearchEmailsByQuery',
+          arguments: { query: 'in:inbox', max_results: 10 },
+        }),
+      )
     })
-
-    serve({ fetch: app.fetch, hostname: '127.0.0.1', port })
     ```
 
-    The custom `fetch` dispatches SDK calls straight into the embedded handler,
-    so the broker runs in your process without a network hop. Keeping `/api/*`
-    mounted exposes the OAuth callback endpoints that the consent flow
-    redirects to.
+    `basePath` defaults to `/api`. Hookfish uses the same value when it builds
+    callback URLs, while `handler` serves the routes relative to that mount.
+    Set `basePath: '/hookfish'` in `hookfish.config.ts` to move the API and its
+    callbacks together.
+
+    `hookfishServer.client()` gives trusted application routes direct access
+    to the embedded broker and its configured provider clients.
   </Step>
 
   <Step title="Run it">
     ```bash
     pnpm dev:server
-    ```
-
-    Request the route. The connection is not authorized yet, so Hookfish
-    returns a fresh consent URL:
-
-    ```bash
     curl -i http://127.0.0.1:8787/inbox
     ```
+
+    The connection is not authorized yet, so the route returns a fresh consent
+    URL:
 
     ```http
     HTTP/1.1 428 Precondition Required
     Content-Type: application/json
+    Cache-Control: no-store
 
     {"error":{"code":"authorization_required",
               "authorize_url":"https://accounts.google.com/o/oauth2/v2/auth?...",
-              "expires_at":"2026-08-16T19:10:00.000Z"}}
+              "expires_at":"2026-08-17T20:10:00.000Z"}}
     ```
 
     Open `authorize_url` and approve access. Hookfish stores the encrypted
-    credential and redirects to `returnTo`, which renders the inbox.
+    credential and redirects to `/inbox`. Request the route again to read the
+    inbox.
   </Step>
 </Steps>
 
-The route has no `try`/`catch` and no status checks. `hookfish.mcp()` throws
-when the connection is not usable, and Hono's default error handler turns that
-into the `428` above. See
-[how Hookfish works](/concepts/how-it-works) for the full status mapping and
-for how to read `user/personal/gmail/mcp`.
+The route opens the Gmail connection as an MCP client, calls the search tool,
+and returns its result. Hookfish turns connection states such as required
+consent into application responses through Hono's error boundary. See
+[how Hookfish works](/concepts/how-it-works) for the request and error flow.
 
-This quickstart hardcodes a single-user namespace. In a real application,
-derive the namespace from your authenticated session — see
-[application authentication](/authentication/application-auth).
+The method appends its configured `mcp` provider ID to the resource namespace:
+
+```text
+hookfish.mcp('user/personal/gmail', { resourceUrl })
+  → user/personal/gmail/mcp
+```
+
+In a real application, derive the namespace from your authenticated session.
+See [application authentication](/authentication/application-auth).
 
 <Warning>
-  The MCP client receives the usable provider credential. Keep
-  `hookfish.mcp()` in trusted server code and never return its results
-  directly to a browser without filtering them.
+  The MCP client receives the usable provider credential and can return
+  sensitive Gmail data. Keep `hookfish.mcp()` in trusted server code and
+  filter application responses before exposing them to a browser.
 </Warning>
 
 ## Next steps
 
 - [How Hookfish works](/concepts/how-it-works)
+- [Remote MCP servers](/providers/remote-mcp)
 - [Errors](/reference/errors)
 - [Token scoping](/authorization/token-scoping)

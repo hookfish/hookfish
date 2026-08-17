@@ -57,13 +57,9 @@ Adjust the relative config import to match your project structure.
 ## Add authenticated application routes
 
 Keep user authentication in normal Next.js route handlers. After validating
-the session and permissions, use the typed Hono client to call Hookfish from
-the server:
+the session and permissions, create a scoped in-process Hookfish client:
 
 ```ts
-import type { AppType as HookfishAppType } from '@hookfish/api'
-import { hc } from 'hono/client'
-
 export async function GET(request: Request) {
   const session = await authenticateNextRequest(request)
   if (!session) {
@@ -71,17 +67,13 @@ export async function GET(request: Request) {
   }
 
   const brokerToken = await scopedBrokerTokenFor(session.organizationId)
-  const hookfish = hc<HookfishAppType>(`${process.env.HOOKFISH_URL}/api`, {
-    headers: {
-      Authorization: `Bearer ${brokerToken}`,
-    },
-  })
+  const hookfishServer = await hookfishPromise
+  const hookfish = hookfishServer.client({ token: brokerToken })
 
-  return hookfish.connections.$get({
-    query: {
-      namespace: `organizations/${session.organizationId}`,
-    },
+  const result = await hookfish.connections.list({
+    namespace: `organizations/${session.organizationId}`,
   })
+  return Response.json(result)
 }
 ```
 

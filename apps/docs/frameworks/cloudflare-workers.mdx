@@ -87,6 +87,16 @@ export default {
 clients in module state. Hyperdrive manages the underlying pool. `max: 5`
 stays below the Worker request's concurrent external-connection limit.
 
+Pass Worker bindings to `hookfish.client({ bindings: env })` when trusted
+application code calls the embedded broker. Request-aware provider factories
+and lazy provider sources expose `connections`; static provider maps can also
+contribute typed provider methods.
+
+```ts
+const client = hookfish.client({ bindings: env })
+const connection = await client.connections.get('user/personal/github')
+```
+
 ## Configure local PostgreSQL
 
 Set the local connection string for the `HYPERDRIVE` binding, then generate

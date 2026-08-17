@@ -1,11 +1,10 @@
 ---
 title: "Hono on Node.js"
-description: "Add Hookfish to a Hono application and call it after your application authorizes the user."
+description: "Mount Hookfish in a Hono application and use typed provider clients from authenticated routes."
 ---
 
-Use this guide when Hookfish should run inside an existing Node.js service. For
-a separate broker service, the [quickstart](/quickstart) generates the broker
-host for you.
+Use this guide when Hookfish runs inside an existing Node.js application. The
+application owns the router and mounts Hookfish below `/api`.
 
 ## Install dependencies
 
@@ -16,7 +15,8 @@ pnpm add --save-dev tsx typescript
 
 ## Configure Hookfish
 
-Create `hookfish.config.ts` at your project root.
+Create `hookfish.config.ts` at the project root. A static provider map gives
+the in-process client typed provider methods.
 
 ```ts
 import path from 'node:path'
@@ -32,65 +32,48 @@ export default defineHookfishConfig({
   includeSwagger: true,
   returnTo: `${applicationUrl}/settings/integrations`,
   trustedOrigins: [applicationUrl],
-  providers: (env: typeof process.env) => ({
+  providers: {
     github: createGitHubProvider({
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: env.GITHUB_CLIENT_SECRET,
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
     }),
-  }),
+  },
 })
 ```
 
 ## Create the server
 
-Mount Hookfish at `/api`. Keep your user-facing application routes under a
-separate prefix.
+Mount Hookfish with its mount-relative handler. Keep application routes under
+their own paths.
 
 ```ts
 import { serve } from '@hono/node-server'
-import type { AppType as HookfishAppType } from '@hookfish/api'
 import { HookfishServer } from '@hookfish/api'
 import { Hono } from 'hono'
-import { hc } from 'hono/client'
 import config from '../hookfish.config'
 import { requireUser } from './auth'
 import { scopedBrokerTokenFor } from './broker-tokens'
 
-const hookfish = await HookfishServer.init(config)
+const hookfishServer = await HookfishServer.init(config)
 const app = new Hono()
-const applicationUrl =
-  process.env.APPLICATION_URL ?? 'http://127.0.0.1:3000'
 
-function hookfishFor(brokerToken: string) {
-  return hc<HookfishAppType>(`${applicationUrl}/api`, {
-    headers: {
-      Authorization: `Bearer ${brokerToken}`,
-    },
-    fetch: (input, init) =>
-      hookfish.fetch(new Request(input, init), process.env),
-  })
-}
+app.mount(hookfishServer.basePath, hookfishServer.handler)
 
-const applicationRoutes = app
-  .get('/rpc/integrations/connections', requireUser, async (context) => {
-    const user = context.get('user')
+const applicationRoutes = app.get(
+  '/rpc/github/profile',
+  requireUser,
+  async (c) => {
+    const user = c.get('user')
     const brokerToken = await scopedBrokerTokenFor(user.organizationId)
-    const hookfishClient = hookfishFor(brokerToken)
+    const hookfish = hookfishServer.client({ token: brokerToken })
+    const github = await hookfish.github(
+      `organizations/${user.organizationId}/users/${user.id}`,
+    )
 
-    const response = await hookfishClient.connections.$get({
-      query: {
-        namespace: `organizations/${user.organizationId}`,
-      },
-    })
-
-    if (!response.ok) {
-      return context.json({ error: 'Could not load connections.' }, 502)
-    }
-
-    return context.json(await response.json())
-  })
-
-app.all('/api/*', (context) => hookfish.fetch(context.req.raw, process.env))
+    const profile = await github.request('GET /user')
+    return c.json(profile.data)
+  },
+)
 
 serve({
   fetch: app.fetch,
@@ -101,18 +84,23 @@ serve({
 export type ApplicationApi = typeof applicationRoutes
 ```
 
-`requireUser` authenticates the application's session and enforces its
-permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
-for the authorized organization. Neither concern belongs in Hookfish itself.
+`hookfishServer.basePath` defaults to `/api`. `handler` expects paths relative
+to that mount, and Hookfish uses the configured base path when it constructs
+public OAuth and API URLs. Set `basePath: '/hookfish'` in the broker config to
+mount the same server elsewhere.
 
-The custom `fetch` function lets the typed Hono client call the embedded
-Hookfish handler without making a network request. Use the broker's HTTPS URL
-instead when Hookfish runs as a separate service.
+`hookfishServer.client()` uses trusted in-process dispatch. Pass `token` when
+the route needs a tenant-scoped broker credential. Root application code can
+omit it.
 
-## Call your application from the browser
+The initial `hookfish.github()` call throws a Hookfish error when the connection
+needs consent or is otherwise unusable. Calls on the returned Octokit client
+use Octokit's native API and error behavior.
 
-Share `ApplicationApi` with your frontend and create a Hono RPC client for your
-application routes.
+## Call the application from the browser
+
+Share `ApplicationApi` with the frontend and create a Hono RPC client for your
+application routes:
 
 ```ts
 import type { ApplicationApi } from '../server'
@@ -124,13 +112,36 @@ export const api = hc<ApplicationApi>('/', {
   },
 })
 
-const response = await api.rpc.integrations.connections.$get()
-const { connections } = await response.json()
+const response = await api.rpc.github.profile.$get()
+const profile = await response.json()
 ```
 
-Use this same server-side pattern for connection access and disconnect. If
-access returns `authorization_required`, return only its URL to the browser.
-Keep successful secrets in trusted server code.
+`requireUser` authenticates the application's session. The scoped broker token
+limits the route to the authenticated tenant's namespace. The browser receives
+the application result or a safe authorization-required response, never a
+broker token or provider access token.
+
+## Run Hookfish separately
+
+When Hookfish runs at another origin, construct the remote SDK client with a
+broker URL and credential:
+
+```ts
+import { Hookfish } from '@hookfish/sdk'
+
+const hookfish = new Hookfish({
+  apiKey: process.env.HOOKFISH_API_KEY!,
+  baseUrl: 'https://broker.example.com/api',
+})
+
+const connection = await hookfish.connections.get(
+  'organizations/acme/github',
+)
+```
+
+Remote clients expose the universal `connections` surface. Provider methods
+come from the server's trusted runtime configuration and are available on
+`hookfishServer.client()`.
 
 Continue with [application authentication](/authentication/application-auth)
 for the complete security boundary.
