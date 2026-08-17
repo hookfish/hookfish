@@ -7,6 +7,7 @@ description: "Reference Hookfish broker, provider, callback, and runtime options
 export default defineHookfishConfig({
   db,
   providers,
+  basePath: '/api',
   includeClient: false,
   includeSwagger: true,
   returnTo: 'https://app.example.com/settings/integrations',
@@ -19,6 +20,7 @@ export default defineHookfishConfig({
 | --- | --- | --- |
 | `db` | Required | Ready, promised, or request-aware database |
 | `providers` | Required | Trusted provider map, registry, source, or factory |
+| `basePath` | `/api` | Public API, callback, browser-facade, and framework mount path |
 | `includeClient` | `false` | Mount the metadata-only `/api/client` facade |
 | `includeSwagger` | `true` | Include server-only operations in OpenAPI |
 | `returnTo` | Completion page | Fixed post-callback destination |
@@ -26,10 +28,61 @@ export default defineHookfishConfig({
 | `onEvent` | Unset | Receive best-effort lifecycle events |
 
 There is no provider-management switch. Provider implementations are trusted
-deployment code. Providers declare `oauth` or `secret` authentication plus a
-small input schema for connection identity and non-secret configuration.
-Per-connection MCP configuration and requested scopes are supplied through
-`connections.access(path, { configuration, scopes })`.
+deployment code. A static map contributes typed methods to
+`hookfishServer.client()`:
+
+```ts
+providers: {
+  github: createGitHubProvider(),
+  gmail: createMcpProvider({
+    resourceUrl: 'https://gmail.run.tools',
+  }),
+}
+```
+
+The resulting client has `github(namespace)` and `gmail(namespace)`. The map
+key becomes the final connection-path segment.
+
+Use `createMcpProvider()` without a URL for dynamic per-connection MCP
+configuration. In a static provider map, it contributes a generic method:
+
+```ts
+await using gmail = await hookfish.mcp('user/personal/gmail', {
+  resourceUrl: 'https://gmail.run.tools',
+})
+```
+
+`connections.access(path, { configuration, scopes })` remains the lower-level
+equivalent. Provider factories, registries, and lazy sources expose
+`connections` rather than config-derived methods.
+
+## Server handlers and clients
+
+`HookfishServer` exposes separate surfaces for hosting and trusted application
+calls:
+
+```ts
+app.mount(hookfishServer.basePath, hookfishServer.handler)
+
+const rootClient = hookfishServer.client()
+const tenantClient = hookfishServer.client({ token: scopedBrokerToken })
+```
+
+`handler` accepts paths relative to its mount point. Use
+`hookfishServer.basePath` for that mount so it stays synchronized with callback
+and API URLs. `fetch` remains the complete standalone handler for a dedicated
+server or Worker and receives paths beginning with the configured base path.
+
+On Node.js, `client()` uses the process environment when it dispatches to the
+embedded broker. Pass Worker bindings explicitly in a request:
+
+```ts
+const hookfish = hookfishServer.client({ bindings: env })
+```
+
+The in-process client does not need a broker URL, API key, or custom `fetch`
+function. Pass `token` only when application code should use a scoped broker
+credential.
 
 ## Runtime options
 

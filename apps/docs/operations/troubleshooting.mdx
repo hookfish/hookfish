@@ -19,9 +19,12 @@ invalidates older pending state. Open only the most recently returned URL.
 
 ## `connection_configuration_conflict`
 
-The path already owns different immutable MCP configuration. Use the original
-URL, disconnect the connection before recreating it, or choose a different
-namespace.
+A dynamic provider path already owns different immutable configuration. Use
+the original URL, disconnect the connection before recreating it, or choose a
+different resource identity.
+
+Fixed MCP methods such as `hookfish.gmail(namespace)` take their URL from
+trusted provider configuration and cannot produce this conflict.
 
 ## `insufficient_scope`
 

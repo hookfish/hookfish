@@ -57,9 +57,10 @@ scoped broker credential.
 Browser → your authenticated API → Hookfish → provider
 ```
 
-You can use Hono RPC on both sides of that boundary: one typed client for the
-browser to call your application, and another in server code to call Hookfish.
-Only return connection metadata and other values the browser needs.
+You can use Hono RPC for the browser-facing boundary and
+`hookfishServer.client()` inside trusted server code. Static provider maps give
+that in-process client typed official SDK and protocol clients. Only return
+connection metadata and application results the browser needs.
 
 <Warning>
   Never put `HOOKFISH_API_KEY`, a scoped broker token, a provider access token,

@@ -1,22 +1,77 @@
 ---
 title: "Errors"
-description: "Handle stable Hookfish errors, including authorization-required details."
+description: "Handle raw broker errors and safe application-facing Hookfish responses."
 ---
 
-Failed JSON requests return a stable code and message:
+Hookfish has two error boundaries. The raw broker API returns specific HTTP
+statuses and stable codes. The trusted SDK turns connection failures into
+typed errors and can expose a smaller, redacted response surface through Hono.
+
+## Application responses
+
+`HookfishError` implements `getResponse()`. Hono's default error handler calls
+that method when an application route lets the error propagate.
+
+| Situation | Response |
+| --- | --- |
+| Connection needs consent | `428 authorization_required` with `authorize_url` and `expires_at` |
+| Stored secret is missing | `428 secret_required` |
+| Provider declined a scope | `428 scope_not_granted` with `missing_scopes` |
+| Upstream provider operation failed | Redacted `502 upstream` with `request_id` |
+| Invalid path, insufficient broker scope, missing configuration | Redacted `500 internal` with `request_id` |
+
+Application-facing authorization uses `428` rather than `401`, so browser
+clients can reserve `401` for an expired application session. Every `428`
+response includes `Cache-Control: no-store`.
+
+A redacted response contains an opaque request ID:
 
 ```json
 {
   "error": {
-    "code": "insufficient_scope",
-    "message": "This broker access token cannot access connection ..."
+    "code": "internal",
+    "request_id": "req_01k2y8v6k1r7t4m6e9h3"
   }
 }
 ```
 
-## Authorization required
+Hookfish logs the diagnostic under the same ID. Use it to correlate a report
+without sending provider responses, broker details, or secrets to the caller.
 
-An OAuth-backed connection that is not ready returns `401`:
+## Typed errors
+
+Connection acquisition throws subclasses for failures an application may
+handle directly:
+
+```ts
+import { HookfishAuthorizationRequiredError } from '@hookfish/api'
+
+try {
+  const github = await hookfish.github('user/personal')
+  return c.json(await github.request('GET /user'))
+} catch (error) {
+  if (error instanceof HookfishAuthorizationRequiredError) {
+    return c.json({ authorize_url: error.authorizeUrl }, 200)
+  }
+  throw error
+}
+```
+
+`HookfishAuthorizationRequiredError.authorizeUrl` is non-optional. Scope and
+secret subclasses expose their relevant structured details. Branch on the
+class or stable `code`, never the message.
+
+`HookfishError.from(error)` searches an error and its `cause` chain for an
+existing Hookfish error. Provider integrations use it when a transport wraps
+an error raised while acquiring or refreshing a credential.
+
+Official provider clients keep their native runtime errors after Hookfish
+constructs them. For example, an Octokit request failure remains an Octokit
+error.
+
+## Raw broker API
+
+Direct broker requests preserve their specific status and error envelope:
 
 ```json
 {
@@ -24,56 +79,27 @@ An OAuth-backed connection that is not ready returns `401`:
     "code": "authorization_required",
     "message": "Connection requires authorization.",
     "authorize_url": "https://provider.example/authorize?...",
-    "expires_at": "2026-08-12T18:00:00.000Z"
+    "expires_at": "2026-08-17T20:10:00.000Z"
   }
 }
 ```
-
-`@hookfish/sdk` exposes these as `HookfishError.authorizeUrl` and
-`HookfishError.expiresAt`. The SDK also preserves the HTTP status as `status`
-and the parsed response as `body`. Applications can translate those fields at
-their own framework boundary when they expose an HTTP endpoint.
-
-## Provider scope not granted
-
-If an authorization server grants fewer provider scopes than you requested,
-later access that requires a missing scope returns `403 scope_not_granted`:
-
-```json
-{
-  "error": {
-    "code": "scope_not_granted",
-    "message": "Connection was authorized without all required scopes.",
-    "requested_scopes": ["read", "write", "admin"],
-    "granted_scopes": ["read", "write"],
-    "missing_scopes": ["admin"]
-  }
-}
-```
-
-This error is terminal for the current grant. Ask the user to change provider
-permissions before explicitly starting another flow with
-`connections.authorize()`. Hookfish does not start another consent flow from
-`access()` for scopes the provider already declined.
-
-## Common codes
 
 | Status | Code | Meaning |
 | --- | --- | --- |
 | `400` | `invalid_connection_path` | Path is empty or is not a canonical resource identifier |
 | `400` | `invalid_provider_id` | Final segment is not an allowed provider ID |
-| `400` | `invalid_connection_configuration` | MCP URL is missing or invalid |
+| `400` | `invalid_connection_configuration` | Dynamic provider configuration is missing or invalid |
 | `401` | `authorization_required` | Open the fresh URL to make the connection ready |
 | `401` | `unauthorized` | Broker credential is missing or incorrect |
 | `403` | `insufficient_scope` | Broker credential does not cover the exact path or subtree |
-| `403` | `scope_not_granted` | Provider omitted one or more scopes requested for the current grant |
+| `403` | `scope_not_granted` | Provider omitted one or more requested provider scopes |
 | `404` | `unknown_provider` | Final path segment has no trusted implementation |
-| `404` | `secret_required` | Static connection has no stored value |
+| `404` | `secret_required` | Dynamic secret connection has no stored value |
 | `409` | `authorization_superseded` | A newer access replaced this pending flow |
-| `409` | `connection_configuration_conflict` | Existing connection has different immutable configuration |
-| `409` | `secret_assignment_unsupported` | Provider does not accept caller-supplied secrets |
+| `409` | `connection_configuration_conflict` | Dynamic connection has different immutable configuration |
+| `409` | `secret_assignment_unsupported` | Provider does not accept a supplied secret |
 | `500` | `missing_configuration` | Required deployment setting is absent |
 | `502` | `token_exchange_failed` | Upstream exchange or refresh failed |
 
-Branch on `code`, not message text. Do not forward provider diagnostics or
-successful access payloads to browser code.
+Provider diagnostics remain server-side. Raw unexpected failures and redacted
+upstream failures include a `request_id` for correlation.

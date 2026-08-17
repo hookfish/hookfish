@@ -10,64 +10,74 @@ Clerk, Auth0, Supabase Auth, or your existing session system in the application.
 Browser
   → authenticated application route
   → user and tenant authorization
-  → scoped server-side Hookfish SDK
-  → Hookfish
+  → scoped in-process Hookfish client
+  → provider SDK client
 ```
 
 ## Protect the route
 
 ```ts
-app.use('/integrations/*', async (ctx, next) => {
-  const user = await authenticateRequest(ctx.req.raw)
-  if (!user) return ctx.json({ error: 'Sign in required.' }, 401)
-  ctx.set('user', user)
+app.use('/integrations/*', async (c, next) => {
+  const user = await authenticateRequest(c.req.raw)
+  if (!user) return c.json({ error: 'Sign in required.' }, 401)
+  c.set('user', user)
   await next()
 })
 ```
 
 Map the authenticated identity to a connection namespace in server code. Do
-not accept an arbitrary path from the browser.
+not accept an arbitrary namespace or connection path from the browser.
 
-## Access a connection
+## Use a scoped provider client
 
 ```ts
-import { Hookfish, HookfishError } from '@hookfish/sdk'
+app.get('/integrations/github/profile', async (c) => {
+  const user = c.get('user')
+  const token = await scopedBrokerTokenFor(user.organizationId)
+  const hookfish = hookfishServer.client({ token })
+  const github = await hookfish.github(
+    `organizations/${user.organizationId}/users/${user.id}`,
+  )
 
-app.onError((error) => {
-  if (
-    error instanceof HookfishError &&
-    error.code === 'authorization_required'
-  ) {
-    return Response.json(
-      {
-        error: error.code,
-        authorize_url: error.authorizeUrl,
-        expires_at: error.expiresAt,
-      },
-      { status: 401 },
-    )
-  }
-  console.error(error)
-  return new Response('Internal Server Error', { status: 500 })
-})
-
-app.post('/integrations/github', async (ctx) => {
-  const user = ctx.get('user')
-  const hookfish = new Hookfish({
-    apiKey: await scopedBrokerTokenFor(user.organizationId),
-    baseUrl: process.env.HOOKFISH_URL + '/api',
-  })
-  const path = `organizations/${user.organizationId}/users/${user.id}/github`
-
-  const { secret } = await hookfish.connections.access(path)
-  return ctx.json(await loadGitHubProfile(secret))
+  const profile = await github.request('GET /user')
+  return c.json(profile.data)
 })
 ```
 
-The browser may receive the authorization URL and the application-level result.
-It must never receive `secret`, a broker token, refresh token, or OAuth client
-secret.
+The scoped broker token limits Hookfish access to the tenant namespace. The
+provider method appends `/github`, acquires the provider access token, and
+constructs Octokit. The browser never receives either token.
+
+If the connection needs consent, `hookfish.github()` throws
+`HookfishAuthorizationRequiredError`. Hono's default error handler returns a
+non-cacheable `428` response with the fresh authorization URL. Your own missing
+session response remains `401`.
+
+Calls on the returned Octokit client retain Octokit's native error behavior.
+Hookfish only normalizes errors raised while acquiring the connection.
 
 Use an exact resource scope for one connection or an explicit `/**` scope for
-the user's namespace. Application authentication and Hookfish scopes enforce
-different boundaries; use both.
+the user's namespace. Application authentication and Hookfish resource scopes
+enforce different boundaries; use both.
+
+## Return consent inline
+
+Catch the narrowed error when the application wants to render its own connect
+control instead of returning `428`:
+
+```ts
+import { HookfishAuthorizationRequiredError } from '@hookfish/api'
+
+try {
+  const github = await hookfish.github(namespace)
+  return c.json((await github.request('GET /user')).data)
+} catch (error) {
+  if (error instanceof HookfishAuthorizationRequiredError) {
+    return c.json({ authorize_url: error.authorizeUrl })
+  }
+  throw error
+}
+```
+
+Return only the authorization URL and application-level result. Never return a
+provider access token, broker token, refresh token, or OAuth client secret.

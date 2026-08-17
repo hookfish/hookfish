@@ -86,6 +86,15 @@ Implement `isConfigured` when provider availability depends on deployment
 credentials. Register the instance under a trusted provider ID in
 `hookfish.config.ts`.
 
+Built-in providers can also contribute a caller-side client factory. That is
+how a static GitHub provider returns Octokit and a fixed MCP provider returns a
+connected MCP client. A custom provider without a caller-side factory remains
+fully usable through `connections.access()`.
+
+Provider methods normalize only connection-acquisition errors. Once a method
+returns an official or custom SDK client, that client keeps its native API and
+error behavior.
+
 `OAuthProviderTemplate` is reserved for trusted implementations such as `mcp`
 that need connection-owned configuration. It does not create a public template
 or runtime provider-management API.

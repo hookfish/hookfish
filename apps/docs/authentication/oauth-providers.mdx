@@ -13,6 +13,7 @@ credentials.
 import { defineHookfishConfig } from '@hookfish/api'
 import {
   createGitHubProvider,
+  createLinearProvider,
   createMcpProvider,
   createNotionProvider,
   createSecretProvider,
@@ -20,24 +21,41 @@ import {
 
 export default defineHookfishConfig({
   db,
-  providers: (env: typeof process.env) => ({
+  providers: {
     github: createGitHubProvider({
-      clientId: env.GITHUB_CLIENT_ID,
-      clientSecret: env.GITHUB_CLIENT_SECRET,
+      clientId: process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
     }),
+    linear: createLinearProvider(),
     mcp: createMcpProvider(),
     notion: createNotionProvider({
-      clientId: env.NOTION_CLIENT_ID,
-      clientSecret: env.NOTION_CLIENT_SECRET,
+      clientId: process.env.NOTION_CLIENT_ID,
+      clientSecret: process.env.NOTION_CLIENT_SECRET,
     }),
     secret: createSecretProvider(),
-  }),
+  },
 })
 ```
 
+A static map preserves its provider keys in the client type. GitHub, Linear,
+and Notion entries contribute methods that return their official SDK clients:
+
+```ts
+const hookfish = hookfishServer.client()
+
+const github = await hookfish.github('user/personal')
+const linear = await hookfish.linear('user/personal')
+const notion = await hookfish.notion('user/personal')
+```
+
+Each method appends its map key to the namespace and eagerly acquires the
+connection before constructing the SDK client. Calls on the returned client
+retain that SDK's native errors.
+
 Provider IDs must be non-reserved lower-camel JavaScript identifiers up to 128
 characters. Slashes, hyphens, dots, and reserved words such as `class` are not
-allowed.
+allowed. IDs also cannot collide with Hookfish client members such as
+`connections`, `stats`, `client`, or `then`.
 
 ## Register callback URLs
 
@@ -49,7 +67,8 @@ https://broker.example.com/api/connections/callback/notion
 ```
 
 Set `OAUTH_REDIRECT_BASE_URL` to the public origin in production. The same
-deployment-level MCP callback ends in `/mcp`.
+deployment-level callback uses the configured provider ID. A fixed `gmail`
+provider ends in `/gmail`; the dynamic `mcp` provider ends in `/mcp`.
 
 ## Authentication and provider inputs
 
@@ -70,9 +89,34 @@ The `mcp` provider stores its URL as immutable connection configuration.
 Requested and granted OAuth scopes are tracked separately and can change only
 through the authorization lifecycle.
 
+Bind a URL in trusted configuration to turn a generic MCP implementation into
+a fixed typed provider:
+
+```ts
+providers: {
+  gmail: createMcpProvider({
+    resourceUrl: 'https://gmail.run.tools',
+  }),
+}
+```
+
+This contributes `hookfish.gmail(namespace)`. The fixed URL never appears in a
+connection access request.
+
+The generic map entry also contributes a method, but accepts the URL when the
+application opens a connection:
+
+```ts
+await using notion = await hookfish.mcp('user/personal/notion', {
+  resourceUrl: 'https://mcp.notion.com/mcp',
+})
+```
+
 A lazy `ProviderSource` remains available for large application-owned catalogs.
 It resolves trusted provider code by ID; it is not a public provider CRUD
-system.
+system. Provider factories and lazy sources expose the universal `connections`
+surface rather than config-derived methods because their provider set depends
+on runtime bindings.
 
 Continue with [remote MCP servers](/providers/remote-mcp) or
 [custom providers](/providers/custom).

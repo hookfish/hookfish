@@ -1,82 +1,208 @@
 ---
 title: "How Hookfish works"
-description: "Understand connection paths, trusted providers, authorization, and secret access."
+description: "Understand provider methods, connection paths, authorization, and secret access."
 ---
 
 Hookfish exposes one connection abstraction for OAuth tokens and static
-credentials. Trusted server code asks for access to a path. Hookfish either
-returns a usable secret or reports what the user must authorize.
+credentials. Trusted server code asks for a provider client or accesses a
+connection directly. Hookfish either returns a usable credential-backed client
+or reports what the user must do next.
 
-## Connection identity
+## Provider methods
 
-A connection path ends with a trusted provider implementation:
-
-```text
-user/personal/gmail
-user/personal/gmail/mcp
-service/prod/openai/secret
-```
-
-Concrete providers can appear directly after an optional namespace, as in
-`user/personal/github`. Generic providers use an identity segment before the
-implementation, as in `user/personal/gmail/mcp` or
-`service/prod/openai/secret`. The final segment always selects trusted code.
-
-Provider IDs are slash-free, non-reserved lower-camel JavaScript identifiers
-such as `gmail`, `githubEnterprise`, `mcp`, or `secret`.
-
-Folder and identity names may equal provider names. Their position removes
-ambiguity. Hookfish stores the prefix as the namespace internally; provider
-metadata tells a connection UI whether part of that prefix is a required
-resource identity.
-
-Hookfish stores identity as `(namespace, providerId)` with a unique constraint.
-For a multi-tenant application, include the tenant in the namespace, such as
-`organizations/acme/user/personal/github`. This also lets broker resource
-scopes enforce tenant isolation. Hookfish does not accept caller-generated
-opaque IDs, slots, or provider templates in request bodies.
-
-## One access operation
+A static provider map defines the trusted methods on the in-process client:
 
 ```ts
-const { secret } = await hookfish.connections.access(
-  'user/personal/gmail',
-)
+export default defineHookfishConfig({
+  db,
+  providers: {
+    github: createGitHubProvider(),
+    gmail: createMcpProvider({
+      resourceUrl: 'https://gmail.run.tools',
+    }),
+    notion: createNotionProvider(),
+  },
+})
 ```
 
-For a usable connection, Hookfish returns `{ path, secret, scopes, expires_at,
-refreshed }`. For an OAuth-backed connection that is not ready,
-`@hookfish/sdk` throws `HookfishError` with:
+Each map key becomes a provider ID and a typed method:
 
-```json
-{
-  "code": "authorization_required",
-  "authorize_url": "https://provider.example/authorize?...",
-  "expires_at": "2026-08-12T18:00:00.000Z"
+```ts
+const hookfish = hookfishServer.client()
+
+const github = await hookfish.github('user/personal')
+await using gmail = await hookfish.gmail('user/personal')
+const notion = await hookfish.notion('user/personal')
+```
+
+The argument is the namespace. Hookfish appends the provider ID:
+
+```text
+hookfish.github('user/personal') → user/personal/github
+hookfish.gmail('user/personal')  → user/personal/gmail
+hookfish.notion('user/personal') → user/personal/notion
+```
+
+GitHub, Linear, and Notion methods return their official SDK clients. MCP
+methods return a connected client with asynchronous disposal. Every method
+eagerly verifies the connection before constructing its client.
+
+Hookfish errors cover connection acquisition. Calls on a returned Octokit,
+Linear, or Notion client retain that SDK's native API and error behavior.
+
+## Generic provider methods
+
+Use a dynamic provider when the resource identity or configuration is not
+known at deployment time:
+
+```ts
+providers: {
+  mcp: createMcpProvider(),
+  secret: createSecretProvider(),
 }
 ```
 
-Each unready access creates new state, PKCE material when required, and a fresh
-authorization URL. It supersedes earlier pending URLs for that connection.
-Call `connections.authorize()` to start a fresh flow unconditionally, such as
-after an upstream MCP server rejects a credential whose stored expiration has
-not passed.
+Because `mcp` is still a key in a static provider map, it contributes a generic
+method. Pass the resource identity as part of the namespace and supply the URL
+for this connection:
+
+```ts
+await using gmail = await hookfish.mcp('user/personal/gmail', {
+  resourceUrl: 'https://gmail.run.tools',
+})
+```
+
+This path has four parts:
+
+- Namespace: `user/personal`
+- Resource identity: `gmail`
+- Provider implementation: `mcp`
+- Authentication: OAuth
+
+The method eagerly accesses `user/personal/gmail/mcp`, stores the URL as
+immutable configuration, and connects the MCP client. A later call that
+supplies a different URL for the same path returns
+`connection_configuration_conflict`. Fixed providers keep the URL in trusted
+configuration, so their methods do not accept it.
+
+`connections.access()` remains the lower-level surface for custom integrations
+and remote clients that do not have the server configuration:
+
+```ts
+const { secret } = await hookfish.connections.access(
+  'user/personal/gmail/mcp',
+  {
+    configuration: {
+      resource_url: 'https://gmail.run.tools',
+    },
+  },
+)
+```
+
+Provider factories and lazy `ProviderSource` configurations expose only
+`connections`. Their provider set depends on runtime bindings and cannot form
+a static method surface.
+
+## Mount path
+
+`HookfishServer` keeps the public path and framework mount synchronized:
+
+```ts
+app.mount(hookfishServer.basePath, hookfishServer.handler)
+```
+
+`basePath` defaults to `/api`. To serve Hookfish below `/hookfish`, configure it
+once and mount the reported value:
+
+```ts
+const hookfishServer = await HookfishServer.init({
+  ...config,
+  basePath: '/hookfish',
+})
+
+app.mount(hookfishServer.basePath, hookfishServer.handler)
+```
+
+Hookfish uses the configured base path for OAuth callbacks, OpenAPI routes, the
+browser facade, and standalone `fetch` dispatch.
+
+## Connection identity
+
+Hookfish stores each connection as `(namespace, providerId)` with a unique
+constraint. Provider IDs are slash-free lower-camel identifiers and cannot
+collide with client members such as `connections`, `stats`, `client`, or
+`then`.
+
+For a multi-tenant application, include the tenant in the namespace:
+
+```text
+organizations/acme/users/42/github
+```
+
+This lets broker resource scopes enforce tenant isolation. Hookfish does not
+accept caller-generated opaque IDs or provider implementations in request
+bodies.
+
+## How errors reach the response
+
+Provider methods and `connections` throw when a connection is unusable.
+`HookfishError` implements `getResponse()`, which Hono's default error handler
+recognizes. A route can stay linear without losing a useful response:
+
+| Situation | Application response |
+| --- | --- |
+| Connection needs consent | `428` with `authorize_url` and `expires_at` |
+| Stored secret is missing | `428` |
+| Provider declined a scope | `428` with `missing_scopes` |
+| Upstream exchange failed | Redacted `502` with `request_id` |
+| Wrong path, insufficient broker scope, missing configuration | Redacted `500` with `request_id` |
+
+These are application-facing responses. The raw broker API preserves its own
+specific HTTP status and stable code so non-Hono clients can inspect the
+failure. See [errors](/reference/errors) for both layers.
+
+A connection that needs consent is deliberately not an application `401`.
+Your application can reserve `401` for its own expired sessions.
+
+To handle consent inline, catch the narrowed error and read its required URL:
+
+```ts
+import { HookfishAuthorizationRequiredError } from '@hookfish/api'
+
+try {
+  const github = await hookfish.github('user/personal')
+  return c.json(await github.request('GET /user'))
+} catch (error) {
+  if (error instanceof HookfishAuthorizationRequiredError) {
+    return c.html(`<a href="${error.authorizeUrl}">Connect GitHub</a>`)
+  }
+  throw error
+}
+```
+
+`HookfishAuthorizationRequiredError.authorizeUrl` is always present. Other
+subclasses expose details such as missing provider scopes. `HookfishError.from`
+walks wrapped `cause` chains so provider transports can preserve the original
+Hookfish error.
 
 ## Lifecycle
 
 <Steps>
   <Step title="Resolve the provider">
-    Hookfish parses the final path segment and resolves only that trusted
-    provider implementation.
+    A typed method already knows its provider ID. Direct connection access
+    resolves the final path segment to trusted provider code.
   </Step>
   <Step title="Ensure the connection">
-    Hookfish creates the structured connection if it does not exist. Supplying
-    different immutable configuration later returns `409`.
+    Hookfish creates the structured connection if it does not exist. Dynamic
+    providers reject different immutable configuration on a later access.
   </Step>
-  <Step title="Return or acquire a secret">
-    Secret providers read an encrypted value set with `setSecret`. OAuth
-    providers refresh when possible, otherwise return `authorization_required`
-    with a new URL.
+  <Step title="Return or acquire a credential">
+    Secret providers read an encrypted supplied value. OAuth providers refresh
+    when possible or return `authorization_required` with a new URL.
+  </Step>
+  <Step title="Construct the provider client">
+    A typed provider method passes the usable access token to the provider's
+    official SDK or protocol transport.
   </Step>
   <Step title="Complete authorization">
     The public callback claims single-use state, exchanges the code, encrypts
@@ -88,30 +214,13 @@ not passed.
   </Step>
 </Steps>
 
-## Connection-owned state
-
-Each connection owns its non-secret configuration, OAuth client fallback
-credentials when needed, user token, refresh token, and metadata. Hookfish
-does not create shared runtime provider records.
-
-MCP is the resource protocol, not an authentication kind. The built-in `mcp`
-provider acquires credentials with OAuth and uses the connection's
-URL to discover the protected resource and authorization server. It prefers a
-deployment-level Client ID Metadata Document (CIMD) when advertised and uses
-Dynamic Client Registration (DCR) only as a compatibility fallback. Any DCR
-credentials belong to that connection.
-
-The generic `secret` provider acquires a credential supplied by trusted code.
-Both provider types return the usable credential through
-`connections.access()`. A resource that does not require a credential does not
-need a Hookfish connection.
-
 ## Security boundary
 
-`connections.access()` and `connections.setSecret()` are server-only. The
-optional browser facade exposes connection metadata and disconnect operations,
-never usable credentials or authorization starts. Authenticate your own
-application endpoint before calling Hookfish with a scoped broker token.
+Provider methods, `connections.access()`, and `connections.setSecret()` are
+server-only. The optional browser facade exposes connection metadata and
+disconnect operations, never usable credentials or authorization starts.
+Authenticate your application endpoint before creating a client with a scoped
+broker token.
 
 Continue with [resource scopes](/concepts/scopes) or
 [remote MCP servers](/providers/remote-mcp).

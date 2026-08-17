@@ -9,8 +9,8 @@ provider implementations, React integration, and CLI into published packages.
 | Package | Use it for |
 | --- | --- |
 | `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
-| `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
-| `@hookfish/sdk` | Generated, end-to-end typed `Hookfish` client for trusted application code |
+| `@hookfish/api` | `HookfishServer`, its config-derived in-process client, errors, events, and database contract |
+| `@hookfish/sdk` | Remote `connections` client and shared Hookfish error family |
 | `@hookfish/database` | Shared database types and migration helper |
 | `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
@@ -43,15 +43,25 @@ import {
 } from '@hookfish/api/database'
 ```
 
-For trusted application code, construct `Hookfish` from `@hookfish/sdk`. Put
-the tenant identifier in each resource path when your application is
-multi-tenant:
+For an embedded broker, create the trusted client from `HookfishServer`. Static
+provider maps contribute typed official SDK and protocol clients:
+
+```ts
+const hookfishServer = await HookfishServer.init(config)
+const hookfish = hookfishServer.client()
+
+const github = await hookfish.github('organizations/acme/billing')
+const profile = await github.request('GET /user')
+```
+
+Use `@hookfish/sdk` when the broker runs separately. Remote clients expose the
+universal connection API:
 
 ```ts
 import { Hookfish } from '@hookfish/sdk'
 
 const hookfish = new Hookfish({
-  apiKey: process.env.HOOKFISH_API_KEY,
+  apiKey: process.env.HOOKFISH_API_KEY!,
   baseUrl: 'https://broker.example.com/api',
 })
 
@@ -71,5 +81,6 @@ want to keep the dependency surface narrow.
 
 <Note>
   Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
-  handler yourself. `HookfishServer.init(...).fetch` already applies that layer.
+  handler yourself. `HookfishServer.fetch` and `HookfishServer.handler` already
+  apply that layer for standalone and mounted deployments.
 </Note>
