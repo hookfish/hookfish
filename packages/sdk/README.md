@@ -28,6 +28,8 @@ const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider })
 ```
 
 Initial authorization and an upstream MCP `401` throw `HookfishError` with the
-stable `authorization_required` code and a fresh `authorizeUrl`.
+stable `authorization_required` code and a fresh `authorizeUrl`. An unhandled
+`HookfishError` also preserves its HTTP response through Hono's default error
+handler.
 
 Keep successful connection access responses in trusted server code.

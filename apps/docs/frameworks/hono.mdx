@@ -10,7 +10,7 @@ host for you.
 ## Install dependencies
 
 ```bash
-pnpm add @hookfish/api @hookfish/database @hookfish/providers @hono/node-server hono
+pnpm add @hookfish/api @hookfish/database @hookfish/providers @hookfish/sdk @hono/node-server hono
 pnpm add --save-dev tsx typescript
 ```
 
@@ -48,52 +48,40 @@ separate prefix.
 
 ```ts
 import { serve } from '@hono/node-server'
-import type { AppType as HookfishAppType } from '@hookfish/api'
 import { HookfishServer } from '@hookfish/api'
+import { Hookfish } from '@hookfish/sdk'
 import { Hono } from 'hono'
-import { hc } from 'hono/client'
 import config from '../hookfish.config'
 import { requireUser } from './auth'
 import { scopedBrokerTokenFor } from './broker-tokens'
 
-const hookfish = await HookfishServer.init(config)
+const hookfishServer = await HookfishServer.init(config)
 const app = new Hono()
 const applicationUrl =
   process.env.APPLICATION_URL ?? 'http://127.0.0.1:3000'
 
-function hookfishFor(brokerToken: string) {
-  return hc<HookfishAppType>(`${applicationUrl}/api`, {
-    headers: {
-      Authorization: `Bearer ${brokerToken}`,
-    },
-    fetch: (input, init) =>
-      hookfish.fetch(new Request(input, init), process.env),
-  })
-}
+app.route('/', hookfishServer)
 
-const applicationRoutes = app
+const applicationRoutes = new Hono()
   .get('/rpc/integrations/connections', requireUser, async (context) => {
     const user = context.get('user')
     const brokerToken = await scopedBrokerTokenFor(user.organizationId)
-    const hookfishClient = hookfishFor(brokerToken)
-
-    const response = await hookfishClient.connections.$get({
-      query: {
-        namespace: `organizations/${user.organizationId}`,
-      },
+    const hookfish = new Hookfish({
+      apiKey: brokerToken,
+      baseUrl: `${applicationUrl}/api`,
     })
 
-    if (!response.ok) {
-      return context.json({ error: 'Could not load connections.' }, 502)
-    }
+    const connections = await hookfish.connections.list({
+      namespace: `organizations/${user.organizationId}`,
+    })
 
-    return context.json(await response.json())
+    return context.json(connections)
   })
 
-app.all('/api/*', (context) => hookfish.fetch(context.req.raw, process.env))
+app.route('/', applicationRoutes)
 
 serve({
-  fetch: app.fetch,
+  fetch: (request) => app.fetch(request, process.env),
   hostname: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3000),
 })
@@ -105,9 +93,13 @@ export type ApplicationApi = typeof applicationRoutes
 permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
 for the authorized organization. Neither concern belongs in Hookfish itself.
 
-The custom `fetch` function lets the typed Hono client call the embedded
-Hookfish handler without making a network request. Use the broker's HTTPS URL
-instead when Hookfish runs as a separate service.
+`HookfishServer` is a Hono sub-application. `Hookfish` calls its mounted `/api`
+routes through the application's URL, just as it would call a separately
+deployed broker.
+
+An unhandled `HookfishError` retains its Hookfish HTTP status and error body
+through Hono's default error handler. Add an application `onError` handler when
+you need to redact errors or translate them into your own public contract.
 
 ## Call your application from the browser
 

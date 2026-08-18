@@ -8,14 +8,14 @@ The Bun scaffold mounts the Hookfish Fetch handler directly in `Bun.serve`.
 ## Create and run the project
 
 ```bash
-pnpm dlx hookfish init my-broker --backend bun
+bunx hookfish init my-broker --backend bun
 cd my-broker
-pnpm dev
+bun run dev
 ```
 
 The generated backend listens on port `8787` by default and uses PGlite under
-`data/hookfish`. `pnpm dev` also starts the packaged dashboard; use
-`pnpm dev:server` for the backend alone.
+`data/hookfish`. `bun run dev` also starts the packaged dashboard; use
+`bun run dev:server` for the backend alone.
 
 ## Deploy
 
