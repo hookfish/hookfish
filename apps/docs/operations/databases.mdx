@@ -79,6 +79,7 @@ const db = defineDatabase(
 
 The returned database must implement Hookfish's exported `Database` persistence
 contract. Implement the optional connection refresh-lock methods for
-cross-instance refresh coordination. Without them, Hookfish falls back to a
-process-local lock. You can instead set `refreshCoordinator` in the runtime
-options.
+cross-instance refresh coordination. Plain in-process adapters without them
+fall back to a process-local lock. RPC-backed adapters must expose those methods
+because remote method availability cannot be detected through a transparent
+proxy. You can instead set `refreshCoordinator` in the runtime options.

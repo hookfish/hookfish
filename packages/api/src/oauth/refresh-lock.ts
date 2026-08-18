@@ -64,17 +64,23 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Use the database lease when the adapter supports it. Older custom adapters
- * retain process-local coordination until they implement the lease methods.
+ * represented by plain objects retain process-local coordination until they
+ * implement the lease methods. RPC proxies must implement the methods because
+ * property access alone cannot advertise remote method availability.
  */
 export async function withDatabaseRefreshLock<T>(
   db: Database,
   connection: Connection,
   refresh: () => Promise<T>,
 ): Promise<T> {
-  const acquire = db.acquireConnectionRefreshLock?.bind(db)
-  const renew = db.renewConnectionRefreshLock?.bind(db)
-  const release = db.releaseConnectionRefreshLock?.bind(db)
-  if (!acquire || !renew || !release) {
+  // This capability check is meaningful for plain local adapters. Durable
+  // Object stubs expose arbitrary property reads as RPC method proxies, so the
+  // bundled stub contract and its integration test guarantee these methods.
+  if (
+    !db.acquireConnectionRefreshLock ||
+    !db.renewConnectionRefreshLock ||
+    !db.releaseConnectionRefreshLock
+  ) {
     return withLocalRefreshLock(db, connection.id, refresh)
   }
 
@@ -82,7 +88,14 @@ export async function withDatabaseRefreshLock<T>(
   const deadline = Date.now() + REFRESH_LOCK_WAIT_MS
 
   while (Date.now() < deadline) {
-    const acquired = await acquire(connection.id, owner, REFRESH_LOCK_LEASE_MS)
+    // Call through the database object. Durable Object stubs expose methods as
+    // RPC proxies, so extracting one and calling `.bind(db)` attempts a remote
+    // method named `bind` and tries to serialize the stub itself.
+    const acquired = await db.acquireConnectionRefreshLock(
+      connection.id,
+      owner,
+      REFRESH_LOCK_LEASE_MS,
+    )
     if (acquired) {
       let finished = false
       let leaseLost = false
@@ -92,7 +105,7 @@ export async function withDatabaseRefreshLock<T>(
         renewalTimer = setTimeout(() => {
           void (async () => {
             try {
-              const renewed = await renew(
+              const renewed = await db.renewConnectionRefreshLock!(
                 connection.id,
                 owner,
                 REFRESH_LOCK_LEASE_MS,
@@ -119,7 +132,7 @@ export async function withDatabaseRefreshLock<T>(
       } finally {
         finished = true
         if (renewalTimer) clearTimeout(renewalTimer)
-        await release(connection.id, owner)
+        await db.releaseConnectionRefreshLock!(connection.id, owner)
       }
     }
 
