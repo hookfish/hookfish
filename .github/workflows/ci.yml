@@ -51,7 +51,7 @@ jobs:
         run: pnpm exec turbo run typecheck --filter=@hookfish/inspector
 
       - name: Load the published packages under plain Node
-        run: pnpm --filter @hookfish/example-hono-node verify-runtime
+        run: pnpm exec turbo run verify-runtime --filter=@hookfish/example-hono-node
 
       - name: Validate generated Cloudflare types
         run: pnpm exec turbo run cf-typecheck --affected

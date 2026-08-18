@@ -283,6 +283,9 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/providers
     devDependencies:
+      '@hookfish/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
       '@types/node':
         specifier: ^24.12.3
         version: 24.12.4

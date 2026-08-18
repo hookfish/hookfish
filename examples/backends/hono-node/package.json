@@ -17,6 +17,7 @@
     "@hookfish/providers": "workspace:*"
   },
   "devDependencies": {
+    "@hookfish/sdk": "workspace:*",
     "@types/node": "^24.12.3",
     "typescript": "~5.9.3"
   }
