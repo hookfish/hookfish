@@ -2,6 +2,9 @@ import { HookfishClientError } from './errors.js'
 
 export const MAX_RESOURCE_PATH_LENGTH = 768
 
+// Keep these structural checks in sync with the broker implementation in
+// packages/api/src/oauth/resource-path.ts. This copy throws HookfishClientError
+// so @hookfish/client remains independent of @hookfish/api.
 function hasUnsafePathCharacters(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0)

@@ -68,6 +68,8 @@ export async function mintApplicationAccessToken(
     )
   }
   const issuedAt = Math.floor(now / 1000)
+  // Client routes construct canonical application scopes, and the broker
+  // normalizes them after verifying this signature before authorization.
   const payload: ApplicationTokenPayload = {
     v: TOKEN_VERSION,
     sub: input.subject,
