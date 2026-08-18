@@ -1,6 +1,5 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { isSecretProvider } from '@hookfish/provider'
-import { stripAnyApplicationNamespace } from '../application-auth.js'
 import type { DatabaseInput } from '../db/binding.js'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
 import { assertConnectionAccess } from '../oauth/access-token.js'
@@ -43,12 +42,12 @@ type ConnectionRouteOptions = {
 
 function applicationAudit(grant: AccessGrant): {
   subject?: string
-  tenantId?: string
+  basePath?: string
 } {
   return grant.kind === 'scoped' && grant.application
     ? {
         subject: grant.application.subject,
-        tenantId: grant.application.tenantId,
+        basePath: grant.application.basePath,
       }
     : {}
 }
@@ -737,16 +736,15 @@ export function createConnectionRoutes<Bindings extends object>(
       },
       await resolveProviders(c.env),
     )
-    const internalPath = formatConnectionPath(
+    const path = formatConnectionPath(
       completed.connection.namespace,
       completed.connection.providerId,
     )
-    const path = stripAnyApplicationNamespace(internalPath)
     await emitHookfishEvent(options.onEvent, {
       type: 'authorization.connected',
       occurredAt: new Date(),
       providerId,
-      connectionPath: internalPath,
+      connectionPath: path,
       replayed: completed.replayed,
     })
     const returnTo = completed.state.returnTo ?? options.returnTo

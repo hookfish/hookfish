@@ -93,12 +93,19 @@ Clients should render `input_schema.fields`.
 | `GET` | `/api/admin/tokens` | List active token names; root only |
 | `DELETE` | `/api/admin/tokens/{name}` | Revoke a token; root only |
 
-## Browser facade
+## Access context
 
-When application auth is configured, `/api/client` exposes provider metadata,
-connection metadata, authorization starts, write-only secret storage, and
-disconnect. It rejects credential access, callbacks, and administration.
+`GET /api/access` returns the authenticated broker token's safe grant metadata:
 
-All application responses set `Cache-Control: no-store`. List and get responses
-never include stored secrets, refresh tokens, OAuth client secrets, or bearer
-values. Secret writes return only storage status.
+```json
+{
+  "kind": "scoped",
+  "name": "frontend",
+  "scopes": ["organizations/acme/**"],
+  "expires_at": "2026-08-19T00:00:00.000Z"
+}
+```
+
+It never returns the token. Trusted services and the packaged dashboard can use
+this metadata to describe their current grant without exposing its bearer
+value.

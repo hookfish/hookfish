@@ -1,22 +1,18 @@
 ---
 title: "Packages"
-description: "Choose the published Hookfish package and import path for each integration layer."
+description: "Choose the Hookfish package for your API, database, providers, or trusted server integration."
 ---
 
-Hookfish separates the broker API, storage adapters, provider contracts,
-provider implementations, React integration, and CLI into published packages.
+Install only the packages required by your trusted server integration.
 
 | Package | Use it for |
 | --- | --- |
-| `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
-| `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
-| `@hookfish/sdk` | Typed `Hookfish` client plus authenticated Octokit and MCP client initialization for trusted application code |
-| `@hookfish/database` | Shared database types and migration helper |
-| `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
+| `hookfish` | CLI, API scaffolding, packaged frontend, and MCP inspector |
+| `@hookfish/api` | API-only `HookfishServer`, config, events, and route types |
+| `@hookfish/sdk` | Typed trusted-server client and provider initializers |
+| `@hookfish/database` | PGlite, Postgres, and Durable Object adapters |
+| `@hookfish/providers` | Built-in provider factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
-| `@hookfish/hooks` | Typed client and React hooks for the authenticated application API |
-| `@hookfish/backend` | Lower-level raw API and application-facade composition |
-| `@hookfish/auth-better-auth` | Better Auth session and organization adapter |
 
 ## Database import paths
 
@@ -33,33 +29,10 @@ import {
 The Durable Objects exports are experimental. Use the PostgreSQL adapter with
 Hyperdrive for production Workers deployments.
 
-## API import paths
+## Trusted server code
 
-```ts
-import { HookfishServer, defineHookfishConfig } from '@hookfish/api'
-import { createHookfishBackend } from '@hookfish/api/client'
-import {
-  defineDatabase,
-  migrateDatabase,
-} from '@hookfish/api/database'
-```
-
-Use `createHookfish` for the concise authenticated setup:
-
-```ts
-import { createHookfish } from '@hookfish/api'
-import { betterAuth } from '@hookfish/auth-better-auth'
-
-const hookfish = await createHookfish({
-  db,
-  providers,
-  auth: betterAuth(auth),
-})
-```
-
-For trusted application code, construct `Hookfish` from `@hookfish/sdk`. Put
-the tenant identifier in each resource path when your application is
-multi-tenant:
+Construct `Hookfish` from `@hookfish/sdk`. Put the tenant or organization in
+the canonical resource path when your application is multi-tenant.
 
 ```ts
 import { Hookfish } from '@hookfish/sdk'
@@ -74,23 +47,11 @@ const github = await hookfish.github(
 )
 ```
 
-Use `hookfish.mcp()` when you want an authenticated, connected MCP client
-instead of the raw connection credential. The SDK includes both Octokit and the
-MCP client dependency. Install `@modelcontextprotocol/client` directly only
-when you construct and pass a custom MCP client instance. The same initializers
-are also available as `hookfish.provider.github()` and
-`hookfish.provider.mcp()`.
-
-Use `@hookfish/api` for the broker runtime and lower-level composition. Import
-the migration helper from `@hookfish/database`.
+Use `hookfish.mcp()` for an authenticated MCP client. The same initializers are
+available as `hookfish.provider.github()` and `hookfish.provider.mcp()`.
 
 ## Individual provider packages
 
 `@hookfish/providers` re-exports all built-in factories. Install an individual
-package such as `@hookfish/provider-github` or `@hookfish/provider-mcp` when you
-want to keep the dependency surface narrow.
-
-<Note>
-  Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
-  handler yourself. `HookfishServer.init(...).fetch` already applies that layer.
-</Note>
+package such as `@hookfish/provider-github` or `@hookfish/provider-mcp` to keep
+the dependency surface narrow.

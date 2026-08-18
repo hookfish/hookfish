@@ -1,13 +1,13 @@
 # Hookfish
 
-A portable OAuth and encrypted-secret broker with a static React dashboard and Fetch-compatible
-backend runtimes:
+A portable OAuth and encrypted-secret broker with a TanStack Start frontend and
+Fetch-compatible backend runtimes:
 
-- `apps/frontend` — Vite SPA with TanStack Router and React Query
+- `apps/frontend` — TanStack Start composition host with Better Auth
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
-- `packages/backend` — authenticated application facade plus raw API composition
+- `packages/browser` — TanStack Router connection-management application
+- `packages/client` — authenticated browser-safe Hono application
 - `packages/api` — shared Hono API and OAuth broker
-- `packages/auth-better-auth` — Better Auth session and organization adapter
 - `packages/sdk` — generated, typed server client for Hookfish operations
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
 - `packages/database` — PGlite, Postgres, and Durable Object adapters
@@ -16,11 +16,12 @@ backend runtimes:
 - `examples/backends/express` and `examples/backends/nextjs` — alternative Node hosts
 - `examples/backends/cloudflare-worker` — Worker backend using SQLite Durable Objects
 
-The frontend contains no server functions, database code, or broker
-credentials. A configured host exposes two separate surfaces:
+The raw broker and frontend are separate processes. The broker exposes only
+`/api/*`. The Start frontend keeps its broker credential server-side and mounts
+the client Hono app at `/api/client/*`.
 
-- `/api/*` — server-only raw Hookfish API plus public OAuth callbacks
-- `/api/client/*` — explicit safe operations, only when application auth is configured
+- raw server: `/api/*`
+- frontend host: `/api/client/*`, `/api/auth/*`, and the browser application
 
 ## Local development
 
@@ -52,12 +53,11 @@ pnpm dev
 pnpm dev:server
 ```
 
-The generated `dev:server` script runs the platform-native development server
-(`vercel dev`, `wrangler dev`, Node, Bun, or Docker). The `dev` script runs it in
-parallel with `hookfish serve --backend-url <backend-url>`, which serves the
-packaged frontend behind a loopback operator BFF. The BFF forwards only safe
-connection-management operations and keeps `HOOKFISH_API_KEY` in the CLI
-process. Use `--no-install` during
+The generated `dev:server` script runs the API-only, platform-native development
+server (`vercel dev`, `wrangler dev`, Node, Bun, or Docker). The `dev` script
+runs it in parallel with `hookfish serve --backend-url <backend-url>`. The
+packaged Start frontend connects to that separate server and keeps
+`HOOKFISH_API_KEY` out of browser code. Use `--no-install` during
 initialization to skip dependency installation. The Cloudflare scaffold uses a
 PostgreSQL database through Hyperdrive; the Vercel scaffold expects Postgres
 through `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
@@ -72,8 +72,9 @@ packaged server directly at `http://localhost:3000`. It mounts the raw API at
 unset or empty. Use `INSPECTOR_PORT` to choose another port. In Conductor, the
 CLI uses the third allocated workspace port automatically.
 
-The repository's `pnpm dev` script builds the packaged dashboard, runs the
-selected backend through Turbo, and places the loopback operator BFF in front.
+The repository's `pnpm dev` script is implemented by the private
+`scripts/repo-dev` workspace and runs the selected backend plus the Start
+frontend through Turbo.
 Choose `hono-node` (the default), `express`, `nextjs`, or `cloudflare-worker`
 with `--backend`. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
@@ -81,20 +82,21 @@ it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
 and the next allocated port for the backend.
 
 Outside this repository, `hookfish dev` and its `hookfish serve` alias serve the
-packaged dashboard behind the same restricted local BFF. An explicit backend
-and server-side `HOOKFISH_API_KEY` are required.
+packaged Start frontend on loopback. An explicit backend and server-side
+`HOOKFISH_API_KEY` are required.
 
 ## Pointing the local dashboard at another backend
 
-Run any backend, then start the local operator server:
+Run any backend, then start the local frontend server:
 
 ```sh
 HOOKFISH_API_KEY=your-server-key \
   pnpm cli serve --backend-url http://127.0.0.1:3000
 ```
 
-The dashboard never receives that key and does not expose the raw API. Product
-UIs should use an authenticated `/api/client` deployment instead.
+The browser never receives that key and does not expose the raw API. A root key
+shows the full tree. A downscoped broker token shows only its permitted paths;
+a single `path/**` scope opens at `path`.
 
 Available backends:
 
@@ -149,28 +151,38 @@ Rerun `pnpm cf-typegen` whenever a binding changes.
 
 ## Product frontend
 
-The packaged dashboard is a loopback operator tool, not a remotely hosted
-admin surface. For a production product UI, configure an application auth
-provider and call `/api/client` from your own frontend. Hookfish verifies the user and
-current tenant, then internally scopes every `/api/client` request to that
-tenant:
+`packages/client` is a Hono app that connects server-side to a separately
+running Hookfish API. Authenticate a request and return a canonical base path:
 
 ```ts
-import { createHookfish } from '@hookfish/api'
-import { betterAuth } from '@hookfish/auth-better-auth'
-import { auth } from './auth'
+import { createHookfishClient } from '@hookfish/client'
 
-export const hookfish = await createHookfish({
-  db,
-  providers,
-  auth: betterAuth(auth),
-  includeSwagger: false,
+export const client = createHookfishClient({
+  backendUrl: process.env.HOOKFISH_BACKEND_URL,
+  apiKey: process.env.HOOKFISH_API_KEY,
+  auth: {
+    async authenticate(request) {
+      const session = await verifySession(request)
+      if (!session) return { authenticated: false, response: new Response(null, { status: 401 }) }
+      return {
+        authenticated: true,
+        principal: {
+          subject: session.userId,
+          basePath: 'organizations/acme',
+        },
+      }
+    },
+  },
 })
 ```
 
-The Better Auth instance must include the organization plugin. Its active
-organization becomes the tenant; there are no tenant presets or browser-chosen
-tenant IDs.
+The client app signs a short-lived `organizations/acme/**` capability and
+preserves canonical paths end to end. `apps/frontend` is the default TanStack
+Start host: Better Auth lives there, `packages/client` provides its server API,
+and `packages/browser` provides its TanStack Router UI. A host can replace
+Better Auth with Clerk, WorkOS, Auth0, or another provider by implementing the
+same `ApplicationAuthProvider` contract. Organizations are not required;
+`resolveBasePath` may simply return a constant for a single-tenant product.
 
 ## Frontend hooks
 

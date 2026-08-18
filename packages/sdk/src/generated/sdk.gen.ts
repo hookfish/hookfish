@@ -2,7 +2,7 @@
 
 import { buildClientParams, type Client, type ClientMeta, type Options as Options2, type RequestResult, type TDataShape } from './client/index.js';
 import { client } from './client.gen.js';
-import type { AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, StatsGetResponses } from './types.gen.js';
+import type { AccessGetErrors, AccessGetResponses, AdminTokensCreateErrors, AdminTokensCreateResponses, AdminTokensListErrors, AdminTokensListResponses, AdminTokensRevokeErrors, AdminTokensRevokeResponses, ConnectionsAccessErrors, ConnectionsAccessResponses, ConnectionsAuthorizeErrors, ConnectionsCallbackErrors, ConnectionsCallbackResponses, ConnectionsClientMetadataResponses, ConnectionsDisconnectErrors, ConnectionsDisconnectResponses, ConnectionsGetErrors, ConnectionsGetResponses, ConnectionsListErrors, ConnectionsListResponses, ConnectionsProvidersErrors, ConnectionsProvidersResponses, ConnectionsSetSecretErrors, ConnectionsSetSecretResponses, StatsGetResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,15 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Describe the current broker access grant
+ */
+export const accessGet = <ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>): RequestResult<AccessGetResponses, AccessGetErrors, ThrowOnError> => (options?.client ?? client).get<AccessGetResponses, AccessGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/access',
+    ...options
+});
 
 /**
  * Read runtime stats

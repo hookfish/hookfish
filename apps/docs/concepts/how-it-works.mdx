@@ -108,10 +108,10 @@ need a Hookfish connection.
 
 ## Security boundary
 
-`connections.access()` is server-only. The authenticated application API can
-start authorization and accept a write-only secret, but never returns a usable
-credential. Its auth provider verifies the current tenant before Hookfish
-creates a short-lived, tenant-scoped internal capability.
+`connections.access()` is server-only. An application endpoint may return safe
+connection metadata or an authorization URL, but it must never return a usable
+provider credential. Verify the application session, apply its authorization
+policy, and derive canonical Hookfish paths from trusted session data.
 
 Continue with [resource scopes](/concepts/scopes) or
 [remote MCP servers](/providers/remote-mcp).

@@ -10,6 +10,41 @@ export type StatsResponse = {
     features: Array<string>;
 };
 
+export type AccessGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/access';
+};
+
+export type AccessGetErrors = {
+    /**
+     * Missing or invalid broker credential
+     */
+    401: {
+        error: {
+            code: string;
+            message: string;
+        };
+    };
+};
+
+export type AccessGetError = AccessGetErrors[keyof AccessGetErrors];
+
+export type AccessGetResponses = {
+    /**
+     * Safe metadata for the presented root or scoped token
+     */
+    200: {
+        kind: 'root' | 'scoped';
+        scopes: Array<string>;
+        name?: string;
+        expires_at?: string;
+    };
+};
+
+export type AccessGetResponse = AccessGetResponses[keyof AccessGetResponses];
+
 export type StatsGetData = {
     body?: never;
     path?: never;

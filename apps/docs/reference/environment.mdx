@@ -56,13 +56,18 @@ register a client or store custom credentials.
 
 | Variable | Purpose |
 | --- | --- |
-| `HOOKFISH_BACKEND_URL` | Backend proxied by `hookfish serve` |
+| `HOOKFISH_BACKEND_URL` | Hookfish API origin used by the packaged dashboard |
 | `FRONTEND_HOST` / `FRONTEND_PORT` | Packaged dashboard bind address |
+| `HOOKFISH_BASE_PATH` | Optional constant subtree for the Better Auth resolver; defaults to `global` |
+| `BETTER_AUTH_SECRET` | Better Auth session signing secret |
+| `BETTER_AUTH_DATABASE` | Better Auth SQLite database path |
 | `INSPECTOR_HOST` / `INSPECTOR_PORT` | Inspector bind address |
 | `HOOKFISH_INSPECTOR_URL` | Public inspector origin behind an intentional proxy |
 
-The inspector uses `HOOKFISH_API_KEY` as its local broker key and defaults to
-`test` when it is unset.
+The packaged frontend uses `HOOKFISH_API_KEY` as the root signing key for the
+capability produced after a Better Auth session resolves to a base path. The
+inspector uses the same variable as its local broker key and defaults to `test`
+when it is unset.
 
 Store production values in the runtime's secret manager. Do not commit `.env`,
 `.dev.vars`, database URLs, or provider credentials.

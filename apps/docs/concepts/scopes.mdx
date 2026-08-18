@@ -46,6 +46,6 @@ user changes their provider permissions.
 | --- | --- |
 | Which Hookfish paths may this service access? | Broker resource scopes |
 | Which upstream operations may the secret perform? | Provider scopes |
-| Which tenant owns the path? | Application auth and a tenant-prefixed resource path |
+| Which application boundary owns the path? | Application auth and `resolveBasePath` |
 
 See [Token scoping](/authorization/token-scoping) for delegation and expiry.

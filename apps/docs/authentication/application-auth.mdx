@@ -1,102 +1,110 @@
 ---
 title: "Application authentication"
-description: "Authenticate users and assert their current tenant before exposing Hookfish connection management."
+description: "Use Hookfish with the authentication and authorization already built into your application."
 ---
 
-Hookfish delegates application login and session management to your auth
-system. An application auth provider must verify both the user and the tenant
-they may currently act within.
+Hookfish does not replace your application's authentication provider. Your
+existing backend verifies the user, authorizes the requested operation, and
+then calls Hookfish with a server-side credential.
 
 ```text
-Application session
-  → application auth provider
-  → { subject, tenantId }
-  → tenant-isolated Hookfish operations
+Browser or application client
+  → your existing authenticated endpoint
+  → your authorization policy
+  → Hookfish SDK with a server-side broker credential
+  → Hookfish API
 ```
 
-Hookfish never accepts a tenant identifier from an unverified browser field.
-It does not fall back from a missing organization to the user ID.
+The browser sends only its normal application session. Never return a Hookfish
+broker credential or a provider secret to browser code.
 
-## Use Better Auth
+## Add Hookfish to an authenticated endpoint
 
-Install the adapter alongside Better Auth:
-
-```bash
-pnpm add @hookfish/auth-better-auth better-auth
-```
-
-Configure Better Auth with its organization plugin. Pass the server instance
-directly to Hookfish:
+Verify the session exactly as you do for the rest of your application. Derive
+the connection path from trusted session data instead of accepting an arbitrary
+path from the request.
 
 ```ts
-import { createHookfish } from '@hookfish/api'
-import { betterAuth } from '@hookfish/auth-better-auth'
-import { auth } from './auth'
+import { Hookfish, HookfishError } from '@hookfish/sdk'
 
-export const hookfish = await createHookfish({
-  db,
-  providers,
-  auth: betterAuth(auth),
+const hookfish = new Hookfish({
+  apiKey: process.env.HOOKFISH_API_KEY!,
+  baseUrl: `${process.env.HOOKFISH_URL}/api`,
 })
-```
 
-The adapter:
+export async function GET(request: Request) {
+  const session = await verifyApplicationSession(request)
+  if (!session) {
+    return Response.json({ error: 'Sign in required.' }, { status: 401 })
+  }
 
-- Reads the Better Auth session from the request headers.
-- Requires `session.activeOrganizationId`.
-- Uses the Better Auth organization API to verify current membership.
-- Returns `session.user.id` as the audit subject.
-- Returns the verified organization ID as the tenant.
-- Returns `401` for a missing session and `403` for a missing or unauthorized
-  organization.
+  const basePath = resolveBasePath(session)
 
-The adapter has no tenant presets. Your Better Auth organization is the
-Hookfish tenant. Represent a personal account as a single-member organization
-when your product supports personal workspaces.
-
-## Implement another provider
-
-Clerk, WorkOS, and other integrations can implement the same contract:
-
-```ts
-import type { ApplicationAuthProvider } from '@hookfish/api'
-
-export const applicationAuth: ApplicationAuthProvider = {
-  async authenticate(request) {
-    const grant = await verifyApplicationSession(request)
-    if (!grant) {
-      return {
-        authenticated: false,
-        response: Response.json(
-          { error: { code: 'application_auth_required' } },
-          { status: 401 },
-        ),
-      }
-    }
-
-    return {
-      authenticated: true,
-      principal: {
-        subject: grant.userId,
-        tenantId: grant.verifiedOrganizationId,
-        roles: grant.roles,
-      },
-    }
-  },
+  try {
+    return Response.json(
+      await hookfish.connections.list({ namespace: basePath }),
+    )
+  } catch (error) {
+    if (error instanceof HookfishError) return error.getResponse()
+    throw error
+  }
 }
 ```
 
-The provider must verify current organization membership. Reading an
-unverified organization ID from a cookie, header, route parameter, or request
-body does not satisfy the contract.
+Apply your normal permission checks before listing, authorizing, accessing, or
+disconnecting a connection. Successful `connections.access()` responses
+contain credentials and must remain in trusted server code.
 
-## Credential boundary
+## Choose a base path
 
-After authentication, Hookfish signs a capability that expires within one
-minute and is limited to the tenant's internal resource subtree. The raw API
-verifies that signature and enforces its resource scope. The capability exists
-only between trusted server components.
+`resolveBasePath` is an application function, not an identity-provider
+requirement. It returns the canonical Hookfish subtree that your endpoint may
+address.
 
-The browser may receive connection metadata, an authorization URL, or an
-operation status. It never receives the capability, root broker key, or stored
-provider credentials.
+A single-tenant application can return a constant:
+
+```ts
+export function resolveBasePath(_session: ApplicationSession) {
+  return 'global'
+}
+```
+
+A multi-tenant application can use an organization, workspace, account, or any
+other identifier already verified by its authorization layer:
+
+```ts
+export function resolveBasePath(session: ApplicationSession) {
+  return `organizations/${session.activeOrganizationId}`
+}
+```
+
+Hookfish preserves this path. It does not require a `tenant:` prefix or rewrite
+the resource into a hidden namespace.
+
+## Use your existing provider
+
+Better Auth, Clerk, WorkOS, Auth0, Auth.js, and custom session systems all use
+the same integration boundary:
+
+1. Verify the request with the provider's server SDK.
+2. Apply your application's authorization policy.
+3. Resolve a constant or session-derived base path.
+4. Call Hookfish from the server using paths beneath that base.
+
+Auth0 Organizations are optional. Without Organizations, return a constant
+base path or derive one from another trusted application claim. The same rule
+applies to every provider: Hookfish does not impose an organization model.
+
+## Limit the broker credential
+
+The root key can address every Hookfish resource. Keep it in a trusted secret
+manager and use a scoped, expiring broker token when a service needs only one
+path or subtree.
+
+For example, a service restricted to one application account can receive the
+scope `accounts/acc_123/**`. Hookfish rejects attempts to address resources
+outside that subtree even if the application contains a path-handling bug.
+
+See [Scoped broker tokens](/authorization/token-scoping) for token creation and
+delegation rules. Framework-specific examples are available for
+[Next.js](/frameworks/nextjs) and [Hono](/frameworks/hono).

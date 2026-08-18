@@ -1,41 +1,41 @@
 ---
-title: "React hooks"
-description: "Call your authenticated application API from React without exposing Hookfish credentials."
+title: "React applications"
+description: "Call application-owned Hookfish endpoints from React without exposing server credentials."
 ---
 
-Build user-facing React screens against Hookfish's authenticated application
-API. Your configured auth provider verifies the user and current tenant. The
-browser receives connection metadata, never a broker credential.
+Your React application should call the authenticated API that already belongs
+to your product. That API verifies the session, applies your authorization
+policy, and calls Hookfish from trusted server code.
 
-## Install dependencies
-
-```bash
-pnpm add @hookfish/hooks @tanstack/react-query react
-```
-
-## Create the application client
-
-Create the Hookfish hooks. The default base URL is `/api/client` and requests
-include application cookies.
+For example, expose an endpoint such as `/api/integrations/connections` using
+the pattern in [Application authentication](/authentication/application-auth).
+The browser sends its normal session cookie:
 
 ```ts
-import { createHookfishHooks } from '@hookfish/hooks'
+export async function listConnections() {
+  const response = await fetch('/api/integrations/connections', {
+    credentials: 'include',
+  })
 
-export const hookfish = createHookfishHooks()
+  if (!response.ok) {
+    throw new Error(`Could not load connections (${response.status}).`)
+  }
+
+  return response.json()
+}
 ```
 
-If your application uses bearer sessions, add the application session token to
-this client. Never add a Hookfish broker credential.
-
-## Query connections
-
-Use the tenant-safe query hook.
+Use this function with your existing state-management or query library:
 
 ```tsx
-import { hookfish } from './hookfish'
+import { useQuery } from '@tanstack/react-query'
+import { listConnections } from './integrations-api'
 
-function GitHubConnections() {
-  const connections = hookfish.useConnections()
+export function GitHubConnections() {
+  const connections = useQuery({
+    queryKey: ['integrations', 'connections'],
+    queryFn: listConnections,
+  })
 
   if (connections.isPending) return <p>Loading connections…</p>
   if (connections.isError) return <p>{connections.error.message}</p>
@@ -50,8 +50,10 @@ function GitHubConnections() {
 }
 ```
 
-<Note>
-  `@hookfish/hooks` targets provider metadata, connection metadata, and
-  disconnect operations. Call the explicit safe authorize and secret endpoints
-  for connection setup. There is no browser access operation.
-</Note>
+Return only fields required by the screen. Provider credentials,
+`connections.access()` results, Hookfish broker tokens, and OAuth client
+secrets must remain on the server.
+
+The same design works with React Server Components, server actions, tRPC, Hono
+RPC, GraphQL, or an existing REST API. Hookfish does not require a particular
+browser transport or authentication library.

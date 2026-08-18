@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "composite": false,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist/types",
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../node_modules/.tmp/browser-lib.tsbuildinfo"
+  },
+  "exclude": ["src/**/*.test.ts"]
+}

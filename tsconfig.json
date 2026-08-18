@@ -3,7 +3,7 @@
     "baseUrl": ".",
     "ignoreDeprecations": "5.0",
     "paths": {
-      "@/*": ["./apps/frontend/src/*"]
+      "@/*": ["./packages/browser/src/*"]
     }
   },
   "files": [],
@@ -14,8 +14,8 @@
     { "path": "./examples/backends/hono-node" },
     { "path": "./examples/backends/nextjs" },
     { "path": "./packages/api" },
-    { "path": "./packages/auth-better-auth" },
-    { "path": "./packages/backend" },
+    { "path": "./packages/browser" },
+    { "path": "./packages/client" },
     { "path": "./packages/cli" },
     { "path": "./packages/database" },
     { "path": "./packages/hooks" },

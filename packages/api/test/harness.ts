@@ -145,7 +145,7 @@ export type TestHarness = {
 export async function createHarness(
   options: Pick<
     HookfishConfig<BrokerEnv>,
-    'auth' | 'clientOrigins' | 'rawApiOrigins' | 'returnTo' | 'trustedOrigins'
+    'rawApiOrigins' | 'returnTo' | 'trustedOrigins'
   > = {},
 ): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'hookfish-connections-'))

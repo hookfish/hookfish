@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "pnpm --filter hookfish build && node ./packages/cli/bin/hookfish.mjs repo-dev",
+    "dev": "pnpm --filter @hookfish/repo-dev dev",
     "docs": "cd apps/docs && mint dev",
     "build": "turbo build",
     "build:publish": "turbo build --filter='./packages/**'",
@@ -31,7 +31,8 @@
     "@biomejs/biome": "^2.4.16",
     "@changesets/cli": "^3.0.0",
     "@hookfish/api": "workspace:*",
-    "@hookfish/backend": "workspace:*",
+    "@hookfish/browser": "workspace:*",
+    "@hookfish/client": "workspace:*",
     "hookfish": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/provider": "workspace:*",
