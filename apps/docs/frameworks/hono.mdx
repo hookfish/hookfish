@@ -64,7 +64,6 @@ function hookfishFor(brokerToken: string) {
   return new Hookfish({
     apiKey: brokerToken,
     baseUrl: `${applicationUrl}/api`,
-    fetch: (input, init) => app.fetch(new Request(input, init), process.env),
   })
 }
 
@@ -86,7 +85,7 @@ const applicationRoutes = new Hono()
 app.route('/', applicationRoutes)
 
 serve({
-  fetch: app.fetch,
+  fetch: (request) => app.fetch(request, process.env),
   hostname: process.env.HOST ?? '127.0.0.1',
   port: Number(process.env.PORT ?? 3000),
 })
@@ -98,9 +97,9 @@ export type ApplicationApi = typeof applicationRoutes
 permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
 for the authorized organization. Neither concern belongs in Hookfish itself.
 
-`HookfishServer` is a Hono sub-application. The custom `fetch` function lets
-`Hookfish` call the embedded server without making a network request. Use the
-broker's HTTPS URL and omit `fetch` when Hookfish runs as a separate service.
+`HookfishServer` is a Hono sub-application. `Hookfish` calls its mounted `/api`
+routes through the application's URL, just as it would call a separately
+deployed broker.
 
 An unhandled `HookfishError` retains its Hookfish HTTP status and error body
 through Hono's default error handler. Add an application `onError` handler when

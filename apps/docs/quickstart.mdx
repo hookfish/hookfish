@@ -4,8 +4,7 @@ description: "Mount Hookfish in a Hono app, connect Gmail through MCP, and read 
 ---
 
 This guide creates one Hono application. The app mounts `HookfishServer`, calls
-it in-process with `Hookfish`, and reads Gmail through
-`https://gmail.run.tools`.
+it with `Hookfish`, and reads Gmail through `https://gmail.run.tools`.
 
 ## Prerequisites
 
@@ -66,8 +65,6 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     const hookfish = new Hookfish({
       apiKey,
       baseUrl: `${backendOrigin}/api`,
-      fetch: (input, init) =>
-        app.fetch(new Request(input, init), process.env),
     })
 
     app.get('/inbox', async () => {
@@ -129,9 +126,9 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     console.log(`Hookfish backend running at ${backendOrigin}/api/docs`)
     ```
 
-    The custom `fetch` lets `Hookfish` call the mounted server in the same
-    process. The scaffold's watch process reloads the application after you
-    save the file.
+    `Hookfish` calls the mounted `/api` routes through the application's URL.
+    The scaffold's watch process reloads the application after you save the
+    file.
   </Step>
 
   <Step title="Authorize Gmail and read the inbox">
