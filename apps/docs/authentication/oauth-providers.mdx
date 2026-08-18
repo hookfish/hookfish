@@ -1,22 +1,26 @@
 ---
-title: "Trusted providers"
-description: "Configure OAuth and supplied-secret provider implementations."
+title: "OAuth Providers"
+description: "Configure a trusted provider or implement the provider contract for an unsupported service."
 ---
 
 A provider is trusted application code selected by the final segment of a
-connection path. Request bodies cannot choose a template or upload provider
-credentials.
+connection path. Request bodies cannot choose a provider implementation or
+upload deployment credentials.
 
-## Configure providers
+## Use a trusted provider
+
+Start with a built-in provider when Hookfish already supports the service. The
+provider owns credential acquisition and refresh. Your trusted application
+accesses the current credential and passes it to the service's SDK.
+
+### Configure GitHub
+
+Register GitHub with the OAuth application credentials from your deployment
+environment:
 
 ```ts
 import { defineHookfishConfig } from '@hookfish/api'
-import {
-  createGitHubProvider,
-  createMcpProvider,
-  createNotionProvider,
-  createSecretProvider,
-} from '@hookfish/providers'
+import { createGitHubProvider } from '@hookfish/providers'
 
 export default defineHookfishConfig({
   db,
@@ -25,12 +29,6 @@ export default defineHookfishConfig({
       clientId: env.GITHUB_CLIENT_ID,
       clientSecret: env.GITHUB_CLIENT_SECRET,
     }),
-    mcp: createMcpProvider(),
-    notion: createNotionProvider({
-      clientId: env.NOTION_CLIENT_ID,
-      clientSecret: env.NOTION_CLIENT_SECRET,
-    }),
-    secret: createSecretProvider(),
   }),
 })
 ```
@@ -39,40 +37,160 @@ Provider IDs must be non-reserved lower-camel JavaScript identifiers up to 128
 characters. Slashes, hyphens, dots, and reserved words such as `class` are not
 allowed.
 
-## Register callback URLs
-
-Fixed OAuth providers use:
+Register this callback URL in the GitHub OAuth application:
 
 ```text
 https://broker.example.com/api/connections/callback/github
-https://broker.example.com/api/connections/callback/notion
 ```
 
-Set `OAUTH_REDIRECT_BASE_URL` to the public origin in production. The same
-deployment-level MCP callback ends in `/mcp`.
+Set `OAUTH_REDIRECT_BASE_URL` to the public broker origin in production. Other
+fixed OAuth providers use the same callback pattern with their provider ID as
+the final segment.
 
-## Authentication and provider inputs
+### Make a GitHub request with Octokit
+
+Install the Hookfish SDK in the trusted application that uses the connection:
+
+```bash
+pnpm add @hookfish/sdk
+```
+
+Pass the GitHub connection path, then request the connected user with the
+authenticated Octokit client returned by Hookfish:
+
+```ts
+import { Hookfish } from '@hookfish/sdk'
+
+const API_KEY = process.env.HOOKFISH_API_KEY
+if (!API_KEY) throw new Error('HOOKFISH_API_KEY is required')
+
+const hookfish = new Hookfish({
+  apiKey: API_KEY,
+  baseUrl: 'https://broker.example.com/api',
+})
+
+const github = await hookfish.github('user/personal/github')
+const { data: user } = await github.rest.users.getAuthenticated()
+console.log(`Connected as ${user.login}`)
+```
+
+The first access throws `authorization_required` when the connection needs
+consent. Open its `authorizeUrl`, complete GitHub authorization, and repeat the
+request. Hookfish keeps the provider token in trusted server code and injects
+it into Octokit. The same initializer is available as
+`hookfish.provider.github({ connection })`.
+
+### Authentication and provider inputs
 
 `GET /connections/providers` describes credential acquisition and provider
 inputs. The `authentication` value is either `oauth` or `secret`. Each input
-field declares how its value is used: `identity` adds a path segment,
-`configuration` supplies immutable non-secret connection configuration, and
-`scopes` requests OAuth scopes.
+field declares how Hookfish uses it:
 
-GitHub, Linear, and Notion use OAuth and expose an optional scopes input but no
+- `identity` adds a segment to the connection path.
+- `configuration` supplies immutable, non-secret connection configuration.
+- `scopes` requests provider scopes.
+
+GitHub, Linear, and Notion use OAuth and expose optional scopes without
 connection-specific configuration. The generic `mcp` provider uses OAuth and
 requires a resource name and URL, with optional scopes. The generic `secret`
-provider requires a credential name and a supplied value. The secret value is
-written through `connections.setSecret()` and is never provider configuration
-or listable metadata.
+provider requires a credential name and a supplied value.
 
 The `mcp` provider stores its URL as immutable connection configuration.
-Requested and granted OAuth scopes are tracked separately and can change only
-through the authorization lifecycle.
+Requested and granted provider scopes are tracked separately and can change
+only through the authorization lifecycle. Continue with [remote MCP
+servers](/providers/remote-mcp) for the MCP client flow.
 
-A lazy `ProviderSource` remains available for large application-owned catalogs.
-It resolves trusted provider code by ID; it is not a public provider CRUD
-system.
+## Implement a custom provider
 
-Continue with [remote MCP servers](/providers/remote-mcp) or
-[custom providers](/providers/custom).
+Implement `OAuthProvider` from `@hookfish/provider` when Hookfish does not
+include the service. The provider owns the upstream protocol details. Hookfish
+owns state, storage, encryption, resource authorization, and connection
+lifecycle.
+
+### Required operations
+
+Every OAuth provider must create an authorization request and exchange the
+returned code.
+
+```ts
+import type {
+  CreateAuthorizationInput,
+  ExchangeCodeInput,
+  OAuthProvider,
+  ProviderTokenResponse,
+} from '@hookfish/provider'
+import { ProviderRequestError } from '@hookfish/provider'
+
+export class ExampleProvider implements OAuthProvider {
+  readonly label = 'Example'
+  readonly defaultScopes = ['profile.read']
+  readonly availableScopes = ['profile.read', 'projects.read']
+
+  constructor(
+    private readonly clientId: string,
+    private readonly clientSecret: string,
+  ) {}
+
+  createAuthorization(input: CreateAuthorizationInput) {
+    const url = new URL('https://accounts.example.com/oauth/authorize')
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('client_id', this.clientId)
+    url.searchParams.set('redirect_uri', input.redirectUri)
+    url.searchParams.set('state', input.state)
+    url.searchParams.set('scope', input.scopes.join(' '))
+    return { url: url.toString() }
+  }
+
+  async exchangeCode(
+    input: ExchangeCodeInput,
+  ): Promise<ProviderTokenResponse> {
+    const response = await fetch('https://accounts.example.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: input.code,
+        redirect_uri: input.redirectUri,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+      }),
+    })
+    const payload: unknown = await response.json()
+    if (
+      !response.ok ||
+      typeof payload !== 'object' ||
+      payload === null ||
+      Array.isArray(payload) ||
+      typeof Reflect.get(payload, 'access_token') !== 'string'
+    ) {
+      throw new ProviderRequestError('Example token exchange failed.')
+    }
+
+    return { payload: Object.fromEntries(Object.entries(payload)) }
+  }
+}
+```
+
+Keep client authentication, request encoding, response validation, PKCE
+generation, and error translation inside the provider package.
+
+### Optional capabilities
+
+Implement `refreshToken` when the provider issues refresh tokens. Implement
+`revokeToken` when it exposes a revocation API. Hookfish reports these
+capabilities in provider discovery and invokes them at the appropriate point in
+the connection lifecycle.
+
+Implement `isConfigured` when provider availability depends on deployment
+credentials. Register the instance under a trusted provider ID in
+`hookfish.config.ts`.
+
+`OAuthProviderTemplate` is reserved for trusted implementations such as `mcp`
+that need connection-owned configuration. A lazy `ProviderSource` remains
+available for large application-owned catalogs.
+
+<Tip>
+  Validate every upstream JSON response before returning it. Throw
+  `ProviderConfigurationError` for invalid local configuration and
+  `ProviderRequestError` for upstream failures.
+</Tip>

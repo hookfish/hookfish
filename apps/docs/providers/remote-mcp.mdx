@@ -23,34 +23,61 @@ export default defineHookfishConfig({
 ## Access a remote server
 
 ```ts
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { Hookfish } from '@hookfish/sdk'
 
-const mcpUrl = new URL('https://mcp.notion.com/mcp')
-const connection = {
-  path: 'user/personal/notion/mcp',
-  input: {
-    configuration: { resource_url: mcpUrl.href },
-    returnTo: 'https://app.example.com/integrations',
-  },
-}
+const hookfish = new Hookfish({
+  apiKey: process.env.HOOKFISH_API_KEY,
+  baseUrl: 'https://broker.example.com/api',
+})
 
-const authProvider = {
-  token: async () =>
-    (await hookfish.connections.access(connection.path, connection.input))
-      .secret,
-  onUnauthorized: async () => {
-    await hookfish.connections.authorize(connection.path, connection.input)
-  },
-}
-
-const transport = new StreamableHTTPClientTransport(mcpUrl, { authProvider })
+await using mcp = await hookfish.mcp({
+  connection: 'user/personal/notion/mcp',
+  url: 'https://mcp.notion.com/mcp',
+  returnTo: 'https://app.example.com/integrations',
+})
+const tools = await mcp.listTools()
 ```
 
-The MCP client calls `token()` before each request. When initial authorization
-is needed, Hookfish's direct `authorization_required` error bubbles to your
-application error handler. When the MCP server returns `401`, `onUnauthorized`
-starts fresh authorization and lets the same
-`authorization_required` error bubble to your application error handler.
+`hookfish.mcp()` creates the MCP client, injects the current connection token,
+and connects it to the resource. `await using` closes the client when the
+current scope exits. When initial authorization is needed, Hookfish's direct
+`authorization_required` error bubbles to your application error handler. When
+the MCP server returns `401`, Hookfish starts fresh authorization and lets the
+same error bubble to your application error handler.
+
+By default, the client identifies itself with the `@hookfish/sdk` package name
+and version and negotiates the MCP protocol version automatically. Pass an
+unconnected MCP `Client` when you need custom client capabilities or options:
+
+```ts
+import { Client } from '@modelcontextprotocol/client'
+import { Hookfish } from '@hookfish/sdk'
+
+const client = new Client(
+  { name: 'acme-integrations', version: '1.0.0' },
+  { capabilities: { elicitation: {} } },
+)
+
+const hookfish = new Hookfish({
+  apiKey: process.env.HOOKFISH_API_KEY,
+  baseUrl: 'https://broker.example.com/api',
+})
+
+const mcp = await hookfish.mcp({
+  connection: 'user/personal/notion/mcp',
+  url: 'https://mcp.notion.com/mcp',
+  client,
+})
+```
+
+Install `@modelcontextprotocol/client` directly when you supply your own
+client. Hookfish connects and returns the same instance.
+
+The same initializer is also available under the `provider` namespace:
+
+```ts
+const mcp = await hookfish.provider.mcp({ connection, url })
+```
 
 The path ends in `mcp` because `mcp` is the provider implementation.
 `user/personal` is the namespace and `notion` identifies this resource for the
@@ -88,6 +115,8 @@ For a server that expects a different header, access the same secret and inject
 it through the transport request options:
 
 ```ts
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+
 const { secret } = await hookfish.connections.access(
   'user/personal/notion-api-key/secret',
 )
