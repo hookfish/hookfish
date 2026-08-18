@@ -16,7 +16,7 @@ function Connections() {
 }
 ```
 
-The package exposes stats, trusted-provider listings, connection metadata, and
-disconnect. It intentionally has no connection-access or secret-write hook:
-successful access returns a usable credential and must remain in trusted server
-code.
+The package exposes provider listings, connection metadata, and disconnect.
+The application API also offers explicit authorize and write-only secret
+endpoints for setup. It intentionally has no connection-access operation:
+usable credentials remain in trusted server code.

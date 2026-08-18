@@ -1,73 +1,102 @@
 ---
 title: "Application authentication"
-description: "Authenticate users before calling Hookfish from trusted server code."
+description: "Authenticate users and assert their current tenant before exposing Hookfish connection management."
 ---
 
-Hookfish authenticates broker credentials, not your end users. Keep Auth.js,
-Clerk, Auth0, Supabase Auth, or your existing session system in the application.
+Hookfish delegates application login and session management to your auth
+system. An application auth provider must verify both the user and the tenant
+they may currently act within.
 
 ```text
-Browser
-  → authenticated application route
-  → user and tenant authorization
-  → scoped server-side Hookfish SDK
-  → Hookfish
+Application session
+  → application auth provider
+  → { subject, tenantId }
+  → tenant-isolated Hookfish operations
 ```
 
-## Protect the route
+Hookfish never accepts a tenant identifier from an unverified browser field.
+It does not fall back from a missing organization to the user ID.
+
+## Use Better Auth
+
+Install the adapter alongside Better Auth:
+
+```bash
+pnpm add @hookfish/auth-better-auth better-auth
+```
+
+Configure Better Auth with its organization plugin. Pass the server instance
+directly to Hookfish:
 
 ```ts
-app.use('/integrations/*', async (ctx, next) => {
-  const user = await authenticateRequest(ctx.req.raw)
-  if (!user) return ctx.json({ error: 'Sign in required.' }, 401)
-  ctx.set('user', user)
-  await next()
+import { createHookfish } from '@hookfish/api'
+import { betterAuth } from '@hookfish/auth-better-auth'
+import { auth } from './auth'
+
+export const hookfish = await createHookfish({
+  db,
+  providers,
+  auth: betterAuth(auth),
 })
 ```
 
-Map the authenticated identity to a connection namespace in server code. Do
-not accept an arbitrary path from the browser.
+The adapter:
 
-## Access a connection
+- Reads the Better Auth session from the request headers.
+- Requires `session.activeOrganizationId`.
+- Uses the Better Auth organization API to verify current membership.
+- Returns `session.user.id` as the audit subject.
+- Returns the verified organization ID as the tenant.
+- Returns `401` for a missing session and `403` for a missing or unauthorized
+  organization.
+
+The adapter has no tenant presets. Your Better Auth organization is the
+Hookfish tenant. Represent a personal account as a single-member organization
+when your product supports personal workspaces.
+
+## Implement another provider
+
+Clerk, WorkOS, and other integrations can implement the same contract:
 
 ```ts
-import { Hookfish, HookfishError } from '@hookfish/sdk'
+import type { ApplicationAuthProvider } from '@hookfish/api'
 
-app.onError((error) => {
-  if (
-    error instanceof HookfishError &&
-    error.code === 'authorization_required'
-  ) {
-    return Response.json(
-      {
-        error: error.code,
-        authorize_url: error.authorizeUrl,
-        expires_at: error.expiresAt,
+export const applicationAuth: ApplicationAuthProvider = {
+  async authenticate(request) {
+    const grant = await verifyApplicationSession(request)
+    if (!grant) {
+      return {
+        authenticated: false,
+        response: Response.json(
+          { error: { code: 'application_auth_required' } },
+          { status: 401 },
+        ),
+      }
+    }
+
+    return {
+      authenticated: true,
+      principal: {
+        subject: grant.userId,
+        tenantId: grant.verifiedOrganizationId,
+        roles: grant.roles,
       },
-      { status: 401 },
-    )
-  }
-  console.error(error)
-  return new Response('Internal Server Error', { status: 500 })
-})
-
-app.post('/integrations/github', async (ctx) => {
-  const user = ctx.get('user')
-  const hookfish = new Hookfish({
-    apiKey: await scopedBrokerTokenFor(user.organizationId),
-    baseUrl: process.env.HOOKFISH_URL + '/api',
-  })
-  const path = `organizations/${user.organizationId}/users/${user.id}/github`
-
-  const { secret } = await hookfish.connections.access(path)
-  return ctx.json(await loadGitHubProfile(secret))
-})
+    }
+  },
+}
 ```
 
-The browser may receive the authorization URL and the application-level result.
-It must never receive `secret`, a broker token, refresh token, or OAuth client
-secret.
+The provider must verify current organization membership. Reading an
+unverified organization ID from a cookie, header, route parameter, or request
+body does not satisfy the contract.
 
-Use an exact resource scope for one connection or an explicit `/**` scope for
-the user's namespace. Application authentication and Hookfish scopes enforce
-different boundaries; use both.
+## Credential boundary
+
+After authentication, Hookfish signs a capability that expires within one
+minute and is limited to the tenant's internal resource subtree. The raw API
+verifies that signature and enforces its resource scope. The capability exists
+only between trusted server components.
+
+The browser may receive connection metadata, an authorization URL, or an
+operation status. It never receives the capability, root broker key, or stored
+provider credentials.

@@ -1,10 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  CheckIcon,
   ChevronRightIcon,
-  ClipboardIcon,
-  EyeIcon,
-  EyeOffIcon,
   FolderIcon,
   FolderPlusIcon,
   HouseIcon,
@@ -14,7 +10,7 @@ import {
   RefreshCwIcon,
   ShieldCheckIcon,
 } from 'lucide-react'
-import { type FormEvent, Fragment, useMemo, useRef, useState } from 'react'
+import { type FormEvent, Fragment, useMemo, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   AlertDialog,
@@ -97,7 +93,6 @@ import {
 } from '@/lib/local-folders'
 import {
   authorizeConnection,
-  getConnectionToken,
   type PendingAuthorization,
   setConnectionSecret,
 } from '@/lib/management-api'
@@ -281,7 +276,6 @@ function AddFolderDialog({
 function AddResourceDialog({
   open,
   currentPath,
-  managementToken,
   providers,
   existingPaths,
   pendingPaths,
@@ -291,7 +285,6 @@ function AddResourceDialog({
 }: {
   open: boolean
   currentPath: string
-  managementToken: string
   providers: ProviderMetadata[]
   existingPaths: string[]
   pendingPaths: string[]
@@ -341,7 +334,7 @@ function AddResourceDialog({
     setError(null)
     try {
       if (selectedProvider.authentication === 'secret') {
-        await setConnectionSecret(managementToken, path, secret)
+        await setConnectionSecret(path, secret)
         await onSaved()
         onOpenChange(false)
       } else {
@@ -357,22 +350,17 @@ function AddResourceDialog({
         const requestedScopes = scopesField
           ? fieldValue(scopesField)
           : undefined
-        const authorization = await authorizeConnection(
-          managementToken,
-          path,
-          providerId,
-          {
-            ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
-            ...(Array.isArray(requestedScopes)
-              ? {
-                  scopes: requestedScopes.filter(
-                    (scope) => typeof scope === 'string',
-                  ),
-                }
-              : {}),
-            returnTo: window.location.href,
-          },
-        )
+        const authorization = await authorizeConnection(path, providerId, {
+          ...(Object.keys(configuration).length > 0 ? { configuration } : {}),
+          ...(Array.isArray(requestedScopes)
+            ? {
+                scopes: requestedScopes.filter(
+                  (scope) => typeof scope === 'string',
+                ),
+              }
+            : {}),
+          returnTo: window.location.href,
+        })
         onAuthorized(authorization)
         onOpenChange(false)
       }
@@ -531,7 +519,6 @@ function ConnectionItem({
   connection,
   authorization,
   disconnecting,
-  managementToken,
   oauth,
   onAuthorization,
   onDisconnect,
@@ -539,7 +526,6 @@ function ConnectionItem({
   connection: Connection
   authorization?: PendingAuthorization
   disconnecting: boolean
-  managementToken: string
   oauth: boolean
   onAuthorization: (authorization: PendingAuthorization) => void
   onDisconnect: () => void
@@ -547,70 +533,14 @@ function ConnectionItem({
   const name = connection.namespace.split('/').at(-1) || connection.path
   const account =
     connection.external_account_label ?? connection.external_account_id
-  const [tokenOpen, setTokenOpen] = useState(false)
-  const [token, setToken] = useState<string>()
-  const [tokenVisible, setTokenVisible] = useState(false)
-  const [tokenPending, setTokenPending] = useState(false)
-  const [tokenCopied, setTokenCopied] = useState(false)
-  const [tokenError, setTokenError] = useState<string>()
-  const [tokenAuthorization, setTokenAuthorization] =
-    useState<PendingAuthorization>()
-  const tokenRequest = useRef(0)
   const [reauthorizing, setReauthorizing] = useState(false)
   const [reauthorizeError, setReauthorizeError] = useState<string>()
-
-  async function loadToken(requestId: number) {
-    setTokenPending(true)
-    setTokenError(undefined)
-    setTokenAuthorization(undefined)
-    try {
-      const result = await getConnectionToken(
-        managementToken,
-        connection.path,
-        connection.provider_id,
-      )
-      if (requestId !== tokenRequest.current) return
-      if (result.ready) {
-        setToken(result.secret)
-      } else {
-        setTokenAuthorization(result.authorization)
-        onAuthorization(result.authorization)
-      }
-    } catch (cause) {
-      if (requestId !== tokenRequest.current) return
-      setTokenError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      if (requestId === tokenRequest.current) setTokenPending(false)
-    }
-  }
-
-  function updateTokenOpen(open: boolean) {
-    const requestId = ++tokenRequest.current
-    setTokenOpen(open)
-    setToken(undefined)
-    setTokenVisible(false)
-    setTokenCopied(false)
-    setTokenError(undefined)
-    setTokenAuthorization(undefined)
-    if (open) void loadToken(requestId)
-  }
-
-  async function copyToken() {
-    if (!token) return
-    try {
-      await navigator.clipboard.writeText(token)
-      setTokenCopied(true)
-    } catch {
-      setTokenError('Could not copy the token to the clipboard.')
-    }
-  }
 
   async function reauthorize() {
     setReauthorizing(true)
     setReauthorizeError(undefined)
     try {
       const nextAuthorization = await authorizeConnection(
-        managementToken,
         connection.path,
         connection.provider_id,
         { returnTo: window.location.href },
@@ -644,15 +574,6 @@ function ConnectionItem({
         </ItemDescription>
       </ItemContent>
       <ItemActions>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={disconnecting}
-          onClick={() => updateTokenOpen(true)}
-        >
-          <EyeIcon />
-          View token
-        </Button>
         {oauth && !authorization ? (
           <Button
             size="sm"
@@ -704,96 +625,6 @@ function ConnectionItem({
           {reauthorizeError}
         </div>
       ) : null}
-      <Dialog open={tokenOpen} onOpenChange={updateTokenOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Connection token</DialogTitle>
-            <DialogDescription>
-              The token for <code>{connection.path}</code> is hidden until you
-              explicitly reveal it.
-            </DialogDescription>
-          </DialogHeader>
-          {tokenPending ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner />
-              Loading token…
-            </div>
-          ) : null}
-          {token ? (
-            <Field>
-              <FieldLabel htmlFor={`connection-token-${connection.path}`}>
-                Token
-              </FieldLabel>
-              <div className="flex gap-2">
-                <Input
-                  id={`connection-token-${connection.path}`}
-                  type={tokenVisible ? 'text' : 'password'}
-                  value={token}
-                  readOnly
-                  autoComplete="off"
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  aria-label={tokenVisible ? 'Hide token' : 'Reveal token'}
-                  title={tokenVisible ? 'Hide token' : 'Reveal token'}
-                  onClick={() => setTokenVisible((visible) => !visible)}
-                >
-                  {tokenVisible ? <EyeOffIcon /> : <EyeIcon />}
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  aria-label="Copy token"
-                  title="Copy token"
-                  onClick={() => void copyToken()}
-                >
-                  {tokenCopied ? <CheckIcon /> : <ClipboardIcon />}
-                </Button>
-              </div>
-              <FieldDescription>
-                {tokenCopied
-                  ? 'Copied to clipboard.'
-                  : 'Use the eye button to display the token.'}
-              </FieldDescription>
-            </Field>
-          ) : null}
-          {tokenAuthorization ? (
-            <Alert>
-              <AlertTitle>Authorization required</AlertTitle>
-              <AlertDescription>
-                Authorize this connection before viewing its token.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {tokenError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load token</AlertTitle>
-              <AlertDescription>{tokenError}</AlertDescription>
-            </Alert>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => updateTokenOpen(false)}
-            >
-              Close
-            </Button>
-            {tokenAuthorization ? (
-              <Button asChild>
-                <a href={tokenAuthorization.authorizeUrl}>
-                  Authorize
-                  <ChevronRightIcon />
-                </a>
-              </Button>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Item>
   )
 }
@@ -852,11 +683,9 @@ function LoadingItems() {
 }
 
 export function OAuthConnections({
-  managementToken,
   currentPath,
   onNavigate,
 }: {
-  managementToken: string
   currentPath: string
   onNavigate: (path: string) => void
 }) {
@@ -1079,7 +908,6 @@ export function OAuthConnections({
                     disconnect.isPending &&
                     disconnect.variables === connection.path
                   }
-                  managementToken={managementToken}
                   oauth={
                     providers.data?.providers.find(
                       (provider) => provider.id === connection.provider_id,
@@ -1116,7 +944,6 @@ export function OAuthConnections({
         key={`${resourceOpen}:${currentPath}`}
         open={resourceOpen}
         currentPath={view === 'tree' ? currentPath : ''}
-        managementToken={managementToken}
         providers={providers.data?.providers ?? []}
         existingPaths={[...connectionItems.map((item) => item.path)]}
         pendingPaths={activePending.map((item) => item.path)}

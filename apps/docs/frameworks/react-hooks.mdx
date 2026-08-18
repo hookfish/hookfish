@@ -1,32 +1,27 @@
 ---
-title: "React and Hono RPC"
+title: "React hooks"
 description: "Call your authenticated application API from React without exposing Hookfish credentials."
 ---
 
-Build user-facing React screens against your application's API. Your server
-authenticates the user, selects a scoped broker token, and calls Hookfish. The
-browser receives connection metadata, never the broker credential.
+Build user-facing React screens against Hookfish's authenticated application
+API. Your configured auth provider verifies the user and current tenant. The
+browser receives connection metadata, never a broker credential.
 
 ## Install dependencies
 
 ```bash
-pnpm add @tanstack/react-query hono react
+pnpm add @hookfish/hooks @tanstack/react-query react
 ```
 
 ## Create the application client
 
-Import the Hono route type exported by your application server. Include
-credentials when your application uses cookie sessions.
+Create the Hookfish hooks. The default base URL is `/api/client` and requests
+include application cookies.
 
 ```ts
-import type { ApplicationApi } from '../server'
-import { hc } from 'hono/client'
+import { createHookfishHooks } from '@hookfish/hooks'
 
-export const api = hc<ApplicationApi>('/', {
-  init: {
-    credentials: 'include',
-  },
-})
+export const hookfish = createHookfishHooks()
 ```
 
 If your application uses bearer sessions, add the application session token to
@@ -34,21 +29,13 @@ this client. Never add a Hookfish broker credential.
 
 ## Query connections
 
-Use the typed application endpoint in a TanStack Query function.
+Use the tenant-safe query hook.
 
 ```tsx
-import { useQuery } from '@tanstack/react-query'
-import { api } from './api'
+import { hookfish } from './hookfish'
 
 function GitHubConnections() {
-  const connections = useQuery({
-    queryKey: ['integrations', 'connections'],
-    queryFn: async () => {
-      const response = await api.rpc.integrations.connections.$get()
-      if (!response.ok) throw new Error('Could not load connections.')
-      return response.json()
-    },
-  })
+  const connections = hookfish.useConnections()
 
   if (connections.isPending) return <p>Loading connections…</p>
   if (connections.isError) return <p>{connections.error.message}</p>
@@ -63,12 +50,8 @@ function GitHubConnections() {
 }
 ```
 
-Create an application endpoint that calls `connections.access()`, returns only
-an authorization URL when required, and performs the credential-backed work on
-the server. Keep successful access payloads out of browser code.
-
 <Note>
-  `@hookfish/hooks` targets metadata and disconnect routes. It intentionally
-  has no access or authorization hook because successful access returns a
-  credential.
+  `@hookfish/hooks` targets provider metadata, connection metadata, and
+  disconnect operations. Call the explicit safe authorize and secret endpoints
+  for connection setup. There is no browser access operation.
 </Note>

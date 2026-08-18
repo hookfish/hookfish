@@ -7,12 +7,8 @@ import {
 import { Hono, type ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
-import {
-  type BrowserRequestAuthorizer,
-  createHookfishBackend,
-  type HookfishBackendOptions,
-  isAllowedClientRequest,
-} from './client.js'
+import type { ApplicationAuthProvider } from './application-auth.js'
+import { createHookfishBackend, type HookfishBackendOptions } from './client.js'
 import { type DatabaseInput, migrateDatabase } from './db/binding.js'
 import type { HookfishEventHandler } from './events.js'
 import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config.js'
@@ -37,14 +33,18 @@ export type HookfishConfig<Bindings extends object = object> = {
   providers: HookfishProviders<Bindings>
   /** Default database binding. A runtime host may override it in `HookfishServer.init`. */
   db: DatabaseInput<Bindings>
-  /** Mount the browser-safe, credential-injecting facade at `/api/client`. @default false */
-  includeClient?: boolean
-  /** Include server-only operations in OpenAPI. Client operations are always documented. @default true */
+  /** Application authentication and tenant authorization for `/api/client`. */
+  auth?: ApplicationAuthProvider<Bindings>
+  /** Additional exact origins allowed to call `/api/client`. Same-origin is always allowed. */
+  clientOrigins?: readonly string[]
+  /** Serve raw API OpenAPI JSON and Swagger UI. @default true */
   includeSwagger?: boolean
   /** Fixed destination after a successful OAuth callback. Omit for the development completion page. */
   returnTo?: string
   /** Origins allowed by the per-authorization `return_to` option. */
   trustedOrigins?: readonly string[]
+  /** Exceptional exact origins allowed to call the raw server API. @default [] */
+  rawApiOrigins?: readonly string[]
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
 }
@@ -68,13 +68,26 @@ function validateHttpUrl(name: string, value: string): void {
   }
 }
 
+function validateExactOrigins(name: string, origins: readonly string[]): void {
+  for (const origin of origins) {
+    if (origin === '*') throw new Error(`${name} does not allow "*".`)
+    validateHttpUrl(`Each ${name} entry`, origin)
+    if (new URL(origin).origin !== origin) {
+      throw new Error(`${name} entries must be exact origins without paths.`)
+    }
+  }
+}
+
 function validateHookfishOptions(
-  options: Pick<HookfishConfig, 'returnTo' | 'trustedOrigins'>,
+  options: Pick<
+    HookfishConfig,
+    'returnTo' | 'trustedOrigins' | 'clientOrigins' | 'rawApiOrigins'
+  >,
 ): void {
   if (options.returnTo) validateHttpUrl('returnTo', options.returnTo)
-  for (const origin of options.trustedOrigins ?? []) {
-    validateHttpUrl('Each trustedOrigins entry', origin)
-  }
+  validateExactOrigins('trustedOrigins', options.trustedOrigins ?? [])
+  validateExactOrigins('clientOrigins', options.clientOrigins ?? [])
+  validateExactOrigins('rawApiOrigins', options.rawApiOrigins ?? [])
 }
 
 function createApiRoutes<Bindings extends object>(
@@ -82,7 +95,7 @@ function createApiRoutes<Bindings extends object>(
   database: DatabaseInput<Bindings>,
   options: Pick<
     HookfishConfig<Bindings>,
-    'returnTo' | 'trustedOrigins' | 'onEvent'
+    'returnTo' | 'trustedOrigins' | 'rawApiOrigins' | 'onEvent'
   >,
   includeSwagger = true,
 ) {
@@ -95,55 +108,37 @@ function createApiRoutes<Bindings extends object>(
       'Send HOOKFISH_API_KEY for root access, or a named scoped token minted by POST /admin/tokens.',
   })
 
-  base.get('/openapi.json', (context) => {
-    const document = base.getOpenAPI31Document({
-      openapi: '3.1.0',
-      info: {
-        title: 'Hookfish API',
-        version: '0.0.0',
-      },
-      servers: [{ url: includeSwagger ? '/api' : '/api/client' }],
+  if (includeSwagger) {
+    base.get('/openapi.json', (context) =>
+      context.json(
+        base.getOpenAPI31Document({
+          openapi: '3.1.0',
+          info: {
+            title: 'Hookfish API',
+            version: '0.0.0',
+          },
+          servers: [{ url: '/api' }],
+        }),
+      ),
+    )
+    base.get('/docs', swaggerUI({ url: '/api/openapi.json' }))
+  }
+
+  const rawOrigins = options.rawApiOrigins ?? []
+  if (rawOrigins.length > 0) {
+    const rawCors = cors({
+      credentials: false,
+      origin: (origin) => (rawOrigins.includes(origin) ? origin : ''),
     })
-
-    if (!includeSwagger) {
-      const operationMethods = [
-        'get',
-        'put',
-        'post',
-        'delete',
-        'options',
-        'head',
-        'patch',
-        'trace',
-      ] as const
-
-      for (const [pathname, pathItem] of Object.entries(document.paths ?? {})) {
-        const apiPath = pathname.startsWith('/api')
-          ? pathname
-          : `/api${pathname}`
-        for (const method of operationMethods) {
-          if (!isAllowedClientRequest(method, apiPath)) {
-            delete pathItem[method]
-          }
-        }
-        if (!operationMethods.some((method) => pathItem[method])) {
-          delete document.paths?.[pathname]
-        }
-      }
-    }
-
-    return context.json(document)
-  })
-
-  base.get('/docs', swaggerUI({ url: '/api/openapi.json' }))
+    base.use('/stats', rawCors)
+    base.use('/admin/*', rawCors)
+    base.use('/connections', rawCors)
+    base.use('/connections/*', rawCors)
+  }
 
   const api = base
-    .use('/stats', cors())
     .route('/stats', statsRoutes)
-    .use('/admin/*', cors())
     .route('/admin', createAdminRoutes(database, options.onEvent))
-    .use('/connections', cors())
-    .use('/connections/*', cors())
     .route(
       '/connections',
       createConnectionRoutes(resolveProviders, database, {
@@ -179,12 +174,10 @@ export type AppType = ReturnType<typeof createApiRoutes>
 export type HookfishRuntime<Bindings extends object = object> = {
   /** Label shown by `/api/client/health`. @default "fetch" */
   runtime?: HookfishBackendOptions<Bindings>['runtime']
-  /** Override `trustedOrigins` with a runtime-specific browser allowlist. */
-  browserOrigins?: HookfishBackendOptions<Bindings>['browserOrigins']
-  /** Override the root credential injected by the browser facade. */
-  brokerApiKey?: HookfishBackendOptions<Bindings>['brokerApiKey']
-  /** Apply application/session authorization before serving browser routes. */
-  authorizeBrowserRequest?: BrowserRequestAuthorizer<Bindings>
+  /** Override application origins for a runtime-specific deployment. */
+  clientOrigins?: HookfishBackendOptions<Bindings>['clientOrigins']
+  /** Override the root key used to sign ephemeral application capabilities. */
+  rootApiKey?: HookfishBackendOptions<Bindings>['rootApiKey']
 }
 
 function optionalExecutionContext(context: {
@@ -207,7 +200,6 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
   Bindings: Bindings
 }> {
   readonly db: DatabaseInput<Bindings>
-  readonly includeClient: boolean
   readonly includeSwagger: boolean
   readonly returnTo: string | undefined
   private readonly resolveProviders: (
@@ -221,7 +213,6 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
     super()
     this.resolveProviders = resolveProviders
     this.db = options.db
-    this.includeClient = options.includeClient ?? false
     this.includeSwagger = options.includeSwagger ?? true
     this.returnTo = options.returnTo
     const api = createApiRoutes(
@@ -236,12 +227,11 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
       hookfishFetch: (request, bindings, executionContext) =>
         rawApp.fetch(request, bindings ?? {}, executionContext),
       runtime: runtime.runtime,
-      browserOrigins: runtime.browserOrigins,
-      brokerApiKey:
-        runtime.brokerApiKey ??
+      clientOrigins: runtime.clientOrigins,
+      rootApiKey:
+        runtime.rootApiKey ??
         ((bindings) =>
           requireBrokerApiKey(resolveBrokerConfig(bindings ?? {}))),
-      authorizeBrowserRequest: runtime.authorizeBrowserRequest,
     })
 
     const handleRequest = (context: {
@@ -288,6 +278,14 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
   }
 }
 
+/** Create a Hookfish server with an optional application auth provider. */
+export function createHookfish<Bindings extends object = object>(
+  options: HookfishConfig<Bindings>,
+  runtime: HookfishRuntime<Bindings> = {},
+): Promise<HookfishServer<Bindings>> {
+  return HookfishServer.init(options, runtime)
+}
+
 export function isHookfish(value: unknown): value is HookfishServer<object> {
   return (
     typeof value === 'object' &&
@@ -296,6 +294,12 @@ export function isHookfish(value: unknown): value is HookfishServer<object> {
     typeof Reflect.get(value, 'getProviders') === 'function'
   )
 }
+
+export type {
+  ApplicationAuthProvider,
+  ApplicationAuthResult,
+  ApplicationPrincipal,
+} from './application-auth.js'
 
 export {
   createProviderSource,

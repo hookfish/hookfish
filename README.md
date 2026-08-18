@@ -5,8 +5,9 @@ backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
-- `packages/backend` — browser-safe facade plus raw Hookfish API composition
+- `packages/backend` — authenticated application facade plus raw API composition
 - `packages/api` — shared Hono API and OAuth broker
+- `packages/auth-better-auth` — Better Auth session and organization adapter
 - `packages/sdk` — generated, typed server client for Hookfish operations
 - `packages/hooks` — typed Hono RPC clients, query options, and React hooks
 - `packages/database` — PGlite, Postgres, and Durable Object adapters
@@ -15,10 +16,11 @@ backend runtimes:
 - `examples/backends/express` and `examples/backends/nextjs` — alternative Node hosts
 - `examples/backends/cloudflare-worker` — Worker backend using SQLite Durable Objects
 
-The frontend contains no server functions or database code. Every host exposes:
+The frontend contains no server functions, database code, or broker
+credentials. A configured host exposes two separate surfaces:
 
-- `/api/*` — raw Hookfish API, documentation, and OAuth callbacks
-- `/api/client/*` — allowlisted browser facade with server-side broker credentials
+- `/api/*` — server-only raw Hookfish API plus public OAuth callbacks
+- `/api/client/*` — explicit safe operations, only when application auth is configured
 
 ## Local development
 
@@ -53,7 +55,9 @@ pnpm dev:server
 The generated `dev:server` script runs the platform-native development server
 (`vercel dev`, `wrangler dev`, Node, Bun, or Docker). The `dev` script runs it in
 parallel with `hookfish serve --backend-url <backend-url>`, which serves the
-packaged frontend and proxies `/api` to that backend. Use `--no-install` during
+packaged frontend behind a loopback operator BFF. The BFF forwards only safe
+connection-management operations and keeps `HOOKFISH_API_KEY` in the CLI
+process. Use `--no-install` during
 initialization to skip dependency installation. The Cloudflare scaffold uses a
 PostgreSQL database through Hyperdrive; the Vercel scaffold expects Postgres
 through `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
@@ -63,43 +67,34 @@ encryption key and broker API key.
 Start the standalone inspector with `npx hookfish inspect`. The `inspector`
 command is an alias. In this repository, `pnpm cli inspect` runs the same
 packaged server directly at `http://localhost:3000`. It mounts the raw API at
-`/api` and the browser client facade at `/api/client`, backed by PGlite in
+`/api`, backed by PGlite in
 `~/.hookfish/inspector` by default. `HOOKFISH_API_KEY` defaults to `test` when
 unset or empty. Use `INSPECTOR_PORT` to choose another port. In Conductor, the
 CLI uses the third allocated workspace port automatically.
 
-The repository's `pnpm dev` script delegates to `turbo dev` filtered to the
-frontend and the selected backend. Choose `hono-node` (the default), `express`,
-`nextjs`, or `cloudflare-worker` with `--backend`. The Vite server proxies
-`/api` to that backend. The default Hono backend stores PGlite data in
+The repository's `pnpm dev` script builds the packaged dashboard, runs the
+selected backend through Turbo, and places the loopback operator BFF in front.
+Choose `hono-node` (the default), `express`, `nextjs`, or `cloudflare-worker`
+with `--backend`. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
 it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
 and the next allocated port for the backend.
 
 Outside this repository, `hookfish dev` and its `hookfish serve` alias serve the
-packaged dashboard and proxy `/api` to a backend. An explicit backend is
-required through `--backend-url` or `HOOKFISH_BACKEND_URL`.
+packaged dashboard behind the same restricted local BFF. An explicit backend
+and server-side `HOOKFISH_API_KEY` are required.
 
-## Pointing the SPA at another backend
+## Pointing the local dashboard at another backend
 
-Run any backend, then either make the Vite proxy target it:
-
-```sh
-HOOKFISH_BACKEND_URL=http://127.0.0.1:3000 \
-  pnpm --filter @hookfish/frontend dev
-```
-
-Or call it directly from the browser:
+Run any backend, then start the local operator server:
 
 ```sh
-VITE_BACKEND_URL=http://127.0.0.1:3000 \
-  pnpm --filter @hookfish/frontend dev
+HOOKFISH_API_KEY=your-server-key \
+  pnpm cli serve --backend-url http://127.0.0.1:3000
 ```
 
-Direct cross-origin calls require the frontend origin to match
-`HOOKFISH_FRONTEND_URL` in the backend environment. The default is
-`http://127.0.0.1:5173`. The proxy approach stays same-origin and is generally
-more convenient for local backend matrix testing.
+The dashboard never receives that key and does not expose the raw API. Product
+UIs should use an authenticated `/api/client` deployment instead.
 
 Available backends:
 
@@ -116,7 +111,7 @@ pnpm --filter @hookfish/example-cloudflare-worker dev
 ```
 
 Each backend example owns its `hookfish.config.ts`, including its database,
-providers, browser policy, and documentation visibility. The Node examples
+providers, callback policy, and documentation visibility. The Node examples
 store PGlite data in a local `pgdata` directory; the Worker config uses its
 Durable Object binding.
 
@@ -152,30 +147,34 @@ binding interface. The checked-in `wrangler-typegen.env` contains binding names
 only so secrets appear in that generated type without storing their values.
 Rerun `pnpm cf-typegen` whenever a binding changes.
 
-## Production frontend
+## Product frontend
 
-The frontend build is static:
+The packaged dashboard is a loopback operator tool, not a remotely hosted
+admin surface. For a production product UI, configure an application auth
+provider and call `/api/client` from your own frontend. Hookfish verifies the user and
+current tenant, then internally scopes every `/api/client` request to that
+tenant:
 
-```sh
-VITE_BACKEND_URL=https://broker.example.com pnpm --filter @hookfish/frontend build
-# Publish apps/frontend/dist with SPA fallback to index.html.
+```ts
+import { createHookfish } from '@hookfish/api'
+import { betterAuth } from '@hookfish/auth-better-auth'
+import { auth } from './auth'
+
+export const hookfish = await createHookfish({
+  db,
+  providers,
+  auth: betterAuth(auth),
+  includeSwagger: false,
+})
 ```
 
-For a same-origin deployment, leave `VITE_BACKEND_URL` unset and route `/api/*`
-to the selected backend. Before exposing the dashboard in production, pass an
-`authorizeBrowserRequest` runtime option to `HookfishServer.init` and enforce the
-application's session/authentication policy.
-
-The bundled dashboard shows the broker's resource tree. A multi-tenant product
-should expose its own authenticated route, such as
-`/organizations/acme/connections`, verify membership, and call Hookfish from
-its server with an `organizations/acme/**` scoped broker token. See
-[docs/SMITHERY.md](docs/SMITHERY.md#frontend-organization-views).
+The Better Auth instance must include the organization plugin. Its active
+organization becomes the tenant; there are no tenant presets or browser-chosen
+tenant IDs.
 
 ## Frontend hooks
 
-`@hookfish/hooks` consumes the browser facade using the raw API's inferred
-Hono types:
+`@hookfish/hooks` consumes the authenticated application API:
 
 ```ts
 import { createHookfishHooks } from '@hookfish/hooks'
@@ -184,15 +183,15 @@ const hookfish = createHookfishHooks({
   baseUrl: 'https://broker.example.com/api/client',
 })
 
-function RuntimeStats() {
-  const stats = hookfish.useStats()
-  return stats.data?.region
+function ConnectionCount() {
+  const connections = hookfish.useConnections()
+  return connections.data?.connections.length
 }
 ```
 
-The facade only forwards stats, provider metadata, connection metadata, and
-disconnects. Authorization starts, credential retrieval and writes, and
-administration remain server-only. More detail is in
+The application API exposes provider metadata, connection metadata, safe
+authorization and secret-write operations, and disconnects. It never exposes
+credential retrieval or administration. More detail is in
 [packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
 catalog with tenant-prefixed connections, see
 [docs/SMITHERY.md](docs/SMITHERY.md).

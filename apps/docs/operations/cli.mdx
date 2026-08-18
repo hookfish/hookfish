@@ -46,8 +46,9 @@ must be a lowercase npm-compatible name.
 pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
 ```
 
-`hookfish dev` is an alias. The command serves the packaged static dashboard
-and proxies `/api` to the backend so browser requests remain same-origin.
+`hookfish dev` is an alias. The command serves the packaged dashboard behind a
+loopback operator BFF. It forwards only explicit safe operations and keeps
+`HOOKFISH_API_KEY` in the CLI process.
 
 | Option | Environment alternative |
 | --- | --- |

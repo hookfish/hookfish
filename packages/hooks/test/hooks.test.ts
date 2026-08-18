@@ -40,7 +40,7 @@ describe('createHookfishHooks', () => {
     const requests: Request[] = []
     const hookfish = createHookfishHooks({
       baseUrl: 'https://broker.example/api/client/',
-      headers: async () => ({ Authorization: 'Bearer session-token' }),
+      headers: async () => ({ Authorization: 'Bearer application-session' }),
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         requests.push(new Request(input, init))
         return jsonResponse({ connections: [] })
@@ -55,10 +55,10 @@ describe('createHookfishHooks', () => {
     )
 
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/client/connections?provider_id=github&namespace=user%2Fpersonal',
+      'https://broker.example/api/client/connections?namespace=user%2Fpersonal&provider_id=github',
     )
     expect(requests[0]?.headers.get('Authorization')).toBe(
-      'Bearer session-token',
+      'Bearer application-session',
     )
   })
 
@@ -76,7 +76,7 @@ describe('createHookfishHooks', () => {
       hookfish.options.connection('user/personal/github'),
     )
     expect(requests[0]?.url).toBe(
-      'https://broker.example/api/client/connections/entry/user/personal/github',
+      'https://broker.example/api/client/connections/user/personal/github',
     )
   })
 

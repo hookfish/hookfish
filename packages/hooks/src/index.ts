@@ -26,7 +26,7 @@ export function createHookfishHooks(
   const { queryKeyScope, ...clientOptions } = options
   const client = createHookfishClient(clientOptions)
   const scope =
-    queryKeyScope ?? normalizeApiBaseUrl(clientOptions.baseUrl ?? '/api')
+    queryKeyScope ?? normalizeApiBaseUrl(clientOptions.baseUrl ?? '/api/client')
   const keys = createHookfishKeys(scope)
   const requestOptions = createHookfishOptions(client, keys)
   const hooks = createReactHooks(requestOptions, keys)
@@ -49,7 +49,6 @@ export {
   type HookfishClientOptions,
   normalizeApiBaseUrl,
   type ProvidersResponse,
-  type StatsResponse,
 } from './client.js'
 export { HookfishApiError } from './errors.js'
 export { createHookfishKeys, type HookfishKeys } from './keys.js'

@@ -27,7 +27,6 @@ const db = durableObjects<Env>((bindings) =>
 // const hookfish = await HookfishServer.init({ ...config, db: cloudflareDb })
 export default defineHookfishConfig<Env>({
   db,
-  includeClient: true,
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.

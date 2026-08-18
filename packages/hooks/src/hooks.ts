@@ -15,7 +15,6 @@ import type {
   ConnectionsResponse,
   DisconnectConnectionResponse,
   ProvidersResponse,
-  StatsResponse,
 } from './client.js'
 import type { HookfishApiError } from './errors.js'
 import type { HookfishKeys } from './keys.js'
@@ -41,21 +40,6 @@ export async function invalidateDisconnectedConnection(
 }
 
 export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
-  function useStats<TData = StatsResponse>(
-    overrides?: QueryOverrides<
-      StatsResponse,
-      TData,
-      ReturnType<HookfishKeys['stats']>
-    >,
-  ): UseQueryResult<TData, HookfishApiError> {
-    const query = options.stats()
-    return useQuery({
-      ...overrides,
-      queryKey: query.queryKey,
-      queryFn: query.queryFn,
-    })
-  }
-
   function useProviders<TData = ProvidersResponse>(
     overrides?: QueryOverrides<
       ProvidersResponse,
@@ -120,7 +104,6 @@ export function createReactHooks(options: HookfishOptions, keys: HookfishKeys) {
   }
 
   return {
-    useStats,
     useProviders,
     useConnections,
     useConnection,

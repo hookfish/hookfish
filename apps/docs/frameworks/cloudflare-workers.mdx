@@ -66,8 +66,7 @@ const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 
 const hookfish = await HookfishServer.init<Env>({
   db,
-  includeClient: true,
-  includeSwagger: true,
+  includeSwagger: false,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   providers: {

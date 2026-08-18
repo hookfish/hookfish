@@ -36,5 +36,5 @@
 - Write for external developers installing published packages, not contributors running this monorepo.
 - Keep contributor commands and repository maintenance details out of the public docs.
 - Do not imply that browser code can retrieve provider tokens or secret values.
-- Do not imply that `authorizeBrowserRequest` changes the broker token used by the browser facade.
+- Do not imply that an application auth provider returns or exposes a broker credential.
 - Prefer `hookfish init` for standalone deployment quickstarts. Use manual setup instructions when embedding Hookfish into an existing application.

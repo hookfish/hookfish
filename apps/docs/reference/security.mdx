@@ -1,11 +1,11 @@
 ---
 title: "Production security"
-description: "Review Hookfish credential boundaries, deployment controls, and production readiness."
+description: "Review Hookfish credential boundaries, tenant isolation, and production controls."
 ---
 
-Hookfish encrypts stored credentials and enforces broker scopes, but the host
-application still owns identity, network exposure, key custody, backups, and
-tenant authorization.
+Hookfish encrypts stored credentials and enforces broker scopes. Your host
+application still owns identity-provider configuration, key custody, backups,
+and operator access.
 
 ## Production checklist
 
@@ -14,63 +14,75 @@ tenant authorization.
 - Store every secret in the runtime's secret manager.
 - Set `OAUTH_REDIRECT_BASE_URL` to the public HTTPS broker origin.
 - Register `/api/connections/callback/{providerId}` for fixed OAuth providers.
-- Keep authenticated raw `/api/*` operations behind a trusted service
-  boundary while leaving the provider callback publicly reachable.
-- Authenticate users on your application API before calling Hookfish.
-- Select a broker token scoped to the current tenant's resource prefix, such as
-  `organizations/acme/**`, in server code.
+- Leave `rawApiOrigins` empty unless a server-to-server deployment explicitly
+  requires cross-origin raw API access.
+- Configure `auth` before exposing `/api/client`.
+- Verify current tenant membership inside every application auth provider.
 - Give services scoped, expiring broker tokens instead of the root key.
-- Keep connection access and secret writes server-only.
-- Export lifecycle events to an audit or telemetry system.
+- Export lifecycle events with `subject` and `tenantId` to an audit system.
 - Back up the database and encryption key through separate controlled systems.
-- Test restoration, scoped-token revocation, and provider reauthorization.
+- Test restoration, scoped-token revocation, tenant isolation, and provider
+  reauthorization.
 
-## Stored credentials
+## Credential boundaries
 
-Connection secrets, refresh tokens, and per-connection DCR client secrets are
-encrypted with AES-GCM before database storage. Connection
-metadata excludes all usable credentials.
+Hookfish uses three distinct credentials:
 
-OAuth state is stored only as a SHA-256 hash and expires after ten minutes. A
-state record is claimed before code exchange so a completed callback cannot be
-replayed concurrently.
+| Credential | Where it may exist |
+| --- | --- |
+| Broker credential | Trusted server code only |
+| Application session cookie or token | Application-facing routes |
+| Provider credential | Encrypted broker storage and trusted server operations only |
 
-## Broker credentials
+No browser-facing response contains a provider access token, refresh token,
+stored API key, OAuth client secret, or broker credential.
 
-Scoped tokens are HMAC-signed with `HOOKFISH_API_KEY`. Hookfish stores only a
-SHA-256 hash of each token's random identifier and checks the authoritative
-database record on every request. This enables immediate revocation and scope
-narrowing.
+## Tenant isolation
 
-The root key remains a high-impact credential. Keep it out of browser code,
-operator screenshots, logs, and shared shell history.
+The application auth provider returns a verified `subject` and `tenantId`.
+Hookfish converts the tenant into an internal resource namespace. Browser paths
+remain relative to that namespace.
 
-## Application boundary
+For each request, Hookfish signs a short-lived capability scoped to the tenant
+subtree. The raw API independently verifies and enforces that scope. A tenant
+cannot list, read, authorize, modify, or disconnect another tenant's paths.
 
-The browser should call your authenticated application API. After checking the
-session and permissions, your server calls Hookfish with the tenant's scoped
-broker token. Do not forward that token or provider tokens to the browser.
+OAuth state stores the internal connection namespace and is claimed once
+before code exchange. The callback remains public because the OAuth provider
+must reach it, but the one-time state binds the callback to the authorization
+that created it.
 
-The optional `/api/client` facade has a restricted route allowlist, but its
-application authorizer does not select tenant-specific broker credentials.
-Prefer app-owned routes for user-facing, multi-tenant access.
+## Network boundary
 
-The packaged operator dashboard is different from the browser facade. It uses
-the broker token entered by the operator to call the raw API, and its explicit
-View token action can retrieve, reveal, and copy a live provider credential.
-Restrict dashboard and broker-token access to trusted operators.
+The raw `/api/*` API emits no CORS headers by default. Requests without an
+`Origin`, such as trusted server-to-server calls, continue to work with a valid
+broker credential.
+
+`rawApiOrigins` is a separate exact-origin allowlist. It rejects `"*"` and is
+not derived from OAuth redirect trust. CORS is not authentication; every raw
+operation still requires a valid broker credential.
+
+The authenticated `/api/client` API accepts same-origin calls by default.
+State-changing requests require an exact trusted `Origin`. Configure additional
+origins with `clientOrigins` only when your application needs them.
+
+## Operator dashboard
+
+`hookfish serve` reads the broker credential in the server process, binds to
+loopback, and issues an ephemeral `HttpOnly`, `SameSite=Strict` operator cookie.
+Its BFF exposes only safe connection-management operations. It does not proxy
+the raw API or provider-token retrieval.
+
+Use application authentication or SSO for remotely hosted operator tools.
 
 ## Database and key recovery
 
 Database backups without `OAUTH_ENCRYPTION_KEY` cannot restore encrypted
-credentials. An encryption-key change without re-encrypting existing rows makes
-those rows unreadable. Document recovery ownership and keep tested, access-
-controlled copies of both inputs.
-
-On Cloudflare Workers, use PostgreSQL through Hyperdrive for production. The
-SQLite Durable Objects adapter is experimental.
+credentials. An encryption-key change without re-encrypting existing rows
+makes those rows unreadable. Keep tested, access-controlled copies of both
+inputs.
 
 <Warning>
   Never log connection-access responses, authorization headers, callback codes,
-  or encryption keys.
+  application capabilities, or encryption keys.
 </Warning>

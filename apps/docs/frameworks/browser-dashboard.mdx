@@ -1,11 +1,11 @@
 ---
 title: "Dashboard and browser access"
-description: "Use the operator dashboard and build user-facing connection screens through your authenticated application API."
+description: "Run the local operator dashboard and expose tenant-safe connection management to your application."
 ---
 
-Hookfish includes a static dashboard for adding, viewing, and disconnecting
-connections. Treat it as an operator tool. Build user-facing connection
-screens against your own authenticated application API.
+Hookfish treats the packaged operator dashboard and your product UI as
+separate security surfaces. Neither surface receives a broker credential or a
+stored provider credential.
 
 ## Run the packaged dashboard
 
@@ -15,56 +15,61 @@ Generated projects start the dashboard and backend together:
 pnpm dev
 ```
 
-For an existing backend, serve the packaged dashboard and proxy `/api`:
+For an existing backend, provide the backend URL and root credential to the
+local server process:
 
 ```bash
-pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
+HOOKFISH_API_KEY="$HOOKFISH_API_KEY" \
+  pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
 ```
 
-The operator dashboard requests a root or scoped broker token and keeps it in
-browser session storage. The Add Connection dialog selects a provider first and
-uses its metadata to render the remaining controls. OAuth providers render an
-authorization action, secret providers render a credential input, and the
-input schema renders fields such as an MCP resource name, URL, and scopes.
+The command binds to loopback by default. It creates an ephemeral operator
+session in an `HttpOnly`, `SameSite=Strict` cookie. Its backend-for-frontend
+injects the broker credential only for explicit connection-management
+operations. It does not proxy the raw `/api/*` surface or expose provider-token
+retrieval.
 
-The dashboard intentionally has no connection-type selector. Provider metadata
-is the source of truth. Connection lists contain
-metadata only and never stored credential values. View token is an explicit
-privileged action: it calls
-`connections.access()` only after the dialog opens, masks the returned provider
-credential by default, and provides separate reveal and copy controls.
+The dashboard can list providers and connections, start authorization, store a
+new provider secret, and disconnect a connection. A stored secret is write-only:
+the response confirms that it was saved but never returns its value.
 
 <Warning>
-  Do not expose the packaged dashboard or a root broker key to your
-  application's users. Restrict the dashboard to trusted operators. Anyone
-  with dashboard broker access can retrieve usable provider credentials with
-  View token.
+  The packaged dashboard is a local operator tool. It refuses non-loopback
+  binding. Use application authentication or SSO for a remotely hosted
+  operator experience.
 </Warning>
 
-## Build a user-facing connection screen
+## Build a product connection screen
 
-Your application's browser client should call an app-owned route:
+Configure an application auth provider on the Hookfish server:
 
 ```text
 Browser
-  → authenticated application route
-  → scoped server-side Hookfish client
-  → Hookfish API
+  → /api/client with an application session
+  → auth provider verifies the user and current tenant
+  → Hookfish creates a short-lived tenant-scoped capability
+  → raw Hookfish API
 ```
 
-The application route verifies the user's session and permissions, maps the
-user to a Hookfish resource path, and selects the appropriate scoped broker
-token. It can list metadata or disconnect an account, and can call
-`connections.access()` only when the route keeps successful secrets server-side.
+The safe application API exposes:
 
-See [Application authentication](/authentication/application-auth) for the
-complete pattern and [React and Hono RPC](/frameworks/react-hooks) for a
-browser example.
+```text
+GET    /api/client/providers
+GET    /api/client/connections
+GET    /api/client/connections/{path}
+POST   /api/client/connections/{path}/authorize
+PUT    /api/client/connections/{path}/secret
+DELETE /api/client/connections/{path}
+```
 
-## Optional browser facade
+Connection paths are relative to the authenticated tenant. Hookfish ignores
+browser-supplied tenant identifiers and enforces its internal tenant namespace
+on every raw API request.
 
-Hookfish can mount an allowlisted `/api/client` facade with `includeClient:
-true`. The facade may expose provider and connection metadata plus disconnect,
-but never connection access, authorization starts, secret writes, callbacks, or
-administration. Unlike the packaged operator dashboard, it does
-not accept a broker token from the browser to unlock the full API.
+There is no client operation corresponding to `connections.access()`. The
+browser can receive an authorization URL or `{ stored: true }`, but it cannot
+retrieve a provider access token, refresh token, API key, OAuth client secret,
+or broker credential.
+
+See [Application authentication](/authentication/application-auth) to connect
+Better Auth or implement another application auth provider.

@@ -44,4 +44,70 @@ describe('HookfishServer Hono application', () => {
     )
     expect(response.status).toBe(200)
   })
+
+  it('keeps the raw API same-server by default and allows exact opt-in origins', async () => {
+    const base = {
+      db: {
+        getDatabase() {
+          throw new Error('Stats does not access the database.')
+        },
+      },
+      providers: {},
+    }
+    const privateApi = await HookfishServer.init(base)
+    const privateResponse = await privateApi.fetch(
+      new Request('http://localhost/api/stats', {
+        headers: { Origin: 'https://app.example' },
+      }),
+      {},
+    )
+    expect(privateResponse.status).toBe(200)
+    expect(
+      privateResponse.headers.get('Access-Control-Allow-Origin'),
+    ).toBeNull()
+
+    const optedIn = await HookfishServer.init({
+      ...base,
+      rawApiOrigins: ['https://operator.example'],
+    })
+    const allowed = await optedIn.fetch(
+      new Request('http://localhost/api/stats', {
+        headers: { Origin: 'https://operator.example' },
+      }),
+      {},
+    )
+    expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://operator.example',
+    )
+    const denied = await optedIn.fetch(
+      new Request('http://localhost/api/stats', {
+        headers: { Origin: 'https://evil.example' },
+      }),
+      {},
+    )
+    expect(denied.headers.get('Access-Control-Allow-Origin')).toBeNull()
+  })
+
+  it('rejects wildcard origins and omits Swagger when disabled', async () => {
+    const options = {
+      db: {
+        getDatabase() {
+          throw new Error('Swagger does not access the database.')
+        },
+      },
+      providers: {},
+    }
+    await expect(
+      HookfishServer.init({ ...options, rawApiOrigins: ['*'] }),
+    ).rejects.toThrow('does not allow')
+    const server = await HookfishServer.init({
+      ...options,
+      includeSwagger: false,
+    })
+    expect(await server.request('/api/openapi.json')).toHaveProperty(
+      'status',
+      404,
+    )
+    expect(await server.request('/api/docs')).toHaveProperty('status', 404)
+  })
 })
