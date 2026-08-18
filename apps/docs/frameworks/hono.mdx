@@ -60,22 +60,18 @@ const app = new Hono()
 const applicationUrl =
   process.env.APPLICATION_URL ?? 'http://127.0.0.1:3000'
 
-function hookfishFor(brokerToken: string) {
-  return new Hookfish({
-    apiKey: brokerToken,
-    baseUrl: `${applicationUrl}/api`,
-  })
-}
-
 app.route('/', hookfishServer)
 
 const applicationRoutes = new Hono()
   .get('/rpc/integrations/connections', requireUser, async (context) => {
     const user = context.get('user')
     const brokerToken = await scopedBrokerTokenFor(user.organizationId)
-    const hookfishClient = hookfishFor(brokerToken)
+    const hookfish = new Hookfish({
+      apiKey: brokerToken,
+      baseUrl: `${applicationUrl}/api`,
+    })
 
-    const connections = await hookfishClient.connections.list({
+    const connections = await hookfish.connections.list({
       namespace: `organizations/${user.organizationId}`,
     })
 
