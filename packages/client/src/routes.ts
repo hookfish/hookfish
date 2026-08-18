@@ -573,8 +573,13 @@ export function createHookfishClientRoutes<Bindings extends object = object>(
     const mountPath = routePath.endsWith(wildcardMarker)
       ? routePath.slice(0, -wildcardMarker.length)
       : routePath.replace(/\/$/, '')
-    const relativePath = url.pathname.slice(mountPath.length)
-    url.pathname = `${browserApiPath}${relativePath === '/' ? '' : relativePath}`
+    const mountSegmentCount = mountPath.split('/').filter(Boolean).length
+    const relativeSegments = url.pathname
+      .split('/')
+      .slice(1 + mountSegmentCount)
+    url.pathname = relativeSegments.length
+      ? `${browserApiPath}/${relativeSegments.join('/')}`
+      : browserApiPath
     return backend.fetch(
       new Request(url, context.req.raw),
       context.env,

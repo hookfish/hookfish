@@ -32,6 +32,58 @@ describe('Hookfish client routes', () => {
     expect(hookfishFetch).toHaveBeenCalledOnce()
   })
 
+  it('mount beneath a parameterized Hono path', async () => {
+    const hookfishFetch = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/api/connections/providers')
+      expect(request.headers.get('Authorization')).toMatch(
+        /^Bearer hookfish_app_v1\./,
+      )
+      return Response.json({ providers: [] })
+    })
+    const routes = createHookfishClientRoutes({
+      auth: {
+        authenticate: async () => ({
+          authenticated: true,
+          principal: { subject: 'user-1', tenantId: 'tenant-a' },
+        }),
+      },
+      hookfishFetch,
+      rootApiKey: 'root-secret',
+    })
+    const app = new Hono().route('/:org/connections', routes)
+
+    const response = await app.request('/a/connections/providers')
+
+    expect(response.status).toBe(200)
+    expect(hookfishFetch).toHaveBeenCalledOnce()
+  })
+
+  it('mount beneath a percent-encoded Hono path', async () => {
+    const hookfishFetch = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/api/connections/providers')
+      expect(request.headers.get('Authorization')).toMatch(
+        /^Bearer hookfish_app_v1\./,
+      )
+      return Response.json({ providers: [] })
+    })
+    const routes = createHookfishClientRoutes({
+      auth: {
+        authenticate: async () => ({
+          authenticated: true,
+          principal: { subject: 'user-1', tenantId: 'tenant-a' },
+        }),
+      },
+      hookfishFetch,
+      rootApiKey: 'root-secret',
+    })
+    const app = new Hono().route('/café', routes)
+
+    const response = await app.request('/caf%C3%A9/providers')
+
+    expect(response.status).toBe(200)
+    expect(hookfishFetch).toHaveBeenCalledOnce()
+  })
+
   it('authenticates requests before calling the broker', async () => {
     const hookfishFetch = vi.fn(async () => Response.json({}))
     const routes = createHookfishClientRoutes({
