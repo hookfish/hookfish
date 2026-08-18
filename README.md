@@ -192,9 +192,7 @@ function ConnectionCount() {
 The application API exposes provider metadata, connection metadata, safe
 authorization and secret-write operations, and disconnects. It never exposes
 credential retrieval or administration. More detail is in
-[packages/api/OAUTH.md](packages/api/OAUTH.md). For a global dynamic MCP
-catalog with tenant-prefixed connections, see
-[docs/SMITHERY.md](docs/SMITHERY.md).
+[packages/api/OAUTH.md](packages/api/OAUTH.md).
 
 ## Commands
 

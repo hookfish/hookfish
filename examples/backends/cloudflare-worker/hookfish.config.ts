@@ -48,8 +48,7 @@ export default defineHookfishConfig<Env>({
   // }),
   //
   // Hookfish passes custom query and result fields through unchanged, so the
-  // registry may instead use cursors or return every provider. See
-  // docs/SMITHERY.md for the dynamic-MCP catalog and tenant-path pattern.
+  // registry may instead use cursors or return every provider.
   providers: (env) => ({
     // Provider factories receive the bindings passed to Hookfish.fetch.
     github: createGitHubProvider({
