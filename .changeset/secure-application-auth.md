@@ -1,8 +1,8 @@
 ---
-'@hookfish/api': major
-'@hookfish/backend': major
-'@hookfish/hooks': major
-'hookfish': major
+'@hookfish/api': minor
+'@hookfish/backend': minor
+'@hookfish/hooks': minor
+'hookfish': minor
 '@hookfish/auth-better-auth': minor
 ---
 
