@@ -31,8 +31,10 @@ An OAuth-backed connection that is not ready returns `401`:
 
 `@hookfish/sdk` exposes these as `HookfishError.authorizeUrl` and
 `HookfishError.expiresAt`. The SDK also preserves the HTTP status as `status`
-and the parsed response as `body`. Applications can translate those fields at
-their own framework boundary when they expose an HTTP endpoint.
+and the parsed response as `body`. `HookfishError.getResponse()` reconstructs
+the failed HTTP response, so Hono propagates an unhandled error without losing
+its status or JSON body. Applications can still translate those fields in an
+`onError` handler when they need a different public contract.
 
 ## Provider scope not granted
 

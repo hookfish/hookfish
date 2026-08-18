@@ -188,6 +188,24 @@ describe('scaffoldProject', () => {
     )
   })
 
+  it.each([
+    'node',
+    'docker',
+    'vercel',
+  ] as const)('mounts Hookfish in the generated %s Hono application', (backend) => {
+    const parentDirectory = temporaryDirectory()
+    const { directory } = scaffoldProject({
+      name: `broker-hono-${backend}`,
+      backend,
+      parentDirectory,
+    })
+    const server = readFileSync(path.join(directory, 'src/index.ts'), 'utf8')
+
+    expect(packageFile(directory).dependencies.hono).toBe('^4.12.34')
+    expect(server).toContain("import { Hono } from 'hono'")
+    expect(server).toContain("app.route('/', hookfishServer)")
+  })
+
   it('uses PostgreSQL through Hyperdrive for Cloudflare', () => {
     const parentDirectory = temporaryDirectory()
     const { directory } = scaffoldProject({

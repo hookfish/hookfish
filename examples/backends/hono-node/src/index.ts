@@ -1,15 +1,17 @@
 import { serve } from '@hono/node-server'
 import { HookfishServer } from '@hookfish/api'
+import { Hono } from 'hono'
 import config from '../hookfish.config.ts'
 
-const hookfish = await HookfishServer.init(config)
-const providers = await hookfish.getProviders(process.env)
+const hookfishServer = await HookfishServer.init(config)
+const providers = await hookfishServer.getProviders(process.env)
+const app = new Hono().route('/', hookfishServer)
 
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 serve(
   {
-    fetch: (request: Request) => hookfish.fetch(request, process.env),
+    fetch: (request: Request) => app.fetch(request, process.env),
     port,
     hostname,
   },

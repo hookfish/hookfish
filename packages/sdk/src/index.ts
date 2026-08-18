@@ -54,6 +54,7 @@ export class HookfishError extends Error {
   readonly authorizeUrl: string | undefined
   readonly expiresAt: string | undefined
   readonly body: unknown
+  private readonly response: Response | undefined
 
   constructor(response: Response | undefined, body: unknown) {
     const error = errorEnvelope(body)
@@ -70,6 +71,27 @@ export class HookfishError extends Error {
     this.expiresAt =
       typeof error?.expires_at === 'string' ? error.expires_at : undefined
     this.body = body
+    this.response = response
+  }
+
+  /** Return the failed HTTP response for Hono and other response-aware hosts. */
+  getResponse(): Response {
+    const headers = new Headers(this.response?.headers)
+    headers.delete('content-encoding')
+    headers.delete('content-length')
+
+    const body =
+      this.response === undefined
+        ? this.message
+        : typeof this.body === 'string'
+          ? this.body
+          : (JSON.stringify(this.body) ?? this.message)
+
+    return new Response(body, {
+      status: this.status ?? 500,
+      statusText: this.response?.statusText,
+      headers,
+    })
   }
 }
 
