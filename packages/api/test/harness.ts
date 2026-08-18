@@ -12,7 +12,7 @@ import {
 import { z } from 'zod'
 import { pglite } from '../../database/src/pglite'
 import type { Database } from '../src/db/types'
-import { HookfishServer } from '../src/index'
+import { type HookfishConfig, HookfishServer } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
@@ -143,7 +143,10 @@ export type TestHarness = {
 }
 
 export async function createHarness(
-  options: { returnTo?: string; trustedOrigins?: readonly string[] } = {},
+  options: Pick<
+    HookfishConfig<BrokerEnv>,
+    'auth' | 'clientOrigins' | 'rawApiOrigins' | 'returnTo' | 'trustedOrigins'
+  > = {},
 ): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'hookfish-connections-'))
   const stub = await startOAuthStub()

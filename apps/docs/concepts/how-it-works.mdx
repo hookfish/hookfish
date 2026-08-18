@@ -108,10 +108,10 @@ need a Hookfish connection.
 
 ## Security boundary
 
-`connections.access()` and `connections.setSecret()` are server-only. The
-optional browser facade exposes connection metadata and disconnect operations,
-never usable credentials or authorization starts. Authenticate your own
-application endpoint before calling Hookfish with a scoped broker token.
+`connections.access()` is server-only. The authenticated application API can
+start authorization and accept a write-only secret, but never returns a usable
+credential. Its auth provider verifies the current tenant before Hookfish
+creates a short-lived, tenant-scoped internal capability.
 
 Continue with [resource scopes](/concepts/scopes) or
 [remote MCP servers](/providers/remote-mcp).

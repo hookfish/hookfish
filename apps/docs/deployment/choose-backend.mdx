@@ -41,12 +41,12 @@ production storage path.
 
 ## Separate the dashboard from the backend
 
-The dashboard is static. You can serve it with `hookfish serve` and proxy `/api`
-to the broker, or deploy it separately by setting `VITE_BACKEND_URL` during the
-frontend build. Cross-origin deployments must also configure
-`HOOKFISH_FRONTEND_URL` and the corresponding trusted origin.
+The dashboard assets are static, but `hookfish serve` places a local operator
+BFF in front of them. The BFF keeps `HOOKFISH_API_KEY` in the server process,
+sets an ephemeral `HttpOnly` operator cookie, and forwards only explicit safe
+operations. It never proxies the raw API wholesale.
 
 <Tip>
-  Keep the operator dashboard and backend on one origin when possible. This
-  reduces the CORS configuration needed for administrative requests.
+  The packaged operator dashboard binds to loopback. Build a separately
+  authenticated application or SSO-protected operator service for remote use.
 </Tip>

@@ -91,7 +91,9 @@ export type ApplicationApi = typeof applicationRoutes
 
 `requireUser` authenticates the application's session and enforces its
 permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
-for the authorized organization. Neither concern belongs in Hookfish itself.
+for the authorized organization. This application-owned route remains useful
+when it needs custom business logic. For Hookfish's standard safe connection
+operations, configure `auth` and use `/api/client` instead.
 
 `HookfishServer` is a Hono sub-application. `Hookfish` calls its mounted `/api`
 routes through the application's URL, just as it would call a separately

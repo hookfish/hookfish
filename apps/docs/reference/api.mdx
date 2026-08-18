@@ -95,10 +95,10 @@ Clients should render `input_schema.fields`.
 
 ## Browser facade
 
-The optional `/api/client` facade exposes runtime stats, provider and
-connection metadata, and disconnect. It rejects access, `setSecret`, callbacks,
-and administration because successful access may contain a credential.
+When application auth is configured, `/api/client` exposes provider metadata,
+connection metadata, authorization starts, write-only secret storage, and
+disconnect. It rejects credential access, callbacks, and administration.
 
-Connection access responses set `Cache-Control: no-store`. List and get
-responses never include stored secrets, refresh tokens, OAuth client secrets,
-or bearer values.
+All application responses set `Cache-Control: no-store`. List and get responses
+never include stored secrets, refresh tokens, OAuth client secrets, or bearer
+values. Secret writes return only storage status.

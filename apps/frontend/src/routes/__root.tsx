@@ -1,11 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { BrokerAccess } from '@/components/credential-management'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { apiDocsUrl } from '@/lib/api-url'
-import { useManagementToken } from '@/lib/management-token'
 import '../index.css'
 
 const queryClient = new QueryClient()
@@ -23,8 +20,6 @@ function RootLayout() {
 }
 
 function AppShell() {
-  const { token, setToken } = useManagementToken()
-
   return (
     <TooltipProvider>
       <a
@@ -53,15 +48,6 @@ function AppShell() {
                   Connections
                 </Link>
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hidden md:inline-flex"
-                asChild
-              >
-                <a href={apiDocsUrl}>API Docs</a>
-              </Button>
-              <BrokerAccess token={token} onTokenChange={setToken} />
             </nav>
           </div>
         </header>

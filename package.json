@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "pnpm@10.26.2",
   "scripts": {
-    "dev": "node ./packages/cli/bin/hookfish.mjs repo-dev",
+    "dev": "pnpm --filter hookfish build && node ./packages/cli/bin/hookfish.mjs repo-dev",
     "docs": "cd apps/docs && mint dev",
     "build": "turbo build",
     "build:publish": "turbo build --filter='./packages/**'",

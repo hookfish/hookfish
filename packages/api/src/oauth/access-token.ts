@@ -6,6 +6,7 @@ import {
 } from './resource-path.js'
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
+const APPLICATION_TOKEN_PREFIX = 'hookfish_app_v1'
 const TOKEN_VERSION = 1
 
 export const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
@@ -21,6 +22,10 @@ export type ScopedAccessGrant = {
   name: string
   scopes: string[]
   expiresAt: number
+  application?: {
+    subject: string
+    tenantId: string
+  }
 }
 
 export type AccessGrant = RootAccessGrant | ScopedAccessGrant
@@ -32,6 +37,15 @@ type AccessTokenPayload = {
   iat: number
   exp: number
   jti: string
+}
+
+type ApplicationTokenPayload = {
+  v: typeof TOKEN_VERSION
+  sub: string
+  tenant: string
+  scopes: string[]
+  iat: number
+  exp: number
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -86,6 +100,117 @@ function invalidToken(): BrokerError {
     'invalid_access_token',
     'The broker access token is invalid or expired.',
   )
+}
+
+/**
+ * Mint a short-lived capability used only between the authenticated client
+ * facade and the raw API. It is stateless so Hookfish never has to persist a
+ * reusable tenant credential, and its resource scope is enforced by the raw
+ * API exactly like a named broker token.
+ */
+export async function mintApplicationAccessToken(
+  rootApiKey: string,
+  input: {
+    subject: string
+    tenantId: string
+    scopes: string[]
+    expiresIn?: number
+  },
+  now = Date.now(),
+): Promise<string> {
+  const expiresIn = input.expiresIn ?? 60
+  if (!Number.isInteger(expiresIn) || expiresIn < 10 || expiresIn > 300) {
+    throw new BrokerError(
+      500,
+      'invalid_application_token_ttl',
+      'Application capabilities must live for 10 through 300 seconds.',
+    )
+  }
+  const issuedAt = Math.floor(now / 1000)
+  const payload: ApplicationTokenPayload = {
+    v: TOKEN_VERSION,
+    sub: input.subject,
+    tenant: input.tenantId,
+    scopes: normalizeResourceScopes(input.scopes),
+    iat: issuedAt,
+    exp: issuedAt + expiresIn,
+  }
+  const encodedPayload = toBase64Url(
+    new TextEncoder().encode(JSON.stringify(payload)),
+  )
+  const signingInput = `${APPLICATION_TOKEN_PREFIX}.${encodedPayload}`
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await importSigningKey(rootApiKey),
+    new TextEncoder().encode(signingInput),
+  )
+  return `${signingInput}.${toBase64Url(new Uint8Array(signature))}`
+}
+
+async function verifyApplicationAccessToken(
+  rootApiKey: string,
+  token: string,
+  now = Date.now(),
+): Promise<ScopedAccessGrant> {
+  try {
+    const [prefix, encodedPayload, encodedSignature, extra] = token.split('.')
+    if (
+      prefix !== APPLICATION_TOKEN_PREFIX ||
+      !encodedPayload ||
+      !encodedSignature ||
+      extra !== undefined
+    ) {
+      throw invalidToken()
+    }
+    const signingInput = `${prefix}.${encodedPayload}`
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      await importSigningKey(rootApiKey),
+      fromBase64Url(encodedSignature),
+      new TextEncoder().encode(signingInput),
+    )
+    if (!valid) throw invalidToken()
+
+    const parsed: unknown = JSON.parse(
+      new TextDecoder().decode(fromBase64Url(encodedPayload)),
+    )
+    if (typeof parsed !== 'object' || parsed === null) throw invalidToken()
+    const version = Reflect.get(parsed, 'v')
+    const subject = Reflect.get(parsed, 'sub')
+    const tenant = Reflect.get(parsed, 'tenant')
+    const scopes = Reflect.get(parsed, 'scopes')
+    const issuedAt = Reflect.get(parsed, 'iat')
+    const expiresAt = Reflect.get(parsed, 'exp')
+    const nowSeconds = Math.floor(now / 1000)
+    if (
+      version !== TOKEN_VERSION ||
+      typeof subject !== 'string' ||
+      !subject ||
+      typeof tenant !== 'string' ||
+      !tenant ||
+      !Array.isArray(scopes) ||
+      !scopes.every((scope) => typeof scope === 'string') ||
+      !Number.isInteger(issuedAt) ||
+      !Number.isInteger(expiresAt) ||
+      issuedAt > nowSeconds + 30 ||
+      expiresAt <= nowSeconds ||
+      expiresAt - issuedAt > 300
+    ) {
+      throw invalidToken()
+    }
+    return {
+      kind: 'scoped',
+      name: `application.${toBase64Url(new TextEncoder().encode(tenant)).slice(0, 96)}`,
+      scopes: normalizeResourceScopes(scopes),
+      expiresAt,
+      application: { subject, tenantId: tenant },
+    }
+  } catch (error) {
+    if (error instanceof BrokerError && error.code === 'invalid_access_token') {
+      throw error
+    }
+    throw invalidToken()
+  }
 }
 
 /**
@@ -412,6 +537,9 @@ export async function authenticateAccessToken(
   token: string,
   now = Date.now(),
 ): Promise<ScopedAccessGrant> {
+  if (token.startsWith(`${APPLICATION_TOKEN_PREFIX}.`)) {
+    return verifyApplicationAccessToken(rootApiKey, token, now)
+  }
   const verified = await verifyAccessToken(rootApiKey, token, now)
   const stored = await db.getValidBrokerAccessToken(
     verified.name,

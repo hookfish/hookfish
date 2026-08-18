@@ -138,8 +138,7 @@ if (!/^[a-z][a-z\\d+.-]*:\\/\\//i.test(dataDir)) {
 
 export default defineHookfishConfig({
   db: pglite(dataDir),
-  includeClient: true,
-  includeSwagger: true,
+  includeSwagger: false,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   ${providerConfig},
@@ -177,8 +176,7 @@ export default defineHookfishConfig({
   db: databaseUrl
     ? postgres(databaseUrl)
     : pglite(dataDir),
-  includeClient: true,
-  includeSwagger: true,
+  includeSwagger: false,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   ${providerConfig},
@@ -204,7 +202,7 @@ serve({
   port,
 })
 
-console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api/docs\`)
+console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api\`)
 `
 
 const bunServer = `import { HookfishServer } from '@hookfish/api'
@@ -220,7 +218,7 @@ Bun.serve({
   port,
 })
 
-console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api/docs\`)
+console.log(\`Hookfish backend running at http://\${hostname}:\${port}/api\`)
 `
 
 const vercelServer = `import { HookfishServer } from '@hookfish/api'
@@ -256,8 +254,7 @@ const db = postgres<Env>(
 const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
 const hookfish = await HookfishServer.init<Env>({
   db,
-  includeClient: true,
-  includeSwagger: true,
+  includeSwagger: false,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl],
   providers: {

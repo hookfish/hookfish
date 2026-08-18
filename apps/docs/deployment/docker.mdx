@@ -15,8 +15,8 @@ pnpm dev
 ```
 
 The generated `compose.yaml` publishes port `8787`, reads `.env`, and persists
-the `hookfish-data` volume. The dashboard runs separately and proxies `/api` to
-the container.
+the `hookfish-data` volume. The dashboard runs separately behind the local
+operator BFF and forwards only explicit safe operations to the container.
 
 ## Start the service in the background
 

@@ -1,4 +1,4 @@
-import { backendUrl } from './api-url'
+import { browserApiUrl } from './api-url'
 
 export type AuthorizationInput = {
   configuration?: Record<string, unknown>
@@ -13,23 +13,13 @@ export type PendingAuthorization = {
   expiresAt: string
 }
 
-export type ConnectionToken =
-  | { ready: true; secret: string }
-  | { ready: false; authorization: PendingAuthorization }
-
 class ManagementApiError extends Error {
   readonly code: string | undefined
-  readonly details: Record<string, unknown> | undefined
 
-  constructor(
-    message: string,
-    code?: string,
-    details?: Record<string, unknown>,
-  ) {
+  constructor(message: string, code?: string) {
     super(message)
     this.name = 'ManagementApiError'
     this.code = code
-    this.details = details
   }
 }
 
@@ -41,108 +31,58 @@ function encodePath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
 }
 
-async function request<T>(
-  token: string,
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   headers.set('Accept', 'application/json')
-  headers.set('Authorization', `Bearer ${token}`)
   if (init?.body) headers.set('Content-Type', 'application/json')
-  const response = await fetch(`${backendUrl}/api${path}`, { ...init, headers })
+  const response = await fetch(`${browserApiUrl}${path}`, {
+    credentials: 'include',
+    ...init,
+    headers,
+  })
   if (response.ok) return response.json()
 
   const body: unknown = await response.json().catch(() => undefined)
   const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-  const message = error?.message
   throw new ManagementApiError(
-    typeof message === 'string'
-      ? message
+    typeof error?.message === 'string'
+      ? error.message
       : `Hookfish request failed (${response.status}).`,
     typeof error?.code === 'string' ? error.code : undefined,
-    error,
   )
 }
 
 export async function setConnectionSecret(
-  token: string,
   path: string,
   secret: string,
 ): Promise<void> {
-  await request(token, `/connections/secret/${encodePath(path)}`, {
+  await request(`/connections/${encodePath(path)}/secret`, {
     method: 'PUT',
     body: JSON.stringify({ secret }),
   })
 }
 
-export async function validateBrokerToken(token: string): Promise<void> {
-  await request(token, '/connections/providers')
-}
-
-export async function getConnectionToken(
-  token: string,
-  path: string,
-  providerId: string,
-): Promise<ConnectionToken> {
-  try {
-    const result = await request<{ secret: string }>(
-      token,
-      `/connections/access/${encodePath(path)}`,
-      { method: 'POST' },
-    )
-    return { ready: true, secret: result.secret }
-  } catch (error) {
-    if (
-      error instanceof ManagementApiError &&
-      error.code === 'authorization_required' &&
-      typeof error.details?.authorize_url === 'string' &&
-      typeof error.details.expires_at === 'string'
-    ) {
-      return {
-        ready: false,
-        authorization: {
-          path,
-          providerId,
-          authorizeUrl: error.details.authorize_url,
-          expiresAt: error.details.expires_at,
-        },
-      }
-    }
-    throw error
-  }
-}
-
 export async function authorizeConnection(
-  token: string,
   path: string,
   providerId: string,
   input: AuthorizationInput,
 ): Promise<PendingAuthorization> {
-  try {
-    await request(token, `/connections/authorize/${encodePath(path)}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        ...(input.configuration ? { configuration: input.configuration } : {}),
-        ...(input.scopes?.length ? { scopes: input.scopes } : {}),
-        ...(input.returnTo ? { return_to: input.returnTo } : {}),
-      }),
-    })
-  } catch (error) {
-    if (
-      error instanceof ManagementApiError &&
-      error.code === 'authorization_required' &&
-      typeof error.details?.authorize_url === 'string' &&
-      typeof error.details.expires_at === 'string'
-    ) {
-      return {
-        path,
-        providerId,
-        authorizeUrl: error.details.authorize_url,
-        expiresAt: error.details.expires_at,
-      }
-    }
-    throw error
+  const result = await request<{
+    path: string
+    authorize_url: string
+    expires_at: string
+  }>(`/connections/${encodePath(path)}/authorize`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...(input.configuration ? { configuration: input.configuration } : {}),
+      ...(input.scopes?.length ? { scopes: input.scopes } : {}),
+      ...(input.returnTo ? { return_to: input.returnTo } : {}),
+    }),
+  })
+  return {
+    path: result.path,
+    providerId,
+    authorizeUrl: result.authorize_url,
+    expiresAt: result.expires_at,
   }
-  throw new Error('Hookfish did not return an authorization URL.')
 }

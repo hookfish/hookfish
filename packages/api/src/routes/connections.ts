@@ -1,8 +1,10 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { isSecretProvider } from '@hookfish/provider'
+import { stripAnyApplicationNamespace } from '../application-auth.js'
 import type { DatabaseInput } from '../db/binding.js'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
 import { assertConnectionAccess } from '../oauth/access-token.js'
+import type { AccessGrant } from '../oauth/access-token.js'
 import {
   accessConnection,
   authorizeConnection,
@@ -37,6 +39,18 @@ type ConnectionRouteOptions = {
   returnTo?: string
   trustedOrigins?: readonly string[]
   onEvent?: HookfishEventHandler
+}
+
+function applicationAudit(grant: AccessGrant): {
+  subject?: string
+  tenantId?: string
+} {
+  return grant.kind === 'scoped' && grant.application
+    ? {
+        subject: grant.application.subject,
+        tenantId: grant.application.tenantId,
+      }
+    : {}
 }
 
 const errorSchema = z.object({
@@ -516,6 +530,7 @@ export function createConnectionRoutes<Bindings extends object>(
           occurredAt: new Date(),
           providerId: parsed.providerId,
           connectionPath: parsed.path,
+          ...applicationAudit(c.get('accessGrant')),
         })
       }
       throw error
@@ -526,6 +541,7 @@ export function createConnectionRoutes<Bindings extends object>(
       providerId: parsed.providerId,
       connectionPath: parsed.path,
       refreshed: result.refreshed,
+      ...applicationAudit(c.get('accessGrant')),
     })
     c.header('Cache-Control', 'no-store')
     c.header('Pragma', 'no-cache')
@@ -575,6 +591,7 @@ export function createConnectionRoutes<Bindings extends object>(
           occurredAt: new Date(),
           providerId: parsed.providerId,
           connectionPath: parsed.path,
+          ...applicationAudit(c.get('accessGrant')),
         })
       }
       throw error
@@ -600,6 +617,7 @@ export function createConnectionRoutes<Bindings extends object>(
       occurredAt: new Date(),
       providerId: parsed.providerId,
       connectionPath: parsed.path,
+      ...applicationAudit(c.get('accessGrant')),
     })
     return c.json({ path: parsed.path, stored: true as const }, 200)
   })
@@ -653,6 +671,7 @@ export function createConnectionRoutes<Bindings extends object>(
       occurredAt: new Date(),
       providerId: parsed.providerId,
       connectionPath: parsed.path,
+      ...applicationAudit(c.get('accessGrant')),
     })
     return c.json(result, 200)
   })
@@ -718,15 +737,16 @@ export function createConnectionRoutes<Bindings extends object>(
       },
       await resolveProviders(c.env),
     )
-    const path = formatConnectionPath(
+    const internalPath = formatConnectionPath(
       completed.connection.namespace,
       completed.connection.providerId,
     )
+    const path = stripAnyApplicationNamespace(internalPath)
     await emitHookfishEvent(options.onEvent, {
       type: 'authorization.connected',
       occurredAt: new Date(),
       providerId,
-      connectionPath: path,
+      connectionPath: internalPath,
       replayed: completed.replayed,
     })
     const returnTo = completed.state.returnTo ?? options.returnTo

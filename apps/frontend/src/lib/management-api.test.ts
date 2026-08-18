@@ -1,163 +1,49 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  authorizeConnection,
-  getConnectionToken,
-  setConnectionSecret,
-  validateBrokerToken,
-} from './management-api'
+import { authorizeConnection, setConnectionSecret } from './management-api'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
-describe('management API', () => {
-  it('validates a broker API key before the frontend stores it', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ providers: [] })))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await expect(validateBrokerToken('broker-key')).resolves.toBeUndefined()
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/connections/providers',
-      expect.objectContaining({
-        headers: expect.any(Headers),
-      }),
-    )
-    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
-    expect(headers.get('Authorization')).toBe('Bearer broker-key')
-  })
-
-  it('rejects an invalid broker API key', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: { code: 'unauthorized', message: 'Invalid broker API key.' },
-          }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    )
-
-    await expect(validateBrokerToken('invalid')).rejects.toThrow(
-      'Invalid broker API key.',
-    )
-  })
-
-  it('fetches a connection token only through explicit access', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ secret: 'provider-token' })),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
-    await expect(
-      getConnectionToken('broker-key', 'team/notion', 'notion'),
-    ).resolves.toEqual({ ready: true, secret: 'provider-token' })
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/connections/access/team/notion',
-      expect.objectContaining({
-        method: 'POST',
-      }),
-    )
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
-  })
-
-  it('returns authorization details instead of a token when required', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: {
-              code: 'authorization_required',
-              message: 'Authorize this connection.',
-              authorize_url: 'https://provider.example/authorize',
-              expires_at: '2026-08-12T20:00:00.000Z',
-            },
-          }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    )
-
-    await expect(
-      getConnectionToken('broker-key', 'team/notion', 'notion'),
-    ).resolves.toEqual({
-      ready: false,
-      authorization: {
+describe('application connection API', () => {
+  it('starts authorization without sending a broker credential', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({
         path: 'team/notion',
-        providerId: 'notion',
-        authorizeUrl: 'https://provider.example/authorize',
-        expiresAt: '2026-08-12T20:00:00.000Z',
-      },
-    })
-  })
-
-  it('turns authorization-required responses into pending authorizations', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: {
-            code: 'authorization_required',
-            message: 'Authorize this connection.',
-            authorize_url: 'https://provider.example/authorize',
-            expires_at: '2026-08-12T20:00:00.000Z',
-          },
-        }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } },
-      ),
+        authorize_url: 'https://notion.example/authorize',
+        expires_at: '2030-01-01T00:00:00.000Z',
+      }),
     )
-    vi.stubGlobal('fetch', fetchMock)
-
     await expect(
-      authorizeConnection('token', 'team/notion', 'notion', {
-        configuration: {
-          resource_url: 'https://mcp.example.com/notion',
-        },
+      authorizeConnection('team/notion', 'notion', {
         scopes: ['read'],
-        returnTo: 'https://dashboard.example/connections',
+        returnTo: 'https://app.example/connections',
       }),
     ).resolves.toEqual({
       path: 'team/notion',
       providerId: 'notion',
-      authorizeUrl: 'https://provider.example/authorize',
-      expiresAt: '2026-08-12T20:00:00.000Z',
+      authorizeUrl: 'https://notion.example/authorize',
+      expiresAt: '2030-01-01T00:00:00.000Z',
     })
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/connections/authorize/team/notion',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          configuration: {
-            resource_url: 'https://mcp.example.com/notion',
-          },
-          scopes: ['read'],
-          return_to: 'https://dashboard.example/connections',
-        }),
-      }),
-    )
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe('/api/client/connections/team/notion/authorize')
+    expect(init).toMatchObject({ method: 'POST', credentials: 'include' })
+    expect(new Headers(init?.headers).get('Authorization')).toBeNull()
   })
 
-  it('writes provider secrets through the unified connection endpoint', async () => {
+  it('stores a provider secret and receives no secret value back', async () => {
     const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ path: 'team/openai/secret', stored: true }),
-        ),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-
-    await setConnectionSecret('token', 'team/openai/secret', 'sk-example')
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/connections/secret/team/openai/secret',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({ secret: 'sk-example' }),
-      }),
-    )
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ path: 'team/secret', stored: true }))
+    await setConnectionSecret('team/secret', 'sk-example')
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe('/api/client/connections/team/secret/secret')
+    expect(init).toMatchObject({
+      method: 'PUT',
+      credentials: 'include',
+      body: JSON.stringify({ secret: 'sk-example' }),
+    })
+    expect(new Headers(init?.headers).get('Authorization')).toBeNull()
   })
 })

@@ -2,14 +2,15 @@
 
 Fetch-compatible composition layer for a Hookfish deployment.
 
-`HookfishServer.init(...).fetch` applies this composition automatically. Import this
-lower-level package only when composing a raw Hookfish-compatible API handler
-yourself.
+`createHookfish(...).fetch` and `HookfishServer.init(...).fetch` apply this
+composition automatically. Import the lower-level package only when composing
+a raw Hookfish-compatible handler yourself.
 
-- `/api/*` exposes the raw Hookfish API and OAuth callback surface.
-- `/api/client/*` is a browser-safe facade that forwards an allowlisted subset to
-  Hookfish with a server-side broker credential.
-- `/api/client/health` reports the selected host runtime.
+- `/api/*` exposes the server-only raw Hookfish API and public OAuth callback.
+- `/api/client/*` exposes explicit safe operations only when `config.auth` is
+  configured.
+- `/api/client/health` reports the selected host runtime after application
+  authentication.
 
 ```ts
 import { createHookfishBackend } from '@hookfish/backend'
@@ -18,7 +19,7 @@ import config from './hookfish.config'
 const backend = createHookfishBackend({
   config,
   hookfishFetch: rawApiFetch,
-  brokerApiKey: (env) => env.HOOKFISH_API_KEY,
+  rootApiKey: (env) => env.HOOKFISH_API_KEY,
 })
 
 export default {
@@ -28,8 +29,7 @@ export default {
 }
 ```
 
-Set `authorizeBrowserRequest` before exposing the facade as a production
-dashboard. The facade protects the broker credential; it does not define your
-application's user/session model. `config.includeClient` controls whether the
-facade is mounted, and `config.trustedOrigins` supplies its cross-origin
-allowlist unless `browserOrigins` is explicitly overridden.
+The configured application auth provider verifies the user and their current
+tenant. The backend signs an ephemeral tenant-scoped capability and strips
+application cookies and bearer headers before calling the raw API. It never
+returns a broker or provider credential to the client.

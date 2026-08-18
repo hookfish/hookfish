@@ -35,7 +35,6 @@ const db = pglite(
 
 export default defineHookfishConfig({
   db,
-  includeClient: true,
   includeSwagger: true,
   returnTo: frontendUrl,
   trustedOrigins: [frontendUrl], // Allow per-flow return paths on this origin.

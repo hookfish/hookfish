@@ -33,25 +33,11 @@ export function createHookfishOptions(
   keys: HookfishKeys,
 ) {
   return {
-    stats: () =>
-      apiQueryOptions({
-        queryKey: keys.stats(),
-        queryFn: async ({ signal }) => {
-          const response = await client.stats.$get(undefined, {
-            init: { signal },
-          })
-          if (!response.ok) return throwHookfishApiError(response)
-          return response.json()
-        },
-      }),
-
     providers: () =>
       apiQueryOptions({
         queryKey: keys.providers(),
         queryFn: async ({ signal }) => {
-          const response = await client.connections.providers.$get(undefined, {
-            init: { signal },
-          })
+          const response = await client.providers({ signal })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
@@ -61,10 +47,7 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.connections(filter),
         queryFn: async ({ signal }) => {
-          const response = await client.connections.$get(
-            { query: filter },
-            { init: { signal } },
-          )
+          const response = await client.listConnections(filter, { signal })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
@@ -74,9 +57,7 @@ export function createHookfishOptions(
       apiQueryOptions({
         queryKey: keys.connection(path),
         queryFn: async ({ signal }) => {
-          const response = await client.connections.entry[
-            ':connection_path{.+}'
-          ].$get({ param: { connection_path: path } }, { init: { signal } })
+          const response = await client.getConnection(path, { signal })
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },
@@ -86,9 +67,7 @@ export function createHookfishOptions(
       apiMutationOptions({
         mutationKey: keys.disconnect(),
         mutationFn: async (path: string) => {
-          const response = await client.connections.entry[
-            ':connection_path{.+}'
-          ].$delete({ param: { connection_path: path } })
+          const response = await client.disconnectConnection(path)
           if (!response.ok) return throwHookfishApiError(response)
           return response.json()
         },

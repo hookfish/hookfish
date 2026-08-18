@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host ${FRONTEND_HOST:-${HOST:-127.0.0.1}} --port ${FRONTEND_PORT:-${PORT:-5173}}",
-    "build": "vite build && tsc -b",
-    "build:cli": "FRONTEND_OUT_DIR=../../packages/cli/dist/frontend vite build",
+    "build": "vite build && node ./scripts/check-browser-bundle.mjs dist && tsc -b",
+    "build:cli": "FRONTEND_OUT_DIR=../../packages/cli/dist/frontend vite build && node ./scripts/check-browser-bundle.mjs ../../packages/cli/dist/frontend",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "preview": "vite preview --host ${HOST:-127.0.0.1} --port ${PORT:-4173}"

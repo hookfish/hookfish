@@ -55,19 +55,11 @@ function hookfishForOrigin(origin: string) {
   const existing = hookfishByOrigin.get(origin)
   if (existing) return existing
 
-  const hookfish = HookfishServer.init<InspectorEnvironment>(
-    {
-      ...config,
-      includeClient: true,
-      returnTo: origin,
-      trustedOrigins: [origin],
-    },
-    {
-      runtime: 'tanstack-start',
-      browserOrigins: [origin],
-      brokerApiKey: (environment) => environment?.HOOKFISH_API_KEY || 'test',
-    },
-  )
+  const hookfish = HookfishServer.init<InspectorEnvironment>({
+    ...config,
+    returnTo: origin,
+    trustedOrigins: [origin],
+  })
   hookfishByOrigin.set(origin, hookfish)
   return hookfish
 }
