@@ -659,16 +659,37 @@ export async function accessConnection(
         if (!latest.secret || !isExpired(latest)) {
           return { connection: latest, refreshed: false }
         }
-        return {
-          connection: await refreshConnection(
-            db,
-            env,
-            latest,
-            providers,
-            input.redirectUri,
-            input.clientMetadataUrl,
-          ),
-          refreshed: true,
+        try {
+          return {
+            connection: await refreshConnection(
+              db,
+              env,
+              latest,
+              providers,
+              input.redirectUri,
+              input.clientMetadataUrl,
+            ),
+            refreshed: true,
+          }
+        } catch (error) {
+          if (
+            error instanceof BrokerError &&
+            error.code === 'reauthorization_required'
+          ) {
+            const invalidated = await db.updateConnection(latest.id, {
+              secret: null,
+              refreshToken: null,
+              expiresAt: null,
+            })
+            if (!invalidated) {
+              throw new BrokerError(
+                404,
+                'connection_not_found',
+                'Connection not found.',
+              )
+            }
+          }
+          throw error
         }
       })
       connection = result.connection

@@ -5,4 +5,5 @@
 ---
 
 Coordinate concurrent OAuth token refreshes with renewable database leases in
-the bundled PostgreSQL, PGlite, and Durable Objects adapters.
+the bundled PostgreSQL, PGlite, and Durable Objects adapters. A rejected refresh
+invalidates the unusable credentials so concurrent waiters share the failure.

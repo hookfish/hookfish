@@ -289,6 +289,59 @@ describe('connections', () => {
     expect(bodies.filter(({ refreshed }) => refreshed)).toHaveLength(1)
   })
 
+  it('shares a rejected refresh through the database lease', async () => {
+    const authorization = await harness.authorize()
+    const callbackUrl = new URL(authorization.callbackUrl)
+    const callback = await harness.fetch(
+      `${callbackUrl.pathname}${callbackUrl.search}`,
+    )
+    expect(callback.status).toBe(200)
+
+    const connection = await harness.db.getConnection('user/personal', 'stub')
+    if (!connection) throw new Error('Connection was not stored.')
+    await harness.db.updateConnection(connection.id, {
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+    harness.stub.tokenRequests.length = 0
+    harness.stub.tokenDelayMs = 100
+    harness.stub.tokenStatus = 400
+
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        harness.fetch('/api/connections/access/user/personal/stub', {
+          method: 'POST',
+        }),
+      ),
+    )
+    const bodies = await Promise.all(
+      responses.map(async (response) => {
+        expect(response.status).toBe(401)
+        return z
+          .object({
+            error: z.object({
+              code: z.literal('authorization_required'),
+              authorize_url: z.url(),
+            }),
+          })
+          .parse(await response.json())
+      }),
+    )
+
+    expect(
+      harness.stub.tokenRequests.filter(
+        ({ grantType }) => grantType === 'refresh_token',
+      ),
+    ).toHaveLength(1)
+    expect(bodies).toHaveLength(8)
+    await expect(
+      harness.db.getConnection('user/personal', 'stub'),
+    ).resolves.toMatchObject({
+      secret: null,
+      refreshToken: null,
+      expiresAt: null,
+    })
+  })
+
   it('expires refresh leases and ignores releases from stale owners', async () => {
     const stored = await harness.db.putConnection({
       namespace: 'lease',
