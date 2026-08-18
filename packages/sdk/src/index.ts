@@ -1,5 +1,11 @@
 import {
-  type Client,
+  Client as McpClient,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client'
+import { Octokit } from 'octokit'
+import packageJson from '../package.json' with { type: 'json' }
+import {
+  type Client as ApiClient,
   type Config,
   createClient,
 } from './generated/client/index.js'
@@ -107,6 +113,27 @@ export type ConnectionFilter = {
   providerId?: string
 }
 
+export type McpProviderInput = Omit<ConnectionAccessInput, 'configuration'> & {
+  /** Canonical Hookfish connection path ending in `/mcp`. */
+  connection: string
+  /** Streamable HTTP MCP resource URL. */
+  url: string | URL
+  /** An unconnected MCP client to use instead of the Hookfish default. */
+  client?: McpClient
+}
+
+export type McpProviderClient = McpClient & {
+  [Symbol.asyncDispose](): Promise<void>
+}
+
+export type GitHubProviderInput = Omit<
+  ConnectionAccessInput,
+  'configuration'
+> & {
+  /** Canonical Hookfish connection path ending in `/github`. */
+  connection: string
+}
+
 type AccessTokenInput = Parameters<typeof adminTokensCreate>[0]
 
 /**
@@ -120,9 +147,15 @@ async function data<T>(result: Promise<{ data: T }>): Promise<T> {
   return (await result).data
 }
 
+function withAsyncDispose(client: McpClient): McpProviderClient {
+  return Object.assign(client, {
+    [Symbol.asyncDispose]: () => client.close(),
+  })
+}
+
 /** End-to-end typed client for a Hookfish broker. */
 export class Hookfish {
-  private readonly client: Client
+  private readonly client: ApiClient
 
   constructor(options: HookfishOptions) {
     const { apiKey, ...clientOptions } = options
@@ -188,6 +221,67 @@ export class Hookfish {
       return data(connectionsProviders(options))
     },
   }
+
+  readonly provider = {
+    github: async (input: GitHubProviderInput): Promise<Octokit> => {
+      const { secret } = await this.connections.access(input.connection, {
+        scopes: input.scopes,
+        returnTo: input.returnTo,
+      })
+      return new Octokit({ auth: secret })
+    },
+    mcp: async (input: McpProviderInput): Promise<McpProviderClient> => {
+      const resourceUrl = new URL(input.url)
+      const connectionInput: ConnectionAccessInput = {
+        configuration: { resource_url: resourceUrl.href },
+        scopes: input.scopes,
+        returnTo: input.returnTo,
+      }
+      const mcp = withAsyncDispose(
+        input.client ??
+          new McpClient(
+            { name: packageJson.name, version: packageJson.version },
+            { versionNegotiation: { mode: 'auto' } },
+          ),
+      )
+
+      try {
+        await mcp.connect(
+          new StreamableHTTPClientTransport(resourceUrl, {
+            authProvider: {
+              token: async () =>
+                (
+                  await this.connections.access(
+                    input.connection,
+                    connectionInput,
+                  )
+                ).secret,
+              onUnauthorized: async () => {
+                await this.connections.authorize(
+                  input.connection,
+                  connectionInput,
+                )
+              },
+            },
+          }),
+        )
+        return mcp
+      } catch (error) {
+        await mcp.close().catch(() => undefined)
+        throw error
+      }
+    },
+  }
+
+  /** Create an authenticated Octokit client for a GitHub connection. */
+  readonly github = (
+    connection: string,
+    input: Omit<ConnectionAccessInput, 'configuration'> = {},
+  ): Promise<Octokit> => this.provider.github({ connection, ...input })
+
+  /** Create a connected MCP client for a remote server. */
+  readonly mcp = (input: McpProviderInput): Promise<McpProviderClient> =>
+    this.provider.mcp(input)
 
   readonly accessTokens = {
     list: () => data(adminTokensList(this.requestOptions())),

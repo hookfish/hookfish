@@ -31,11 +31,11 @@ server's OAuth discovery metadata and supported client-registration mechanism.
   </Step>
 
   <Step title="Add the Gmail route">
-    Open another terminal, enter the generated project, and install the SDKs:
+    Open another terminal, enter the generated project, and install the SDK:
 
     ```bash
     cd my-broker
-    pnpm add @hookfish/sdk @modelcontextprotocol/client
+    pnpm add @hookfish/sdk
     ```
 
     Replace the generated `src/index.ts` with this application:
@@ -44,19 +44,15 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     import { serve } from '@hono/node-server'
     import { HookfishServer } from '@hookfish/api'
     import { Hookfish } from '@hookfish/sdk'
-    import {
-      Client as McpClient,
-      StreamableHTTPClientTransport,
-    } from '@modelcontextprotocol/client'
     import { Hono } from 'hono'
     import config from '../hookfish.config'
 
     const apiKey = process.env.HOOKFISH_API_KEY
     if (!apiKey) throw new Error('HOOKFISH_API_KEY is required')
 
-    const port = Number(process.env.PORT ?? 8787)
-    const hostname = process.env.HOST ?? '127.0.0.1'
-    const backendOrigin = `http://${hostname}:${port}`
+    const PORT = Number(process.env.PORT ?? 8787)
+    const HOSTNAME = process.env.HOST ?? '127.0.0.1'
+    const BACKEND_ORIGIN = `http://${HOSTNAME}:${PORT}`
     const hookfishServer = await HookfishServer.init(config)
     const app = new Hono()
 
@@ -64,71 +60,43 @@ server's OAuth discovery metadata and supported client-registration mechanism.
 
     const hookfish = new Hookfish({
       apiKey,
-      baseUrl: `${backendOrigin}/api`,
+      baseUrl: `${BACKEND_ORIGIN}/api`,
     })
 
     app.get('/inbox', async () => {
-      const mcp = new McpClient(
-        { name: 'gmail-inbox-quickstart', version: '1.0.0' },
-        { versionNegotiation: { mode: 'auto' } },
-      )
+      await using mcp = await hookfish.mcp({
+        connection: 'user/personal/gmail/mcp',
+        url: 'https://gmail.run.tools',
+      })
 
-      try {
-        await mcp.connect(
-          new StreamableHTTPClientTransport(
-            new URL('https://gmail.run.tools'),
-            {
-              authProvider: {
-                token: async () => {
-                  const connection = await hookfish.connections.access(
-                    'user/personal/gmail/mcp',
-                    {
-                      configuration: {
-                        resource_url: 'https://gmail.run.tools',
-                      },
-                    },
-                  )
-                  return connection.secret
-                },
-                onUnauthorized: async () => {
-                  await hookfish.connections.authorize(
-                    'user/personal/gmail/mcp',
-                  )
-                },
-              },
-            },
-          ),
-        )
+      const inbox = await mcp.callTool({
+        name: 'Gmail_SearchEmailsByQuery',
+        arguments: {
+          query: 'in:inbox',
+          max_results: 10,
+          result_detail: 'lightweight',
+        },
+      })
 
-        const inbox = await mcp.callTool({
-          name: 'Gmail_SearchEmailsByQuery',
-          arguments: {
-            query: 'in:inbox',
-            max_results: 10,
-            result_detail: 'lightweight',
-          },
-        })
-
-        return new Response(JSON.stringify(inbox), {
-          headers: { 'Content-Type': 'application/json' },
-        })
-      } finally {
-        await mcp.close()
-      }
+      return new Response(JSON.stringify(inbox), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     })
 
     serve({
       fetch: (request) => app.fetch(request, process.env),
-      hostname,
-      port,
+      hostname: HOSTNAME,
+      port: PORT,
     })
 
-    console.log(`Hookfish backend running at ${backendOrigin}/api/docs`)
+    console.log(`Hookfish backend running at ${BACKEND_ORIGIN}/api/docs`)
     ```
 
     `Hookfish` calls the mounted `/api` routes through the application's URL.
-    The scaffold's watch process reloads the application after you save the
-    file.
+    `hookfish.mcp()` creates and connects an MCP client with Hookfish-managed
+    authentication. `await using` closes the client when the route handler
+    exits. The scaffold's watch process reloads the application after you save
+    the file.
   </Step>
 
   <Step title="Authorize Gmail and read the inbox">
@@ -145,8 +113,8 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     `HookfishError` preserves the failed Hookfish response through Hono. You do
     not need an `onError` handler to retain the status, error code, or
     authorization URL. If the MCP server later rejects the credential,
-    `onUnauthorized` starts a fresh authorization flow and the new response
-    bubbles through Hono in the same way.
+    Hookfish starts a fresh authorization flow and the new response bubbles
+    through Hono in the same way.
   </Step>
 </Steps>
 

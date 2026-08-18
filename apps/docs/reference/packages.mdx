@@ -10,7 +10,7 @@ provider implementations, React integration, and CLI into published packages.
 | --- | --- |
 | `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
 | `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
-| `@hookfish/sdk` | Generated, end-to-end typed `Hookfish` client for trusted application code |
+| `@hookfish/sdk` | Typed `Hookfish` client plus authenticated Octokit and MCP client initialization for trusted application code |
 | `@hookfish/database` | Shared database types and migration helper |
 | `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
@@ -55,10 +55,17 @@ const hookfish = new Hookfish({
   baseUrl: 'https://broker.example.com/api',
 })
 
-const { secret } = await hookfish.connections.access(
+const github = await hookfish.github(
   'organizations/acme/billing/github',
 )
 ```
+
+Use `hookfish.mcp()` when you want an authenticated, connected MCP client
+instead of the raw connection credential. The SDK includes both Octokit and the
+MCP client dependency. Install `@modelcontextprotocol/client` directly only
+when you construct and pass a custom MCP client instance. The same initializers
+are also available as `hookfish.provider.github()` and
+`hookfish.provider.mcp()`.
 
 Use `@hookfish/api` for the broker runtime and lower-level composition. Import
 the migration helper from `@hookfish/database`.
