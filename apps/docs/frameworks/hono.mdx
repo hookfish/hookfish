@@ -93,7 +93,9 @@ export type ApplicationApi = typeof applicationRoutes
 permissions. `scopedBrokerTokenFor` selects a server-side Hookfish credential
 for the authorized organization. This application-owned route remains useful
 when it needs custom business logic. For Hookfish's standard safe connection
-operations, configure `auth` and use `/api/client` instead.
+operations, configure `auth` and use `/api/client` instead. To choose the mount
+point yourself, create the facade with `createHookfishClientRoutes` from
+`@hookfish/client` and pass it to `app.route()`.
 
 `HookfishServer` is a Hono sub-application. `Hookfish` calls its mounted `/api`
 routes through the application's URL, just as it would call a separately

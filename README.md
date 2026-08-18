@@ -5,7 +5,8 @@ backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
-- `packages/backend` — authenticated application facade plus raw API composition
+- `packages/backend` — compatibility entry point for the client facade
+- `packages/client` — mountable authenticated client routes for Hono applications
 - `packages/api` — shared Hono API and OAuth broker
 - `packages/auth-better-auth` — Better Auth session and organization adapter
 - `packages/sdk` — generated, typed server client for Hookfish operations

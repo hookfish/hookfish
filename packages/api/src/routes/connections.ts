@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import { isSecretProvider } from '@hookfish/provider'
-import { stripAnyApplicationNamespace } from '../application-auth.js'
+import { stripAnyApplicationNamespace } from '@hookfish/client'
 import type { DatabaseInput } from '../db/binding.js'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
 import { assertConnectionAccess } from '../oauth/access-token.js'

@@ -7,8 +7,11 @@ import {
 import { Hono, type ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
-import type { ApplicationAuthProvider } from './application-auth.js'
-import { createHookfishBackend, type HookfishBackendOptions } from './client.js'
+import {
+  type ApplicationAuthProvider,
+  createHookfishBackend,
+  type HookfishBackendOptions,
+} from '@hookfish/client'
 import { type DatabaseInput, migrateDatabase } from './db/binding.js'
 import type { HookfishEventHandler } from './events.js'
 import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config.js'
@@ -299,7 +302,7 @@ export type {
   ApplicationAuthProvider,
   ApplicationAuthResult,
   ApplicationPrincipal,
-} from './application-auth.js'
+} from '@hookfish/client'
 
 export {
   createProviderSource,

@@ -44,6 +44,9 @@ export function formatConnectionPath(
   ).path
 }
 
+// Keep these structural checks in sync with the client implementation in
+// packages/client/src/resource-path.ts. This copy throws BrokerError so raw API
+// routes retain their existing error mapping.
 function hasUnsafePathCharacters(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0)
