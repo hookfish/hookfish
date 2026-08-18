@@ -38,19 +38,20 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     pnpm add @hookfish/sdk
     ```
 
-    Replace the generated `src/index.ts` with this application:
+    Update the generated Hono app to match the version below. Lines highlighted
+    in green are the additions and changes that connect the app to the SDK.
 
-    ```ts
+    ```ts title="src/index.ts" lines
     import { serve } from '@hono/node-server'
     import { HookfishServer } from '@hookfish/api'
-    import { Hookfish } from '@hookfish/sdk'
+    import { Hookfish } from '@hookfish/sdk' // [!code ++]
     import { Hono } from 'hono'
     import config from '../hookfish.config'
 
-    const apiKey = process.env.HOOKFISH_API_KEY
+    const apiKey = process.env.HOOKFISH_API_KEY // [!code ++:2]
     if (!apiKey) throw new Error('HOOKFISH_API_KEY is required')
 
-    const PORT = Number(process.env.PORT ?? 8787)
+    const PORT = Number(process.env.PORT ?? 8787) // [!code ++:3]
     const HOSTNAME = process.env.HOST ?? '127.0.0.1'
     const BACKEND_ORIGIN = `http://${HOSTNAME}:${PORT}`
     const hookfishServer = await HookfishServer.init(config)
@@ -58,12 +59,12 @@ server's OAuth discovery metadata and supported client-registration mechanism.
 
     app.route('/', hookfishServer)
 
-    const hookfish = new Hookfish({
+    const hookfish = new Hookfish({ // [!code ++:4]
       apiKey,
       baseUrl: `${BACKEND_ORIGIN}/api`,
     })
 
-    app.get('/inbox', async () => {
+    app.get('/inbox', async () => { // [!code ++:19]
       await using mcp = await hookfish.mcp({
         connection: 'user/personal/gmail/mcp',
         url: 'https://gmail.run.tools',
@@ -85,11 +86,11 @@ server's OAuth discovery metadata and supported client-registration mechanism.
 
     serve({
       fetch: (request) => app.fetch(request, process.env),
-      hostname: HOSTNAME,
-      port: PORT,
+      hostname: HOSTNAME, // [!code ++]
+      port: PORT, // [!code ++]
     })
 
-    console.log(`Hookfish backend running at ${BACKEND_ORIGIN}/api/docs`)
+    console.log(`Hookfish backend running at ${BACKEND_ORIGIN}/api/docs`) // [!code ++]
     ```
 
     `Hookfish` calls the mounted `/api` routes through the application's URL.
