@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     env:
       TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       TURBO_SCM_HEAD: ${{ github.sha }}
@@ -45,12 +45,13 @@ jobs:
         run: pnpm exec turbo run build --affected
 
       # The build scripts already run TypeScript for every workspace except the
-      # inspector, whose Vite build only transpiles source files.
+      # inspector, whose Vite build only transpiles source files. Run through
+      # Turbo so the inspector's workspace dependencies are built first.
       - name: Typecheck inspector
-        run: pnpm --filter @hookfish/inspector typecheck
+        run: pnpm exec turbo run typecheck --filter=@hookfish/inspector
 
       - name: Load the published packages under plain Node
-        run: pnpm --filter @hookfish/example-hono-node verify-runtime
+        run: pnpm exec turbo run verify-runtime --filter=@hookfish/example-hono-node
 
       - name: Validate generated Cloudflare types
         run: pnpm exec turbo run cf-typecheck --affected
