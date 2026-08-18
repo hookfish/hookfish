@@ -1,11 +1,11 @@
 {
-  "name": "@hookfish/backend",
-  "version": "0.3.0",
+  "name": "@hookfish/client",
+  "version": "0.0.0",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "https://github.com/hookfish/hookfish.git",
-    "directory": "packages/backend"
+    "directory": "packages/client"
   },
   "publishConfig": {
     "access": "public"
@@ -28,7 +28,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@hookfish/client": "workspace:*"
+    "hono": "^4.12.34"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",

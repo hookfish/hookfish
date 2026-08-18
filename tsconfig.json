@@ -16,6 +16,7 @@
     { "path": "./packages/api" },
     { "path": "./packages/auth-better-auth" },
     { "path": "./packages/backend" },
+    { "path": "./packages/client" },
     { "path": "./packages/cli" },
     { "path": "./packages/database" },
     { "path": "./packages/hooks" },

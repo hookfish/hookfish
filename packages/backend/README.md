@@ -1,10 +1,11 @@
 # `@hookfish/backend`
 
-Fetch-compatible composition layer for a Hookfish deployment.
+Compatibility entry point for the authenticated client facade. New code should
+import from `@hookfish/client`.
 
-`createHookfish(...).fetch` and `HookfishServer.init(...).fetch` apply this
-composition automatically. Import the lower-level package only when composing
-a raw Hookfish-compatible handler yourself.
+Existing `createHookfishBackend` imports continue to work. New Hono
+applications can mount `createHookfishClientRoutes` from `@hookfish/client` at
+any path with `app.route()`.
 
 - `/api/*` exposes the server-only raw Hookfish API and public OAuth callback.
 - `/api/client/*` exposes explicit safe operations only when `config.auth` is
