@@ -156,6 +156,23 @@ export interface Database {
     id: string,
     update: ConnectionUpdate,
   ): DatabaseResult<Connection | undefined>
+  /**
+   * Atomically claim the refresh lease for a connection. Bundled adapters
+   * implement this so refreshes coordinate across processes and instances.
+   */
+  acquireConnectionRefreshLock?(
+    id: string,
+    owner: string,
+    leaseDurationMs: number,
+  ): DatabaseResult<boolean>
+  /** Extend a lease only when it is still owned by this caller. */
+  renewConnectionRefreshLock?(
+    id: string,
+    owner: string,
+    leaseDurationMs: number,
+  ): DatabaseResult<boolean>
+  /** Release a refresh lease only when it is still owned by this caller. */
+  releaseConnectionRefreshLock?(id: string, owner: string): DatabaseResult<void>
   listConnections(
     filter?: ConnectionFilter,
   ): DatabaseResult<ConnectionSummary[]>

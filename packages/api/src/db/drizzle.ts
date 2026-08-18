@@ -1,4 +1,15 @@
-import { and, asc, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm'
 import {
   brokerAccessTokens,
   connections,
@@ -139,6 +150,46 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .where(eq(connections.id, id))
         .returning()
       return connection
+    },
+
+    async acquireConnectionRefreshLock(id, owner, leaseDurationMs) {
+      const now = sql<Date>`CURRENT_TIMESTAMP`
+      const expiresAt = sql<Date>`CURRENT_TIMESTAMP + (${leaseDurationMs} * INTERVAL '1 millisecond')`
+      const claimed = await db
+        .update(connections)
+        .set({ refreshLockOwner: owner, refreshLockExpiresAt: expiresAt })
+        .where(
+          and(
+            eq(connections.id, id),
+            or(
+              isNull(connections.refreshLockOwner),
+              lte(connections.refreshLockExpiresAt, now),
+            ),
+          ),
+        )
+        .returning()
+      return claimed.length > 0
+    },
+
+    async renewConnectionRefreshLock(id, owner, leaseDurationMs) {
+      const expiresAt = sql<Date>`CURRENT_TIMESTAMP + (${leaseDurationMs} * INTERVAL '1 millisecond')`
+      const renewed = await db
+        .update(connections)
+        .set({ refreshLockExpiresAt: expiresAt })
+        .where(
+          and(eq(connections.id, id), eq(connections.refreshLockOwner, owner)),
+        )
+        .returning()
+      return renewed.length > 0
+    },
+
+    async releaseConnectionRefreshLock(id, owner) {
+      await db
+        .update(connections)
+        .set({ refreshLockOwner: null, refreshLockExpiresAt: null })
+        .where(
+          and(eq(connections.id, id), eq(connections.refreshLockOwner, owner)),
+        )
     },
 
     async listConnections(filter = {}) {

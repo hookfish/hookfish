@@ -23,6 +23,8 @@ export type OAuthStub = {
   nextTokenStatus: number | null
   /** Return a non-JSON body on the next token call (still HTTP 200). */
   nextTokenNonJson: boolean
+  /** Delay token responses so tests can overlap requests. */
+  tokenDelayMs: number
   tokenRequests: Array<{
     grantType: string
     body: Record<string, string>
@@ -82,6 +84,7 @@ export async function startOAuthStub(): Promise<OAuthStub> {
     nextTokenResponse: null,
     nextTokenStatus: null,
     nextTokenNonJson: false,
+    tokenDelayMs: 0,
     tokenRequests,
     close: async () => undefined,
   }
@@ -119,6 +122,10 @@ export async function startOAuthStub(): Promise<OAuthStub> {
         authorization: req.headers.authorization,
         contentType: req.headers['content-type'],
       })
+
+      if (stub.tokenDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, stub.tokenDelayMs))
+      }
 
       if (stub.nextTokenStatus !== null) {
         const status = stub.nextTokenStatus

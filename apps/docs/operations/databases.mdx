@@ -51,6 +51,12 @@ await migrateDatabase(db, process.env)
 Execute this script from CI or another trusted environment with direct database
 access. Do not put the database URL in source control.
 
+PostgreSQL also stores one renewable refresh lease on each connection row. This
+is safe with connection pools because Hookfish does not keep a transaction or
+session advisory lock open while it calls the OAuth provider. Lease acquisition
+and release are short atomic updates. A crashed holder loses the lease after its
+expiry, and active holders renew it during longer refresh requests.
+
 ## Durable Objects
 
 The SQLite Durable Objects adapter partitions storage by a selected object and
@@ -72,4 +78,7 @@ const db = defineDatabase(
 ```
 
 The returned database must implement Hookfish's exported `Database` persistence
-contract.
+contract. Implement the optional connection refresh-lock methods for
+cross-instance refresh coordination. Without them, Hookfish falls back to a
+process-local lock. You can instead set `refreshCoordinator` in the runtime
+options.

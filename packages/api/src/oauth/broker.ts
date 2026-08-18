@@ -21,6 +21,10 @@ import {
   requireEncryptionKey,
 } from './crypto.js'
 import { BrokerError } from './errors.js'
+import {
+  type BoundRefreshCoordinator,
+  withDatabaseRefreshLock,
+} from './refresh-lock.js'
 import { formatConnectionPath } from './resource-path.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -620,6 +624,7 @@ export async function accessConnection(
     scopes?: string[]
   },
   providers: BoundProviderSource = defaultBoundProviderSource,
+  refreshCoordinator?: BoundRefreshCoordinator,
 ): Promise<AccessConnectionResult> {
   let connection = await ensureConnection(db, input, providers)
   const provider = await getProvider(providers, input.providerId)
@@ -643,21 +648,51 @@ export async function accessConnection(
   let refreshed = false
   if (connection.secret && isExpired(connection)) {
     try {
-      connection = await refreshConnection(
-        db,
-        env,
-        connection,
-        providers,
-        input.redirectUri,
-        input.clientMetadataUrl,
-      )
-      refreshed = true
+      const withRefreshLock =
+        refreshCoordinator ??
+        (<T>(lockedConnection: Connection, refresh: () => Promise<T>) =>
+          withDatabaseRefreshLock(db, lockedConnection, refresh))
+      const result = await withRefreshLock(connection, async () => {
+        const latest = await db.getConnection(
+          connection.namespace,
+          connection.providerId,
+        )
+        if (!latest) {
+          throw new BrokerError(
+            404,
+            'connection_not_found',
+            'Connection not found.',
+          )
+        }
+        if (!latest.secret || !isExpired(latest)) {
+          return { connection: latest, refreshed: false }
+        }
+        return {
+          connection: await refreshConnection(
+            db,
+            env,
+            latest,
+            providers,
+            input.redirectUri,
+            input.clientMetadataUrl,
+          ),
+          refreshed: true,
+        }
+      })
+      connection = result.connection
+      refreshed = result.refreshed
     } catch (error) {
       if (
         !(error instanceof BrokerError) ||
         error.code !== 'reauthorization_required'
       )
         throw error
+
+      const latest = await db.getConnection(
+        connection.namespace,
+        connection.providerId,
+      )
+      if (latest) connection = latest
     }
   }
 

@@ -58,6 +58,35 @@ describe('HookfishDurableObject', () => {
     })
   })
 
+  it('leases one connection refresh to one owner', async () => {
+    const db = database('refresh-lease')
+    const connection = await db.putConnection({
+      namespace: 'shared',
+      providerId: 'github',
+      configuration: {},
+    })
+
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-a', 60_000),
+    ).toBe(true)
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+    expect(
+      await db.renewConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+
+    await db.releaseConnectionRefreshLock(connection.id, 'owner-b')
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+
+    await db.releaseConnectionRefreshLock(connection.id, 'owner-a')
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(true)
+  })
+
   it('isolates named database partitions', async () => {
     const acme = database('tenant:acme')
     const globex = database('tenant:globex')
