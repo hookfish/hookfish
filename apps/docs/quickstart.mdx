@@ -1,11 +1,11 @@
 ---
 title: "Quickstart"
-description: "Run Hookfish locally, connect Gmail through MCP, and read an inbox from one TypeScript script."
+description: "Mount Hookfish in a Hono app, connect Gmail through MCP, and read your inbox."
 ---
 
-This guide creates a local Hookfish API and calls it from one TypeScript
-script. The script completes OAuth for `https://gmail.run.tools`, connects its
-MCP client, and prints the Gmail inbox without using the Hookfish dashboard.
+This guide creates one Hono application. The app mounts `HookfishServer`, calls
+it in-process with `Hookfish`, and reads Gmail through
+`https://gmail.run.tools`.
 
 ## Prerequisites
 
@@ -25,13 +25,13 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     pnpm dev
     ```
 
-    The scaffold registers the trusted `mcp` and `secret` provider
-    implementations and creates gitignored `OAUTH_ENCRYPTION_KEY` and
-    `HOOKFISH_API_KEY` values. The Hookfish API listens at
-    `http://127.0.0.1:8787/api` by default. Leave this terminal running.
+    The generated `src/index.ts` is a Hono application with `HookfishServer`
+    mounted at `/api`. The scaffold also registers the trusted `mcp` and
+    `secret` providers and creates gitignored `OAUTH_ENCRYPTION_KEY` and
+    `HOOKFISH_API_KEY` values. Leave this terminal running.
   </Step>
 
-  <Step title="Create the Gmail script">
+  <Step title="Add the Gmail route">
     Open another terminal, enter the generated project, and install the SDKs:
 
     ```bash
@@ -39,23 +39,38 @@ server's OAuth discovery metadata and supported client-registration mechanism.
     pnpm add @hookfish/sdk @modelcontextprotocol/client
     ```
 
-    Then create `gmail.ts` in the project root:
+    Replace the generated `src/index.ts` with this application:
 
     ```ts
+    import { serve } from '@hono/node-server'
+    import { HookfishServer } from '@hookfish/api'
     import { Hookfish } from '@hookfish/sdk'
     import {
       Client as McpClient,
       StreamableHTTPClientTransport,
     } from '@modelcontextprotocol/client'
-    async function main() {
-      if (!process.env.HOOKFISH_API_KEY) {
-        throw new Error('HOOKFISH_API_KEY is required')
-      }
+    import { Hono } from 'hono'
+    import config from '../hookfish.config'
 
-      const hookfish = new Hookfish({
-        apiKey: process.env.HOOKFISH_API_KEY,
-        baseUrl: 'http://127.0.0.1:8787/api',
-      })
+    const apiKey = process.env.HOOKFISH_API_KEY
+    if (!apiKey) throw new Error('HOOKFISH_API_KEY is required')
+
+    const port = Number(process.env.PORT ?? 8787)
+    const hostname = process.env.HOST ?? '127.0.0.1'
+    const backendOrigin = `http://${hostname}:${port}`
+    const hookfishServer = await HookfishServer.init(config)
+    const app = new Hono()
+
+    app.route('/', hookfishServer)
+
+    const hookfish = new Hookfish({
+      apiKey,
+      baseUrl: `${backendOrigin}/api`,
+      fetch: (input, init) =>
+        app.fetch(new Request(input, init), process.env),
+    })
+
+    app.get('/inbox', async () => {
       const mcp = new McpClient(
         { name: 'gmail-inbox-quickstart', version: '1.0.0' },
         { versionNegotiation: { mode: 'auto' } },
@@ -79,12 +94,15 @@ server's OAuth discovery metadata and supported client-registration mechanism.
                   return connection.secret
                 },
                 onUnauthorized: async () => {
-                  await hookfish.connections.authorize('user/personal/gmail/mcp')
+                  await hookfish.connections.authorize(
+                    'user/personal/gmail/mcp',
+                  )
                 },
               },
             },
           ),
         )
+
         const inbox = await mcp.callTool({
           name: 'Gmail_SearchEmailsByQuery',
           arguments: {
@@ -94,28 +112,44 @@ server's OAuth discovery metadata and supported client-registration mechanism.
           },
         })
 
-        console.dir(inbox, { depth: null })
+        return new Response(JSON.stringify(inbox), {
+          headers: { 'Content-Type': 'application/json' },
+        })
       } finally {
         await mcp.close()
       }
-    }
+    })
 
-    await main()
+    serve({
+      fetch: (request) => app.fetch(request, process.env),
+      hostname,
+      port,
+    })
+
+    console.log(`Hookfish backend running at ${backendOrigin}/api/docs`)
     ```
+
+    The custom `fetch` lets `Hookfish` call the mounted server in the same
+    process. The scaffold's watch process reloads the application after you
+    save the file.
   </Step>
 
-  <Step title="Run the script">
-    Load the generated environment file and run `gmail.ts`:
+  <Step title="Authorize Gmail and read the inbox">
+    Request the inbox:
 
     ```bash
-    node --env-file=.env --import tsx gmail.ts
+    curl http://127.0.0.1:8787/inbox
     ```
 
-    The first run throws a `HookfishError` containing a fresh `authorizeUrl`.
-    Open that URL and approve access, then run the command again to print the
-    inbox result. If the MCP server later rejects the credential,
-    `onUnauthorized` starts a fresh authorization flow and lets the same error
-    bubble up.
+    The first request returns `401 authorization_required` with a fresh
+    `authorize_url`. Open that URL and approve access, then run the `curl`
+    command again to receive the inbox result.
+
+    `HookfishError` preserves the failed Hookfish response through Hono. You do
+    not need an `onError` handler to retain the status, error code, or
+    authorization URL. If the MCP server later rejects the credential,
+    `onUnauthorized` starts a fresh authorization flow and the new response
+    bubbles through Hono in the same way.
   </Step>
 </Steps>
 
@@ -134,9 +168,10 @@ that supplies a different URL for the same path. A concrete Gmail provider at
 `gmail`.
 
 <Warning>
-  Run this script only in a trusted environment. The MCP auth provider obtains
-  the usable credential and sends it to the configured MCP server.
+  Keep the `/inbox` route behind your application's authentication before using
+  this pattern with real users. Hookfish returns the usable MCP credential only
+  to this trusted server code.
 </Warning>
 
 Next, read [How Hookfish works](/concepts/how-it-works) and
-[Token scoping](/authorization/token-scoping).
+[Application authentication](/authentication/application-auth).

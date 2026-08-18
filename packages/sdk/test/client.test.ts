@@ -1,3 +1,4 @@
+import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import { Hookfish, HookfishError } from '../src'
 
@@ -82,6 +83,41 @@ describe('Hookfish', () => {
       status: 401,
       authorizeUrl: 'https://provider.test/authorize?state=fresh',
       expiresAt: '2026-08-12T18:00:00.000Z',
+    })
+  })
+
+  it('propagates the Hookfish response through Hono', async () => {
+    const hookfish = new Hookfish({
+      apiKey: 'broker-key',
+      baseUrl: 'http://local/api',
+      fetch: async () =>
+        Response.json(
+          {
+            error: {
+              code: 'authorization_required',
+              message: 'Authorize this connection.',
+              authorize_url: 'https://provider.test/authorize?state=fresh',
+            },
+          },
+          {
+            status: 401,
+            headers: { 'X-Hookfish-Test': 'preserved' },
+          },
+        ),
+    })
+    const app = new Hono().get('/connection', async (context) =>
+      context.json(await hookfish.connections.access('user/personal/gmail')),
+    )
+
+    const response = await app.request('/connection')
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('X-Hookfish-Test')).toBe('preserved')
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'authorization_required',
+        authorize_url: 'https://provider.test/authorize?state=fresh',
+      },
     })
   })
 

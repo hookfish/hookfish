@@ -188,14 +188,18 @@ export default defineHookfishConfig({
 
 const nodeServer = `import { serve } from '@hono/node-server'
 import { HookfishServer } from '@hookfish/api'
+import { Hono } from 'hono'
 import config from '../hookfish.config'
 
-const hookfish = await HookfishServer.init(config)
+const hookfishServer = await HookfishServer.init(config)
+const app = new Hono()
 const port = Number(process.env.PORT ?? 8787)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
+app.route('/', hookfishServer)
+
 serve({
-  fetch: (request) => hookfish.fetch(request, process.env),
+  fetch: (request) => app.fetch(request, process.env),
   hostname,
   port,
 })
@@ -223,10 +227,10 @@ const vercelServer = `import { HookfishServer } from '@hookfish/api'
 import { Hono } from 'hono'
 import config from '../hookfish.config'
 
-const hookfish = await HookfishServer.init(config)
+const hookfishServer = await HookfishServer.init(config)
 const app = new Hono()
 
-app.all('*', (context) => hookfish.fetch(context.req.raw, process.env))
+app.route('/', hookfishServer)
 
 export default app
 `
@@ -303,6 +307,7 @@ function packageJson(
       scripts['dev:server'] =
         `${serverEnvironment} PORT=${backendPort} node --env-file=.env --watch --import tsx src/index.ts`
       dependencies['@hono/node-server'] = '^2.0.12'
+      dependencies.hono = '^4.12.34'
       devDependencies['@types/node'] = '^24.12.3'
       devDependencies.tsx = '^4.23.1'
       break
@@ -337,6 +342,7 @@ function packageJson(
         `${serverEnvironment} PORT=${backendPort} docker compose up --build`
       scripts.deploy = 'docker compose up --build -d'
       dependencies['@hono/node-server'] = '^2.0.12'
+      dependencies.hono = '^4.12.34'
       dependencies.tsx = '^4.23.1'
       devDependencies['@types/node'] = '^24.12.3'
       break

@@ -4,7 +4,7 @@ import {
   type ConnectionProvider,
   type ProviderRegistry,
 } from '@hookfish/provider'
-import type { ExecutionContext } from 'hono'
+import { Hono, type ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
 import {
@@ -187,13 +187,25 @@ export type HookfishRuntime<Bindings extends object = object> = {
   authorizeBrowserRequest?: BrowserRequestAuthorizer<Bindings>
 }
 
+function optionalExecutionContext(context: {
+  readonly executionCtx: ExecutionContext
+}): ExecutionContext | undefined {
+  try {
+    return context.executionCtx
+  } catch {
+    return undefined
+  }
+}
+
 /**
- * A self-contained Hookfish request handler.
+ * A self-contained Hookfish Hono application and request handler.
  *
- * `fetch` is an instance property so it can be passed directly to Node,
- * Cloudflare Workers, or another Fetch-compatible host without rebinding it.
+ * Pass the instance directly to `app.route('/', hookfish)` to embed Hookfish in
+ * a larger Hono application, or pass `fetch` to any Fetch-compatible host.
  */
-export class HookfishServer<Bindings extends object = object> {
+export class HookfishServer<Bindings extends object = object> extends Hono<{
+  Bindings: Bindings
+}> {
   readonly db: DatabaseInput<Bindings>
   readonly includeClient: boolean
   readonly includeSwagger: boolean
@@ -201,19 +213,12 @@ export class HookfishServer<Bindings extends object = object> {
   private readonly resolveProviders: (
     bindings: Bindings,
   ) => Promise<BoundProviderSource>
-  private readonly app: {
-    fetch(
-      request: Request,
-      bindings?: Bindings | object,
-      executionContext?: ExecutionContext,
-    ): Response | Promise<Response>
-  }
-
   private constructor(
     options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings>,
     resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   ) {
+    super()
     this.resolveProviders = resolveProviders
     this.db = options.db
     this.includeClient = options.includeClient ?? false
@@ -226,7 +231,7 @@ export class HookfishServer<Bindings extends object = object> {
       this.includeSwagger,
     )
     const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
-    this.app = createHookfishBackend({
+    const backend = createHookfishBackend({
       config: options,
       hookfishFetch: (request, bindings, executionContext) =>
         rawApp.fetch(request, bindings ?? {}, executionContext),
@@ -238,6 +243,20 @@ export class HookfishServer<Bindings extends object = object> {
           requireBrokerApiKey(resolveBrokerConfig(bindings ?? {}))),
       authorizeBrowserRequest: runtime.authorizeBrowserRequest,
     })
+
+    const handleRequest = (context: {
+      readonly env: Bindings
+      readonly executionCtx: ExecutionContext
+      readonly req: { readonly raw: Request }
+    }) =>
+      backend.fetch(
+        context.req.raw,
+        context.env,
+        optionalExecutionContext(context),
+      )
+
+    this.all('/api', handleRequest)
+    this.all('/api/*', handleRequest)
   }
 
   static async init<Bindings extends object = object>(
@@ -246,15 +265,7 @@ export class HookfishServer<Bindings extends object = object> {
   ): Promise<HookfishServer<Bindings>> {
     validateHookfishOptions(options)
     const resolveProviders = createProviderResolver(options.providers)
-    return new HookfishServer(options, runtime, resolveProviders)
-  }
-
-  readonly fetch = (
-    request: Request,
-    bindings: Bindings | undefined = undefined,
-    executionContext?: ExecutionContext,
-  ): Response | Promise<Response> => {
-    return this.app.fetch(request, bindings ?? {}, executionContext)
+    return new HookfishServer<Bindings>(options, runtime, resolveProviders)
   }
 
   /** Resolve one provider without listing a lazy source. */
