@@ -21,10 +21,7 @@ import {
   requireEncryptionKey,
 } from './crypto.js'
 import { BrokerError } from './errors.js'
-import {
-  type BoundRefreshCoordinator,
-  withDatabaseRefreshLock,
-} from './refresh-lock.js'
+import { withDatabaseRefreshLock } from './refresh-lock.js'
 import { formatConnectionPath } from './resource-path.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -624,7 +621,6 @@ export async function accessConnection(
     scopes?: string[]
   },
   providers: BoundProviderSource = defaultBoundProviderSource,
-  refreshCoordinator?: BoundRefreshCoordinator,
 ): Promise<AccessConnectionResult> {
   let connection = await ensureConnection(db, input, providers)
   const provider = await getProvider(providers, input.providerId)
@@ -648,11 +644,7 @@ export async function accessConnection(
   let refreshed = false
   if (connection.secret && isExpired(connection)) {
     try {
-      const withRefreshLock =
-        refreshCoordinator ??
-        (<T>(lockedConnection: Connection, refresh: () => Promise<T>) =>
-          withDatabaseRefreshLock(db, lockedConnection, refresh))
-      const result = await withRefreshLock(connection, async () => {
+      const result = await withDatabaseRefreshLock(db, connection, async () => {
         const latest = await db.getConnection(
           connection.namespace,
           connection.providerId,

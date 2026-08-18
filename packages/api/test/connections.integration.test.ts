@@ -333,49 +333,6 @@ describe('connections', () => {
     ).resolves.toBe(true)
   })
 
-  it('supports a runtime refresh coordinator', async () => {
-    await harness.close()
-    const lockRequests: Array<{
-      connectionId: string
-      connectionPath: string
-      nodeEnv: string | undefined
-    }> = []
-    harness = await createHarness({
-      async refreshCoordinator(request, refresh) {
-        lockRequests.push({
-          connectionId: request.connectionId,
-          connectionPath: request.connectionPath,
-          nodeEnv: request.bindings.NODE_ENV,
-        })
-        return refresh()
-      },
-    })
-
-    const authorization = await harness.authorize()
-    const callbackUrl = new URL(authorization.callbackUrl)
-    expect(
-      await harness.fetch(`${callbackUrl.pathname}${callbackUrl.search}`),
-    ).toHaveProperty('status', 200)
-    const connection = await harness.db.getConnection('user/personal', 'stub')
-    if (!connection) throw new Error('Connection was not stored.')
-    await harness.db.updateConnection(connection.id, {
-      expiresAt: new Date(Date.now() - 60_000),
-    })
-
-    expect(
-      await harness.fetch('/api/connections/access/user/personal/stub', {
-        method: 'POST',
-      }),
-    ).toHaveProperty('status', 200)
-    expect(lockRequests).toEqual([
-      {
-        connectionId: connection.id,
-        connectionPath: 'user/personal/stub',
-        nodeEnv: 'test',
-      },
-    ])
-  })
-
   it('lists metadata without returning stored credentials', async () => {
     await harness.fetch('/api/connections/secret/team/openai/secret', {
       method: 'PUT',

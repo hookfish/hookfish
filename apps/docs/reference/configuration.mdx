@@ -47,9 +47,9 @@ small input schema for connection identity and non-secret configuration.
 ## Runtime options
 
 The second argument to `createHookfish` or `HookfishServer.init` accepts
-`runtime`, `clientOrigins`, `rootApiKey`, and `refreshCoordinator`. Most
-deployments should let Hookfish resolve `HOOKFISH_API_KEY` from server bindings
-instead of passing `rootApiKey` directly.
+`runtime`, `clientOrigins`, and `rootApiKey`. Most deployments should let
+Hookfish resolve `HOOKFISH_API_KEY` from server bindings instead of passing
+`rootApiKey` directly.
 
 Use a provider factory when credentials come from request bindings. Use a lazy
 `ProviderSource` for a large application-owned catalog while keeping provider
@@ -61,22 +61,4 @@ The bundled PostgreSQL, PGlite, and Durable Objects adapters coordinate token
 refreshes with a renewable lease on the connection row. Concurrent callers for
 one expired connection wait for the winner, reload the stored connection, and
 reuse its new access token. Traffic for other connections does not contend on
-the same lease.
-
-Set the runtime `refreshCoordinator` only when this deployment uses another
-distributed lock service. The callback receives a stable connection ID and
-path, plus the request bindings. Your implementation must acquire the lock
-atomically, wait for the current holder, expire abandoned locks, and release
-only locks owned by that caller. Run the supplied `refresh` callback exactly
-once while holding the lock.
-
-For example, pass an application-owned Upstash adapter at startup:
-
-```ts
-import { createHookfish } from '@hookfish/api'
-import { upstashCoordinator } from './upstash-coordinator'
-
-const hookfish = await createHookfish(config, {
-  refreshCoordinator: upstashCoordinator(redis),
-})
-```
+the same lease, and no external lock service is required.

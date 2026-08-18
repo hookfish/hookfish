@@ -13,7 +13,6 @@ import { type DatabaseInput, migrateDatabase } from './db/binding.js'
 import type { HookfishEventHandler } from './events.js'
 import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config.js'
 import type { BrokerContext } from './oauth/middleware.js'
-import type { RefreshCoordinator } from './oauth/refresh-lock.js'
 import {
   type BoundProviderSource,
   createProviderResolver,
@@ -99,7 +98,6 @@ function createApiRoutes<Bindings extends object>(
     'returnTo' | 'trustedOrigins' | 'rawApiOrigins' | 'onEvent'
   >,
   includeSwagger = true,
-  refreshCoordinator?: RefreshCoordinator<Bindings>,
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -145,7 +143,6 @@ function createApiRoutes<Bindings extends object>(
       '/connections',
       createConnectionRoutes(resolveProviders, database, {
         ...options,
-        refreshCoordinator,
       }),
     )
 
@@ -181,8 +178,6 @@ export type HookfishRuntime<Bindings extends object = object> = {
   clientOrigins?: HookfishBackendOptions<Bindings>['clientOrigins']
   /** Override the root key used to sign ephemeral application capabilities. */
   rootApiKey?: HookfishBackendOptions<Bindings>['rootApiKey']
-  /** Override database-backed refresh coordination for this deployment. */
-  refreshCoordinator?: RefreshCoordinator<Bindings>
 }
 
 function optionalExecutionContext(context: {
@@ -225,7 +220,6 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
       this.db,
       options,
       this.includeSwagger,
-      runtime.refreshCoordinator,
     )
     const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
     const backend = createHookfishBackend({
@@ -336,7 +330,3 @@ export type {
   OAuthStateUpdate,
 } from './db/types.js'
 export type { HookfishEvent, HookfishEventHandler } from './events.js'
-export type {
-  RefreshCoordinator,
-  RefreshCoordinatorRequest,
-} from './oauth/refresh-lock.js'

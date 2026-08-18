@@ -12,11 +12,7 @@ import {
 import { z } from 'zod'
 import { pglite } from '../../database/src/pglite'
 import type { Database } from '../src/db/types'
-import {
-  type HookfishConfig,
-  type HookfishRuntime,
-  HookfishServer,
-} from '../src/index'
+import { type HookfishConfig, HookfishServer } from '../src/index'
 import type { BrokerEnv } from '../src/oauth/config'
 import { type OAuthStub, startOAuthStub } from './stub-oauth'
 
@@ -146,14 +142,11 @@ export type TestHarness = {
   close(): Promise<void>
 }
 
-type HarnessOptions = Pick<
-  HookfishConfig<BrokerEnv>,
-  'auth' | 'clientOrigins' | 'rawApiOrigins' | 'returnTo' | 'trustedOrigins'
-> &
-  Pick<HookfishRuntime<BrokerEnv>, 'refreshCoordinator'>
-
 export async function createHarness(
-  options: Partial<HarnessOptions> = {},
+  options: Pick<
+    HookfishConfig<BrokerEnv>,
+    'auth' | 'clientOrigins' | 'rawApiOrigins' | 'returnTo' | 'trustedOrigins'
+  > = {},
 ): Promise<TestHarness> {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'hookfish-connections-'))
   const stub = await startOAuthStub()
@@ -165,19 +158,15 @@ export async function createHarness(
     OAUTH_REDIRECT_BASE_URL: API_ORIGIN,
     HOOKFISH_API_KEY: 'test',
   }
-  const { refreshCoordinator, ...configOptions } = options
-  const app = await HookfishServer.init(
-    {
-      db,
-      providers: createProviderRegistry({
-        stub: stubProvider(stub),
-        mcp: stubMcpProvider(stub),
-        secret: createSecretProvider('Static secret'),
-      }),
-      ...configOptions,
-    },
-    { refreshCoordinator },
-  )
+  const app = await HookfishServer.init({
+    db,
+    providers: createProviderRegistry({
+      stub: stubProvider(stub),
+      mcp: stubMcpProvider(stub),
+      secret: createSecretProvider('Static secret'),
+    }),
+    ...options,
+  })
 
   const apiFetch = async (requestPath: string, init?: RequestInit) => {
     const headers = new Headers(init?.headers)

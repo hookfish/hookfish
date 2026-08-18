@@ -20,10 +20,6 @@ import {
   validateReturnTo,
 } from '../oauth/config.js'
 import { BrokerError, isBrokerError } from '../oauth/errors.js'
-import type {
-  BoundRefreshCoordinator,
-  RefreshCoordinator,
-} from '../oauth/refresh-lock.js'
 import {
   type BrokerContext,
   requireApiKey,
@@ -39,11 +35,10 @@ import type { BoundProviderSource } from '../provider-source.js'
 
 const brokerAuth = [{ brokerApiKey: [] }]
 
-type ConnectionRouteOptions<Bindings extends object> = {
+type ConnectionRouteOptions = {
   returnTo?: string
   trustedOrigins?: readonly string[]
   onEvent?: HookfishEventHandler
-  refreshCoordinator?: RefreshCoordinator<Bindings>
 }
 
 function applicationAudit(grant: AccessGrant): {
@@ -434,7 +429,7 @@ function completionPage(path: string): string {
 export function createConnectionRoutes<Bindings extends object>(
   resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   database: DatabaseInput<Bindings>,
-  options: ConnectionRouteOptions<Bindings>,
+  options: ConnectionRouteOptions,
 ) {
   const routes = new OpenAPIHono<BrokerContext<Bindings>>()
   const authenticate = requireApiKey<Bindings>()
@@ -509,22 +504,6 @@ export function createConnectionRoutes<Bindings extends object>(
     assertConnectionAccess(c.get('accessGrant'), parsed.path)
     const body = c.req.valid('json') ?? {}
     const config = resolveBrokerConfig(c.env)
-    const refreshCoordinator: BoundRefreshCoordinator | undefined =
-      options.refreshCoordinator === undefined
-        ? undefined
-        : (connection, refresh) =>
-            options.refreshCoordinator!(
-              {
-                key: connection.id,
-                connectionId: connection.id,
-                connectionPath: formatConnectionPath(
-                  connection.namespace,
-                  connection.providerId,
-                ),
-                bindings: c.env,
-              },
-              refresh,
-            )
     let result: Awaited<ReturnType<typeof accessConnection>>
     try {
       result = await accessConnection(
@@ -547,7 +526,6 @@ export function createConnectionRoutes<Bindings extends object>(
           clientMetadataUrl: resolveClientMetadataUri(config, c.req.url),
         },
         await resolveProviders(c.env),
-        refreshCoordinator,
       )
     } catch (error) {
       if (isBrokerError(error) && error.code === 'authorization_required') {

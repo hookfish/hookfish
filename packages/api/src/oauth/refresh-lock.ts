@@ -7,28 +7,6 @@ const REFRESH_LOCK_LEASE_MS = 60 * 1000
 const REFRESH_LOCK_WAIT_MS = 65 * 1000
 const REFRESH_LOCK_POLL_MS = 50
 
-export type RefreshCoordinatorRequest<Bindings extends object = object> = {
-  /** Stable per-connection key. Prefix it with a deployment ID in shared lock stores. */
-  key: string
-  connectionId: string
-  connectionPath: string
-  bindings: Bindings
-}
-
-/**
- * Runs one refresh operation under an application-supplied distributed lock.
- * The implementation owns acquisition, waiting, crash expiry, and release.
- */
-export type RefreshCoordinator<Bindings extends object = object> = <T>(
-  request: RefreshCoordinatorRequest<Bindings>,
-  refresh: () => Promise<T>,
-) => Promise<T>
-
-export type BoundRefreshCoordinator = <T>(
-  connection: Connection,
-  refresh: () => Promise<T>,
-) => Promise<T>
-
 const localRefreshLocks = new WeakMap<Database, Map<string, Promise<void>>>()
 
 async function withLocalRefreshLock<T>(
