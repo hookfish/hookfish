@@ -45,9 +45,10 @@ jobs:
         run: pnpm exec turbo run build --affected
 
       # The build scripts already run TypeScript for every workspace except the
-      # inspector, whose Vite build only transpiles source files.
+      # inspector, whose Vite build only transpiles source files. Run through
+      # Turbo so the inspector's workspace dependencies are built first.
       - name: Typecheck inspector
-        run: pnpm --filter @hookfish/inspector typecheck
+        run: pnpm exec turbo run typecheck --filter=@hookfish/inspector
 
       - name: Load the published packages under plain Node
         run: pnpm --filter @hookfish/example-hono-node verify-runtime
