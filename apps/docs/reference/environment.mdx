@@ -14,7 +14,7 @@ and runtime resolvers can override these conventions.
 | `OAUTH_ENCRYPTION_KEY` | For credential operations | Encrypt provider tokens and stored secrets |
 | `HOOKFISH_API_KEY` | For authenticated API operations | Root API credential and scoped-token signing key |
 | `OAUTH_REDIRECT_BASE_URL` | Production | Public origin used to derive callback URLs |
-| `HOOKFISH_FRONTEND_URL` | When serving a separate dashboard | Browser origin and default callback destination in generated projects |
+| `HOOKFISH_FRONTEND_URL` | When serving a separate operator frontend | Exact browser origin and default callback destination in generated projects |
 
 Generate independent high-entropy values for the encryption key and broker key:
 
@@ -56,8 +56,8 @@ register a client or store custom credentials.
 
 | Variable | Purpose |
 | --- | --- |
-| `HOOKFISH_BACKEND_URL` | Backend proxied by `hookfish serve` |
-| `FRONTEND_HOST` / `FRONTEND_PORT` | Packaged dashboard bind address |
+| `HOOKFISH_BACKEND_URL` | Separate API origin used by `@hookfish/client` |
+| `FRONTEND_HOST` / `FRONTEND_PORT` | Repository TanStack Start frontend bind address |
 | `INSPECTOR_HOST` / `INSPECTOR_PORT` | Inspector bind address |
 | `HOOKFISH_INSPECTOR_URL` | Public inspector origin behind an intentional proxy |
 

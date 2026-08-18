@@ -68,12 +68,16 @@ origins with `clientOrigins` only when your application needs them.
 
 ## Operator dashboard
 
-`hookfish serve` reads the broker credential in the server process, binds to
-loopback, and issues an ephemeral `HttpOnly`, `SameSite=Strict` operator cookie.
-Its BFF exposes only safe connection-management operations. It does not proxy
+A server-rendered operator frontend can mount `@hookfish/client`. This Hono
+facade reads the broker credential in the server process and issues an
+ephemeral `HttpOnly`, `SameSite=Strict` operator cookie. It exposes only safe
+connection-management operations and public OAuth callbacks; it does not proxy
 the raw API or provider-token retrieval.
 
-Use application authentication or SSO for remotely hosted operator tools.
+The operator cookie is a CSRF boundary, not user authentication. Keep the
+frontend on loopback or require application authentication, SSO, or another
+access-control layer for a hosted operator tool. When a trusted proxy terminates
+TLS, forward the original protocol so the facade adds the `Secure` cookie flag.
 
 ## Database and key recovery
 

@@ -196,7 +196,7 @@ export type OperatorBff = {
 /** Restricted BFF for the Hookfish operator client. */
 export function createOperatorBff(options: {
   backendOrigin: string
-  frontendOrigin: string
+  frontendOrigin: string | ((request: Request) => string)
   brokerApiKey: string | (() => string | undefined)
   sessionToken: string
 }): OperatorBff {
@@ -212,8 +212,12 @@ export function createOperatorBff(options: {
           'Reload the local Hookfish dashboard to start an operator session.',
         )
       }
+      const frontendOrigin =
+        typeof options.frontendOrigin === 'function'
+          ? options.frontendOrigin(request)
+          : options.frontendOrigin
       const origin = request.headers.get('Origin')
-      if (origin && origin !== options.frontendOrigin) {
+      if (origin && origin !== frontendOrigin) {
         return operatorError(
           403,
           'untrusted_operator_origin',
@@ -222,7 +226,7 @@ export function createOperatorBff(options: {
       }
       if (
         ['POST', 'PUT', 'DELETE'].includes(request.method.toUpperCase()) &&
-        origin !== options.frontendOrigin
+        origin !== frontendOrigin
       ) {
         return operatorError(
           403,

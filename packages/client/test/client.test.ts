@@ -31,6 +31,51 @@ describe('createHookfishClient', () => {
       'hookfish_operator_session=operator-session',
     )
     expect(response.headers.get('set-cookie')).toContain('HttpOnly')
+    expect(response.headers.get('content-security-policy')).toContain(
+      "default-src 'self'",
+    )
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('x-frame-options')).toBe('DENY')
+  })
+
+  it('marks its session cookie secure behind a TLS-terminating proxy', async () => {
+    const response = await client().request('/', {
+      headers: { 'x-forwarded-proto': 'https' },
+    })
+
+    expect(response.headers.get('set-cookie')).toContain('; Secure')
+  })
+
+  it('recognizes the standard Forwarded header from a TLS proxy', async () => {
+    const response = await client().request('/', {
+      headers: { forwarded: 'for=192.0.2.10;proto="https";host=hookfish.test' },
+    })
+
+    expect(response.headers.get('set-cookie')).toContain('; Secure')
+  })
+
+  it('preserves stricter security headers from the frontend host', async () => {
+    const app = createHookfishClient({
+      apiUrl: 'http://127.0.0.1:8787',
+      apiKey: 'root-secret',
+      frontendOrigin,
+      sessionToken,
+      fallback: () =>
+        new Response('<!doctype html>', {
+          headers: {
+            'content-type': 'text/html',
+            'content-security-policy': "default-src 'none'",
+          },
+        }),
+    })
+
+    const response = await app.request('/')
+
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'none'",
+    )
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
   })
 
   it('maps safe client operations to the separate Hookfish API', async () => {

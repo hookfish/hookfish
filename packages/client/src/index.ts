@@ -10,12 +10,40 @@ export type HookfishClientOptions = {
   apiUrl: string
   /** Server-only root key, or a lazy reader for it, used by the safe facade. */
   apiKey: string | (() => string | undefined)
-  /** Exact origin serving the browser client. */
-  frontendOrigin: string
+  /** Exact browser origin, or a request-aware resolver for it. */
+  frontendOrigin: string | ((request: Request) => string)
   /** Ephemeral server-generated value used by the HttpOnly operator cookie. */
   sessionToken: string
   /** Delegate non-client requests to the host application. */
   fallback?: (request: Request) => Response | Promise<Response>
+}
+
+const frontendSecurityHeaders = {
+  'content-security-policy':
+    "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self' https:",
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+} as const
+
+function isSecureRequest(request: Request): boolean {
+  if (new URL(request.url).protocol === 'https:') return true
+  const forwardedProto = request.headers
+    .get('x-forwarded-proto')
+    ?.split(',', 1)[0]
+    ?.trim()
+    .toLowerCase()
+  if (forwardedProto === 'https') return true
+  const forwarded = request.headers
+    .get('forwarded')
+    ?.split(',', 1)[0]
+    ?.split(';')
+    .map((part) => part.trim().toLowerCase())
+  return (
+    forwarded?.some(
+      (part) => part === 'proto=https' || part === 'proto="https"',
+    ) ?? false
+  )
 }
 
 /**
@@ -70,9 +98,12 @@ export function createHookfishClient(options: HookfishClientOptions) {
       const contentType = response.headers.get('content-type') ?? ''
       if (!contentType.includes('text/html')) return response
       const headers = new Headers(response.headers)
+      for (const [name, value] of Object.entries(frontendSecurityHeaders)) {
+        if (!headers.has(name)) headers.set(name, value)
+      }
       headers.append(
         'set-cookie',
-        operator.sessionCookie(new URL(context.req.url).protocol === 'https:'),
+        operator.sessionCookie(isSecureRequest(context.req.raw)),
       )
       return new Response(response.body, {
         status: response.status,

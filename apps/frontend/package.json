@@ -6,14 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host ${FRONTEND_HOST:-${HOST:-127.0.0.1}} --port ${FRONTEND_PORT:-${PORT:-5173}}",
-    "build": "vite build && tsc -b",
+    "build": "vite build && node ./scripts/check-browser-bundle.mjs dist/client && tsc -b",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "preview": "vite preview --host ${HOST:-127.0.0.1} --port ${PORT:-4173}"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
-    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@hookfish/client": "workspace:*",
     "@hookfish/hooks": "workspace:*",
     "@tanstack/react-query": "^5.100.14",
