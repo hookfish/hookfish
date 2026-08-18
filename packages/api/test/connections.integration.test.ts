@@ -342,6 +342,48 @@ describe('connections', () => {
     })
   })
 
+  it('preserves credentials after a transient refresh failure', async () => {
+    const authorization = await harness.authorize()
+    const callbackUrl = new URL(authorization.callbackUrl)
+    const callback = await harness.fetch(
+      `${callbackUrl.pathname}${callbackUrl.search}`,
+    )
+    expect(callback.status).toBe(200)
+
+    const connection = await harness.db.getConnection('user/personal', 'stub')
+    if (!connection) throw new Error('Connection was not stored.')
+    const expiresAt = new Date(Date.now() - 60_000)
+    const expired = await harness.db.updateConnection(connection.id, {
+      expiresAt,
+    })
+    if (!expired) throw new Error('Connection was not updated.')
+    harness.stub.tokenStatus = 503
+
+    const failed = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      { method: 'POST' },
+    )
+    expect(failed.status).toBe(502)
+    await expect(failed.json()).resolves.toMatchObject({
+      error: { code: 'token_refresh_failed' },
+    })
+    await expect(
+      harness.db.getConnection('user/personal', 'stub'),
+    ).resolves.toMatchObject({
+      secret: expired.secret,
+      refreshToken: expired.refreshToken,
+      expiresAt,
+    })
+
+    harness.stub.tokenStatus = null
+    const recovered = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      { method: 'POST' },
+    )
+    expect(recovered.status).toBe(200)
+    await expect(recovered.json()).resolves.toMatchObject({ refreshed: true })
+  })
+
   it('expires refresh leases and ignores releases from stale owners', async () => {
     const stored = await harness.db.putConnection({
       namespace: 'lease',

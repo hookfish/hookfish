@@ -21,6 +21,17 @@ const tokenSchema = z.looseObject({
   scope: z.union([z.string(), z.array(z.string())]).optional(),
 })
 
+function parseOAuthError(text: string): string | undefined {
+  try {
+    const payload: unknown = JSON.parse(text)
+    if (typeof payload !== 'object' || payload === null) return undefined
+    const error = Reflect.get(payload, 'error')
+    return typeof error === 'string' ? error : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export type ProviderFetch = (
   input: string | URL | Request,
   init?: RequestInit,
@@ -171,6 +182,10 @@ export class LinearProvider implements OAuthProviderTemplate {
     if (!response.ok) {
       throw new ProviderRequestError(
         `Linear token endpoint returned ${response.status}: ${text.slice(0, 500)}`,
+        {
+          status: response.status,
+          oauthError: parseOAuthError(text),
+        },
       )
     }
 

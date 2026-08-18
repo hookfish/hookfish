@@ -60,7 +60,9 @@ IDs and implementations trusted.
 The bundled PostgreSQL, PGlite, and Durable Objects adapters coordinate token
 refreshes with a renewable lease on the connection row. Concurrent callers for
 one expired connection wait for the winner, reload the stored connection, and
-reuse its new access token. If the provider rejects the refresh, the winner
+reuse its new access token. If the provider returns `invalid_grant`, the winner
 invalidates the unusable credentials so waiters proceed directly to
-authorization instead of retrying the provider. Traffic for other connections
-does not contend on the same lease, and no external lock service is required.
+authorization instead of retrying the provider. Transient failures such as
+rate limits and provider outages preserve the stored credentials so a later
+request can retry. Traffic for other connections does not contend on the same
+lease, and no external lock service is required.

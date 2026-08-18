@@ -181,6 +181,21 @@ Implement `refreshToken` when the provider issues refresh tokens. Implement
 capabilities in provider discovery and invokes them at the appropriate point in
 the connection lifecycle.
 
+When a token endpoint rejects a refresh, include its HTTP status and OAuth error
+identifier in `ProviderRequestError`:
+
+```ts
+throw new ProviderRequestError('Example token refresh failed.', {
+  status: response.status,
+  oauthError: payload.error,
+})
+```
+
+Hookfish treats only `invalid_grant` as a terminal refresh failure and clears
+the unusable credentials. Rate limits, 5xx responses, malformed responses, and
+other transient failures leave stored credentials intact so a later request
+can retry.
+
 Implement `isConfigured` when provider availability depends on deployment
 credentials. Register the instance under a trusted provider ID in
 `hookfish.config.ts`.
@@ -192,5 +207,6 @@ available for large application-owned catalogs.
 <Tip>
   Validate every upstream JSON response before returning it. Throw
   `ProviderConfigurationError` for invalid local configuration and
-  `ProviderRequestError` for upstream failures.
+  `ProviderRequestError` for upstream failures. Preserve the upstream `status`
+  and `oauthError` when they are available.
 </Tip>

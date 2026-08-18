@@ -68,7 +68,12 @@ async function callProvider<T>(
       )
     }
     if (error instanceof ProviderRequestError) {
-      throw new BrokerError(502, requestErrorCode, error.message)
+      const errorCode =
+        requestErrorCode === 'reauthorization_required' &&
+        error.oauthError !== 'invalid_grant'
+          ? 'token_refresh_failed'
+          : requestErrorCode
+      throw new BrokerError(502, errorCode, error.message)
     }
     throw error
   }

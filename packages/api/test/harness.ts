@@ -43,8 +43,19 @@ function stubProvider(stub: OAuthStub): OAuthProvider {
     })
     const text = await response.text()
     if (!response.ok) {
+      let oauthError: string | undefined
+      try {
+        const payload: unknown = JSON.parse(text)
+        if (typeof payload === 'object' && payload !== null) {
+          const error = Reflect.get(payload, 'error')
+          if (typeof error === 'string') oauthError = error
+        }
+      } catch {
+        // The provider returned a non-JSON error body.
+      }
       throw new ProviderRequestError(
         `Stub token endpoint returned ${response.status}: ${text}`,
+        { status: response.status, oauthError },
       )
     }
     const payload = tokenPayloadSchema.parse(JSON.parse(text))

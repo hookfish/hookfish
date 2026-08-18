@@ -134,7 +134,12 @@ export async function startOAuthStub(): Promise<OAuthStub> {
       if (tokenStatus !== null) {
         if (stub.tokenStatus === null) stub.nextTokenStatus = null
         res.writeHead(tokenStatus, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ error: 'invalid_grant' }))
+        res.end(
+          JSON.stringify({
+            error:
+              tokenStatus === 400 ? 'invalid_grant' : 'temporarily_unavailable',
+          }),
+        )
         return
       }
 
