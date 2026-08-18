@@ -18,18 +18,17 @@ function About() {
         <CardHeader>
           <CardTitle>About this stack</CardTitle>
           <CardDescription>
-            A portable React SPA backed by a Fetch-compatible API.
+            A portable React client backed by a Fetch-compatible API.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm text-muted-foreground">
           <p>
-            TanStack Router owns client-side navigation. The frontend can point
-            at any Hookfish backend runtime without importing server code.
+            TanStack Start serves the frontend while the mountable Hookfish
+            client forwards safe operations to a separately running API.
           </p>
           <p>
-            A browser-safe facade keeps broker credentials on the backend while
-            Node, Cloudflare Workers, and future runtimes choose their own
-            database adapters.
+            The browser-safe facade keeps broker credentials on the server while
+            each runtime chooses its own database adapter.
           </p>
         </CardContent>
       </Card>

@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { defaultFrontendHostname } from './serve.js'
+
+const defaultFrontendHostname = 'localhost'
 
 export const scaffoldBackends = [
   'vercel',
@@ -288,12 +289,11 @@ function packageJson(
   dependencyTag: string,
 ): Record<string, unknown> {
   const scripts: Record<string, string> = {
-    dev: `concurrently --kill-others-on-fail "npm:dev:server" "hookfish serve --backend-url http://127.0.0.1:\${HOOKFISH_BACKEND_PORT:-$(( \${CONDUCTOR_PORT:-8786} + 1 ))}"`,
+    dev: '',
     typecheck: 'tsc --noEmit',
   }
   const dependencies = commonDependencies(dependencyTag)
   const devDependencies = commonDevDependencies(dependencyTag)
-  devDependencies.concurrently = '^9.2.1'
 
   const backendPort = `\${HOOKFISH_BACKEND_PORT:-$(( \${CONDUCTOR_PORT:-8786} + 1 ))}`
   const frontendOrigin = `\${HOOKFISH_FRONTEND_URL:-http://${defaultFrontendHostname}:\${FRONTEND_PORT:-\${CONDUCTOR_PORT:-5173}}}`
@@ -344,6 +344,8 @@ function packageJson(
       devDependencies['@types/node'] = '^24.12.3'
       break
   }
+
+  scripts.dev = scripts['dev:server'] ?? ''
 
   return {
     name,
@@ -422,11 +424,9 @@ Hookfish broker scaffold for the **${backend}** backend.
 \`\`\`sh
 pnpm install
 pnpm dev
-# Or run only the backend:
-pnpm dev:server
 \`\`\`
 
-\`pnpm dev:server\` starts the ${backend} development server directly. \`pnpm dev\` runs that script beside \`hookfish serve --backend-url <backend-url>\`, which serves the packaged dashboard and proxies \`/api\` to the backend so the browser stays same-origin.
+\`pnpm dev\` and \`pnpm dev:server\` both start the ${backend} development server directly. To add a browser UI, mount \`@hookfish/client\` in a separate server-rendered frontend and point it at this API.
 
 A gitignored \`${localEnvironmentFile}\` is generated with unique local encryption and broker API keys. The scaffold enables remote MCP OAuth and supplied-secret connections by default. Add other trusted providers in the Hookfish configuration when needed.
 
@@ -458,7 +458,7 @@ function agents(name: string, backend: ScaffoldBackend): string {
 
 This project uses [Hookfish](${repositoryUrl}) as its OAuth and
 encrypted-secret broker. ${configFile} configures the broker, and
-\`hookfish serve\` serves the packaged dashboard against it.
+a separate frontend can mount \`@hookfish/client\` against it.
 
 ## License and attribution
 

@@ -4,7 +4,7 @@ import {
   operatorSessionCookie,
   proxyBackendRequest,
   resolveBackendUrl,
-} from '../src/serve'
+} from '../src/operator'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -74,7 +74,7 @@ describe('proxyBackendRequest', () => {
 describe('resolveBackendUrl', () => {
   it('requires an explicitly configured backend URL', () => {
     expect(() => resolveBackendUrl(undefined, {})).toThrow(
-      '--backend-url or HOOKFISH_BACKEND_URL is required',
+      'A Hookfish API URL is required',
     )
   })
 
@@ -91,7 +91,7 @@ describe('resolveBackendUrl', () => {
 
   it('rejects non-HTTP backend URLs', () => {
     expect(() => resolveBackendUrl('file:///tmp/hookfish', {})).toThrow(
-      '--backend-url must use http or https',
+      'The Hookfish API URL must use http or https',
     )
   })
 })
@@ -145,6 +145,63 @@ describe('operator BFF', () => {
 
     const raw = await bff().fetch(request('/api/client/admin/tokens'))
     expect(raw.status).toBe(404)
+  })
+
+  it('reads a lazy server credential only when an API operation needs it', async () => {
+    const readApiKey = vi.fn(() => 'root-secret')
+    const operator = createOperatorBff({
+      backendOrigin: 'http://127.0.0.1:8787',
+      frontendOrigin,
+      brokerApiKey: readApiKey,
+      sessionToken,
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({ providers: [] }),
+    )
+
+    expect(operator.sessionCookie()).toContain(sessionToken)
+    expect(readApiKey).not.toHaveBeenCalled()
+
+    await operator.fetch(request('/api/client/providers'))
+    expect(readApiKey).toHaveBeenCalledOnce()
+  })
+
+  it('explains when the frontend server credential is missing', async () => {
+    const operator = createOperatorBff({
+      backendOrigin: 'http://127.0.0.1:8787',
+      frontendOrigin,
+      brokerApiKey: () => undefined,
+      sessionToken,
+    })
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+
+    const response = await operator.fetch(request('/api/client/providers'))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'client_not_configured',
+        message:
+          'The Hookfish frontend is not configured: HOOKFISH_API_KEY is missing.',
+      },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe error when the separate API is unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new Error('connect ECONNREFUSED 127.0.0.1:8787'),
+    )
+
+    const response = await bff().fetch(request('/api/client/providers'))
+
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'backend_unavailable',
+        message: 'The Hookfish API is unavailable.',
+      },
+    })
   })
 
   it('converts authorization-required into a safe authorization response', async () => {

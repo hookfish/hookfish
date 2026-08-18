@@ -1,5 +1,3 @@
-export const defaultFrontendHostname = 'localhost'
-
 export function resolveBackendUrl(
   configuredBackendUrl: string | undefined,
   environment: NodeJS.ProcessEnv = process.env,
@@ -7,14 +5,12 @@ export function resolveBackendUrl(
   const backendUrl =
     configuredBackendUrl?.trim() || environment.HOOKFISH_BACKEND_URL?.trim()
   if (!backendUrl) {
-    throw new Error(
-      '--backend-url or HOOKFISH_BACKEND_URL is required to serve the dashboard.',
-    )
+    throw new Error('A Hookfish API URL is required.')
   }
 
   const parsedBackendUrl = new URL(backendUrl)
   if (!['http:', 'https:'].includes(parsedBackendUrl.protocol)) {
-    throw new Error('--backend-url must use http or https.')
+    throw new Error('The Hookfish API URL must use http or https.')
   }
 
   return backendUrl
@@ -197,11 +193,11 @@ export type OperatorBff = {
   sessionCookie(secure?: boolean): string
 }
 
-/** Restricted local BFF for the packaged operator dashboard. */
+/** Restricted BFF for the Hookfish operator client. */
 export function createOperatorBff(options: {
   backendOrigin: string
   frontendOrigin: string
-  brokerApiKey: string
+  brokerApiKey: string | (() => string | undefined)
   sessionToken: string
 }): OperatorBff {
   return {
@@ -243,22 +239,42 @@ export function createOperatorBff(options: {
           'This operation is not available in the operator dashboard.',
         )
       }
+      const brokerApiKey =
+        typeof options.brokerApiKey === 'function'
+          ? options.brokerApiKey()
+          : options.brokerApiKey
+      if (!brokerApiKey?.trim()) {
+        return operatorError(
+          503,
+          'client_not_configured',
+          'The Hookfish frontend is not configured: HOOKFISH_API_KEY is missing.',
+        )
+      }
       const target = new URL(operation.targetPath, options.backendOrigin)
       const headers = new Headers({
         Accept: 'application/json',
-        Authorization: `Bearer ${options.brokerApiKey}`,
+        Authorization: `Bearer ${brokerApiKey}`,
       })
       let body: string | undefined
       if (operation.method === 'POST' || operation.method === 'PUT') {
         body = await request.text()
         headers.set('Content-Type', 'application/json')
       }
-      const backendResponse = await fetch(target, {
-        method: operation.method,
-        headers,
-        ...(body === undefined ? {} : { body }),
-        redirect: 'manual',
-      })
+      let backendResponse: Response
+      try {
+        backendResponse = await fetch(target, {
+          method: operation.method,
+          headers,
+          ...(body === undefined ? {} : { body }),
+          redirect: 'manual',
+        })
+      } catch {
+        return operatorError(
+          502,
+          'backend_unavailable',
+          'The Hookfish API is unavailable.',
+        )
+      }
       const payload: unknown = await backendResponse
         .json()
         .catch(() => undefined)

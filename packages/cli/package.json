@@ -23,7 +23,7 @@
     ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -b && pnpm --filter @hookfish/frontend build:cli && pnpm --filter @hookfish/inspector build:cli",
+    "build": "tsc -b && pnpm --filter @hookfish/inspector build:cli",
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
     "start": "node ./bin/hookfish.mjs"

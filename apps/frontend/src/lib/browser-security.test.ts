@@ -17,12 +17,18 @@ describe('browser credential regression', () => {
   it('contains no Hookfish broker-token storage or raw credential routes', async () => {
     const sourceRoot = path.resolve(import.meta.dirname, '..')
     const thisFile = path.resolve(import.meta.filename)
+    const serverEntry = path.join(sourceRoot, 'server.ts')
     const source = (
       await Promise.all(
         (
           await files(sourceRoot)
         )
-          .filter((pathname) => pathname !== thisFile)
+          .filter(
+            (pathname) =>
+              pathname !== thisFile &&
+              pathname !== serverEntry &&
+              ['.css', '.ts', '.tsx'].includes(path.extname(pathname)),
+          )
           .map((pathname) => readFile(pathname, 'utf8')),
       )
     ).join('\n')

@@ -22,12 +22,6 @@ import {
   scaffoldBackends,
   scaffoldProject,
 } from './scaffold.js'
-import {
-  createOperatorBff,
-  defaultFrontendHostname,
-  proxyBackendRequest,
-  resolveBackendUrl,
-} from './serve.js'
 import { npmUpdateCommand, warnIfOutdated } from './update.js'
 
 function packageVersion(): string {
@@ -129,163 +123,6 @@ function parsePort(value: string | undefined): number | undefined {
 
 function followingPort(port: number | undefined): number | undefined {
   return port && port < 65_534 ? port + 1 : undefined
-}
-
-function browserHostname(hostname: string): string {
-  if (hostname === '0.0.0.0' || hostname === '::') return 'localhost'
-  return hostname.includes(':') ? `[${hostname}]` : hostname
-}
-
-function openBrowser(url: string): void {
-  const command =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'start'
-        : 'xdg-open'
-  const child = spawn(command, [url], {
-    detached: true,
-    shell: process.platform === 'win32',
-    stdio: 'ignore',
-  })
-  child.once('error', () => undefined)
-  child.unref()
-}
-
-async function runPackagedFrontend(
-  shouldOpen: boolean,
-  configuredBackendUrl: string | undefined,
-): Promise<number> {
-  const directory = process.cwd()
-  const envPath = path.join(directory, '.env')
-  if (existsSync(envPath)) process.loadEnvFile(envPath)
-
-  const allocatedPort = parsePort(process.env.CONDUCTOR_PORT)
-  const requestedPort = parsePort(process.env.PORT)
-  const frontendHostname = defaultFrontendHostname
-  const frontendHost = process.env.FRONTEND_HOST ?? frontendHostname
-  if (!['localhost', '127.0.0.1', '::1'].includes(frontendHost)) {
-    throw new Error(
-      'The packaged operator dashboard only binds to loopback. Use an authenticated application deployment for remote access.',
-    )
-  }
-  const frontendPort =
-    parsePort(process.env.FRONTEND_PORT) ??
-    allocatedPort ??
-    requestedPort ??
-    5173
-  const frontendOrigin = `http://${browserHostname(frontendHost)}:${frontendPort}`
-  const backendOrigin = resolveBackendUrl(configuredBackendUrl)
-  const brokerApiKey = process.env.HOOKFISH_API_KEY?.trim()
-  if (!brokerApiKey) {
-    throw new Error(
-      'HOOKFISH_API_KEY is required by the local operator server. It is never sent to the browser.',
-    )
-  }
-  const operatorBff = createOperatorBff({
-    backendOrigin,
-    frontendOrigin,
-    brokerApiKey,
-    sessionToken: randomBytes(32).toString('base64url'),
-  })
-
-  const frontendDirectory = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    'frontend',
-  )
-  const indexPath = path.join(frontendDirectory, 'index.html')
-  if (!existsSync(indexPath)) {
-    throw new Error(
-      'The packaged Hookfish frontend is missing. Reinstall hookfish and try again.',
-    )
-  }
-  const indexHtml = readFileSync(indexPath)
-  const dashboardHtmlResponse = (html: BodyInit) =>
-    new Response(html, {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'set-cookie': operatorBff.sessionCookie(false),
-        'content-security-policy':
-          "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self' https:",
-        'referrer-policy': 'no-referrer',
-        'x-content-type-options': 'nosniff',
-        'x-frame-options': 'DENY',
-      },
-    })
-  const server = serve({
-    manual: true,
-    silent: true,
-    gracefulShutdown: false,
-    hostname: frontendHost,
-    port: frontendPort,
-    middleware: [
-      serveStatic({
-        dir: frontendDirectory,
-        renderHTML: ({ html }) => dashboardHtmlResponse(html),
-      }),
-    ],
-    fetch: async (request) => {
-      const url = new URL(request.url)
-      if (
-        url.pathname.startsWith('/api/connections/callback/') ||
-        url.pathname === '/api/connections/client-metadata.json'
-      ) {
-        const target = new URL(`${url.pathname}${url.search}`, backendOrigin)
-        try {
-          return await proxyBackendRequest(request, target)
-        } catch (error) {
-          return Response.json(
-            {
-              error: 'backend_unavailable',
-              message: error instanceof Error ? error.message : String(error),
-            },
-            { status: 502 },
-          )
-        }
-      }
-
-      if (
-        url.pathname === '/api/client' ||
-        url.pathname.startsWith('/api/client/')
-      ) {
-        return operatorBff.fetch(request)
-      }
-
-      if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-        return Response.json(
-          {
-            error: {
-              code: 'raw_api_not_available',
-              message:
-                'The operator dashboard does not proxy the raw Hookfish API.',
-            },
-          },
-          { status: 404 },
-        )
-      }
-
-      return dashboardHtmlResponse(indexHtml)
-    },
-  })
-  await server.serve()
-  process.stdout.write(
-    `Hookfish frontend running at ${frontendOrigin} (backend: ${backendOrigin})\n`,
-  )
-  if (shouldOpen) openBrowser(frontendOrigin)
-
-  return await new Promise<number>((resolve, reject) => {
-    let stopping = false
-    const stop = () => {
-      if (stopping) return
-      stopping = true
-      void server.close().then(() => resolve(0), reject)
-    }
-    const onSigint = () => stop()
-    const onSigterm = () => stop()
-
-    process.on('SIGINT', onSigint)
-    process.on('SIGTERM', onSigterm)
-  })
 }
 
 type InspectorServerEntry = {
@@ -700,21 +537,6 @@ program
   )
 
 program
-  .command('dev')
-  .alias('serve')
-  .description(
-    'Serve the packaged Hookfish frontend behind a local operator BFF',
-  )
-  .option('--no-open', 'Do not open the frontend in a browser')
-  .option(
-    '--backend-url <url>',
-    'Backend URL (required unless HOOKFISH_BACKEND_URL is set)',
-  )
-  .action(async (options: { backendUrl?: string; open: boolean }) => {
-    await exitWith(await runPackagedFrontend(options.open, options.backendUrl))
-  })
-
-program
   .command('repo-dev', { hidden: true })
   .description('Run the Hookfish repository frontend and example backend')
   .addOption(
@@ -726,35 +548,23 @@ program
   .action(async (options: { backend: string; open: boolean }) => {
     const backendPackage = developmentBackendPackage(options.backend)
     const environment = developmentEnvironment()
-    const backend = spawn(
-      'pnpm',
-      [
-        'exec',
-        'turbo',
-        'dev',
-        '--env-mode=loose',
-        `--filter=${backendPackage}`,
-      ],
-      {
-        cwd: findWorkspaceRoot(),
-        env: environment,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      },
+    await exitWith(
+      await run(
+        'pnpm',
+        [
+          'exec',
+          'turbo',
+          'dev',
+          '--env-mode=loose',
+          '--filter=@hookfish/frontend',
+          `--filter=${backendPackage}`,
+        ],
+        {
+          ...environment,
+          HOOKFISH_OPEN: options.open ? 'true' : 'false',
+        },
+      ),
     )
-    backend.once('error', (error) => {
-      process.stderr.write(`Backend failed to start: ${error.message}\n`)
-    })
-    let exitCode = 1
-    try {
-      exitCode = await runPackagedFrontend(
-        options.open,
-        environment.HOOKFISH_BACKEND_URL,
-      )
-    } finally {
-      backend.kill('SIGTERM')
-    }
-    await exitWith(exitCode)
   })
 
 program
