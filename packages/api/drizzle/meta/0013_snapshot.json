@@ -1,12 +1,12 @@
 {
-  "id": "3c443fa4-0008-4bcb-b9af-fc9f4ad538b4",
-  "prevId": "c81efabd-075f-4e99-ad58-1de02939613b",
+  "id": "c1843bc3-ff21-435b-8496-6bfb72916303",
+  "prevId": "3c443fa4-0008-4bcb-b9af-fc9f4ad538b4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.access_grants": {
+    "hookfish.access_grants": {
       "name": "access_grants",
-      "schema": "",
+      "schema": "hookfish",
       "columns": {
         "id": {
           "name": "id",
@@ -77,6 +77,7 @@
           "name": "access_grants_parent_grant_id_access_grants_id_fk",
           "tableFrom": "access_grants",
           "tableTo": "access_grants",
+          "schemaTo": "hookfish",
           "columnsFrom": ["parent_grant_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -89,9 +90,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.broker_access_tokens": {
+    "hookfish.broker_access_tokens": {
       "name": "broker_access_tokens",
-      "schema": "",
+      "schema": "hookfish",
       "columns": {
         "name": {
           "name": "name",
@@ -156,6 +157,7 @@
           "name": "broker_access_tokens_grant_id_access_grants_id_fk",
           "tableFrom": "broker_access_tokens",
           "tableTo": "access_grants",
+          "schemaTo": "hookfish",
           "columnsFrom": ["grant_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -168,9 +170,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.connections": {
+    "hookfish.connections": {
       "name": "connections",
-      "schema": "",
+      "schema": "hookfish",
       "columns": {
         "id": {
           "name": "id",
@@ -334,9 +336,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.oauth_states": {
+    "hookfish.oauth_states": {
       "name": "oauth_states",
-      "schema": "",
+      "schema": "hookfish",
       "columns": {
         "id": {
           "name": "id",
@@ -458,7 +460,9 @@
     }
   },
   "enums": {},
-  "schemas": {},
+  "schemas": {
+    "hookfish": "hookfish"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

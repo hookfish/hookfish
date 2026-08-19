@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  type AccessGrant,
   type BrokerAccessToken,
   type Connection,
   type ConnectionFilter,
@@ -56,9 +57,12 @@ type ConnectionRow = {
 type BrokerAccessTokenRow = {
   name: string
   token_id_hash: string
-  scopes: string
-  created_at: number
-  expires_at: number
+  grant_id: string
+  token_created_at: number
+  parent_grant_id: string | null
+  grant_scopes: string
+  grant_created_at: number
+  grant_expires_at: number
 }
 
 function decodeStringArray(value: string): string[] {
@@ -121,12 +125,19 @@ function toConnection(row: ConnectionRow): Connection {
 }
 
 function toBrokerAccessToken(row: BrokerAccessTokenRow): BrokerAccessToken {
+  const grant: AccessGrant = {
+    id: row.grant_id,
+    parentGrantId: row.parent_grant_id,
+    scopes: decodeStringArray(row.grant_scopes),
+    createdAt: new Date(row.grant_created_at),
+    expiresAt: new Date(row.grant_expires_at),
+  }
   return {
     name: row.name,
     tokenIdHash: row.token_id_hash,
-    scopes: decodeStringArray(row.scopes),
-    createdAt: new Date(row.created_at),
-    expiresAt: new Date(row.expires_at),
+    grantId: row.grant_id,
+    createdAt: new Date(row.token_created_at),
+    grant,
   }
 }
 
@@ -161,7 +172,7 @@ export class HookfishDurableObject<Env = object>
         'SELECT COALESCE(MAX(version), 0) AS version FROM _hookfish_schema_migrations',
       )
       .one().version
-    if (current >= 4) return
+    if (current >= 5) return
 
     this.ctx.storage.transactionSync(() => {
       if (current < 3) this.migrateToV3(current)
@@ -175,7 +186,36 @@ export class HookfishDurableObject<Env = object>
           Date.now(),
         )
       }
+      if (current < 5) this.migrateToV5()
     })
+  }
+
+  private migrateToV5(): void {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE access_grants (
+        id TEXT PRIMARY KEY,
+        parent_grant_id TEXT REFERENCES access_grants(id) ON DELETE CASCADE,
+        scopes TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX access_grants_parent_idx ON access_grants(parent_grant_id);
+      CREATE INDEX access_grants_expires_idx ON access_grants(expires_at);
+
+      DROP TABLE broker_access_tokens;
+      CREATE TABLE broker_access_tokens (
+        name TEXT PRIMARY KEY,
+        token_id_hash TEXT NOT NULL UNIQUE,
+        grant_id TEXT NOT NULL REFERENCES access_grants(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX broker_access_tokens_grant_idx ON broker_access_tokens(grant_id);
+    `)
+    this.ctx.storage.sql.exec(
+      `INSERT INTO _hookfish_schema_migrations(version, applied_at)
+       VALUES (5, ?)`,
+      Date.now(),
+    )
   }
 
   private migrateToV3(current: number): void {
@@ -617,16 +657,24 @@ export class HookfishDurableObject<Env = object>
   }
 
   getValidBrokerAccessToken(
-    name: string,
     tokenIdHash: string,
+    grantId: string,
     now: Date,
   ): BrokerAccessToken | undefined {
     const row = this.ctx.storage.sql
       .exec<BrokerAccessTokenRow>(
-        `SELECT * FROM broker_access_tokens
-         WHERE name = ? AND token_id_hash = ? AND expires_at > ? LIMIT 1`,
-        name,
+        `SELECT token.name, token.token_id_hash, token.grant_id,
+           token.created_at AS token_created_at,
+           grant.parent_grant_id, grant.scopes AS grant_scopes,
+           grant.created_at AS grant_created_at,
+           grant.expires_at AS grant_expires_at
+         FROM broker_access_tokens token
+         JOIN access_grants grant ON grant.id = token.grant_id
+         WHERE token.token_id_hash = ?
+           AND token.grant_id = ?
+           AND grant.expires_at > ? LIMIT 1`,
         tokenIdHash,
+        grantId,
         now.getTime(),
       )
       .toArray()[0]
@@ -635,24 +683,51 @@ export class HookfishDurableObject<Env = object>
 
   purgeExpiredBrokerAccessTokens(before: Date): void {
     this.ctx.storage.sql.exec(
-      'DELETE FROM broker_access_tokens WHERE expires_at <= ?',
+      'DELETE FROM access_grants WHERE expires_at <= ?',
       before.getTime(),
     )
   }
 
   createBrokerAccessToken(input: NewBrokerAccessToken): boolean {
-    return (
+    return this.ctx.storage.transactionSync(() => {
+      const existing = this.ctx.storage.sql
+        .exec<{ name: string }>(
+          `SELECT name FROM broker_access_tokens
+           WHERE name = ? OR token_id_hash = ? LIMIT 1`,
+          input.name,
+          input.tokenIdHash,
+        )
+        .toArray()[0]
+      if (existing) return false
+
       this.ctx.storage.sql.exec(
-        `INSERT INTO broker_access_tokens (
-          name, token_id_hash, scopes, created_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO NOTHING`,
-        input.name,
-        input.tokenIdHash,
+        `INSERT INTO access_grants (
+          id, parent_grant_id, scopes, created_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+        input.grantId,
+        input.parentGrantId,
         JSON.stringify(input.scopes),
         Date.now(),
         input.expiresAt.getTime(),
-      ).rowsWritten > 0
-    )
+      )
+      const inserted =
+        this.ctx.storage.sql.exec(
+          `INSERT INTO broker_access_tokens (
+            name, token_id_hash, grant_id, created_at
+          ) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+          input.name,
+          input.tokenIdHash,
+          input.grantId,
+          Date.now(),
+        ).rowsWritten > 0
+      if (!inserted) {
+        this.ctx.storage.sql.exec(
+          'DELETE FROM access_grants WHERE id = ?',
+          input.grantId,
+        )
+      }
+      return inserted
+    })
   }
 
   listBrokerAccessTokenNames(): string[] {
@@ -664,10 +739,12 @@ export class HookfishDurableObject<Env = object>
       .map(({ name }) => name)
   }
 
-  deleteBrokerAccessToken(name: string): boolean {
+  deleteBrokerAccessTokenGrant(name: string): boolean {
     return (
       this.ctx.storage.sql.exec(
-        'DELETE FROM broker_access_tokens WHERE name = ?',
+        `DELETE FROM access_grants WHERE id = (
+          SELECT grant_id FROM broker_access_tokens WHERE name = ?
+        )`,
         name,
       ).rowsWritten > 0
     )

@@ -7,7 +7,8 @@ import {
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const APPLICATION_TOKEN_PREFIX = 'hookfish_app_v1'
-const TOKEN_VERSION = 1
+const BROKER_TOKEN_VERSION = 2
+const APPLICATION_TOKEN_VERSION = 2
 
 export const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 export const MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -20,6 +21,8 @@ export type RootAccessGrant = {
 export type ScopedAccessGrant = {
   kind: 'scoped'
   name: string
+  /** Persisted named grants have an ID; ephemeral application grants do not. */
+  grantId?: string
   scopes: string[]
   expiresAt: number
   application?: {
@@ -31,16 +34,15 @@ export type ScopedAccessGrant = {
 export type AccessGrant = RootAccessGrant | ScopedAccessGrant
 
 type AccessTokenPayload = {
-  v: typeof TOKEN_VERSION
-  name: string
-  scopes: string[]
+  v: typeof BROKER_TOKEN_VERSION
+  gid: string
   iat: number
   exp: number
   jti: string
 }
 
 type ApplicationTokenPayload = {
-  v: typeof TOKEN_VERSION
+  v: typeof APPLICATION_TOKEN_VERSION
   sub: string
   tenant: string
   scopes: string[]
@@ -128,7 +130,7 @@ export async function mintApplicationAccessToken(
   }
   const issuedAt = Math.floor(now / 1000)
   const payload: ApplicationTokenPayload = {
-    v: TOKEN_VERSION,
+    v: APPLICATION_TOKEN_VERSION,
     sub: input.subject,
     tenant: input.tenantId,
     scopes: normalizeResourceScopes(input.scopes),
@@ -183,7 +185,7 @@ async function verifyApplicationAccessToken(
     const expiresAt = Reflect.get(parsed, 'exp')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      version !== TOKEN_VERSION ||
+      version !== APPLICATION_TOKEN_VERSION ||
       typeof subject !== 'string' ||
       !subject ||
       typeof tenant !== 'string' ||
@@ -408,6 +410,7 @@ export async function mintAccessToken(
   token: string
   tokenIdHash: string
   name: string
+  grantId: string
   scopes: string[]
   expiresAt: number
 }> {
@@ -428,10 +431,10 @@ export async function mintAccessToken(
   const issuedAt = Math.floor(now / 1000)
   const expiresAt = issuedAt + input.expiresIn
   const tokenId = randomId()
+  const grantId = crypto.randomUUID()
   const payload: AccessTokenPayload = {
-    v: TOKEN_VERSION,
-    name,
-    scopes,
+    v: BROKER_TOKEN_VERSION,
+    gid: grantId,
     iat: issuedAt,
     exp: expiresAt,
     jti: tokenId,
@@ -453,6 +456,7 @@ export async function mintAccessToken(
     token: `${signingInput}.${toBase64Url(new Uint8Array(signature))}`,
     tokenIdHash,
     name,
+    grantId,
     scopes,
     expiresAt,
   }
@@ -462,7 +466,11 @@ export async function verifyAccessToken(
   rootApiKey: string,
   token: string,
   now = Date.now(),
-): Promise<ScopedAccessGrant & { tokenIdHash: string }> {
+): Promise<{
+  tokenIdHash: string
+  grantId: string
+  expiresAt: number
+}> {
   try {
     const [prefix, encodedPayload, encodedSignature, extra] = token.split('.')
     if (
@@ -489,20 +497,18 @@ export async function verifyAccessToken(
     if (typeof parsed !== 'object' || parsed === null) throw invalidToken()
 
     const version = Reflect.get(parsed, 'v')
-    const name = Reflect.get(parsed, 'name')
-    const scopes = Reflect.get(parsed, 'scopes')
     const issuedAt = Reflect.get(parsed, 'iat')
     const expiresAt = Reflect.get(parsed, 'exp')
     const tokenId = Reflect.get(parsed, 'jti')
+    const grantId = Reflect.get(parsed, 'gid')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      version !== TOKEN_VERSION ||
-      typeof name !== 'string' ||
-      !Array.isArray(scopes) ||
-      !scopes.every((scope) => typeof scope === 'string') ||
+      version !== BROKER_TOKEN_VERSION ||
       typeof issuedAt !== 'number' ||
       typeof expiresAt !== 'number' ||
       typeof tokenId !== 'string' ||
+      typeof grantId !== 'string' ||
+      !grantId ||
       !Number.isInteger(issuedAt) ||
       !Number.isInteger(expiresAt) ||
       issuedAt > nowSeconds + 60 ||
@@ -512,9 +518,7 @@ export async function verifyAccessToken(
     }
 
     return {
-      kind: 'scoped',
-      name: normalizeTokenName(name),
-      scopes: normalizeResourceScopes(scopes),
+      grantId,
       expiresAt,
       tokenIdHash: await hashTokenId(tokenId),
     }
@@ -542,8 +546,8 @@ export async function authenticateAccessToken(
   }
   const verified = await verifyAccessToken(rootApiKey, token, now)
   const stored = await db.getValidBrokerAccessToken(
-    verified.name,
     verified.tokenIdHash,
+    verified.grantId,
     new Date(now),
   )
 
@@ -553,10 +557,11 @@ export async function authenticateAccessToken(
     return {
       kind: 'scoped',
       name: stored.name,
-      scopes: normalizeResourceScopes(stored.scopes),
+      grantId: stored.grantId,
+      scopes: normalizeResourceScopes(stored.grant.scopes),
       expiresAt: Math.min(
         verified.expiresAt,
-        Math.floor(stored.expiresAt.getTime() / 1000),
+        Math.floor(stored.grant.expiresAt.getTime() / 1000),
       ),
     }
   } catch {

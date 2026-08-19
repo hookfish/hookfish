@@ -137,7 +137,7 @@ const revokeTokenRoute = createRoute({
   operationId: 'admin.tokens.revoke',
   summary: 'Revoke a named broker access token',
   description:
-    'Requires root access. Deletes the persisted token record, immediately invalidating its bearer credential.',
+    'Requires root access. Deletes the token grant, immediately invalidating its bearer credential and every token delegated from it.',
   security: brokerAuth,
   request: {
     params: z.object({
@@ -190,8 +190,9 @@ export function createAdminRoutes<Bindings extends object>(
     const nowMs = Date.now()
     const now = new Date(nowMs)
     const expiresAtSeconds = Math.floor(nowMs / 1000) + expiresIn
+    const accessGrant = c.get('accessGrant')
     const scopes = assertCanDelegate(
-      c.get('accessGrant'),
+      accessGrant,
       name,
       body.scopes,
       expiresAtSeconds,
@@ -206,6 +207,9 @@ export function createAdminRoutes<Bindings extends object>(
     const inserted = await c.get('db').createBrokerAccessToken({
       name: minted.name,
       tokenIdHash: minted.tokenIdHash,
+      grantId: minted.grantId,
+      parentGrantId:
+        accessGrant.kind === 'scoped' ? (accessGrant.grantId ?? null) : null,
       scopes: minted.scopes,
       expiresAt: new Date(minted.expiresAt * 1000),
     })
@@ -249,7 +253,7 @@ export function createAdminRoutes<Bindings extends object>(
   const revokeApi = routes.openapi(revokeTokenRoute, async (c) => {
     assertRootAccess(c.get('accessGrant'))
     const name = normalizeTokenName(c.req.valid('param').name)
-    const deleted = await c.get('db').deleteBrokerAccessToken(name)
+    const deleted = await c.get('db').deleteBrokerAccessTokenGrant(name)
 
     if (deleted) {
       await emitHookfishEvent(onEvent, {

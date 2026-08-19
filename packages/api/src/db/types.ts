@@ -39,12 +39,20 @@ export type OAuthState = {
   expiresAt: Date
 }
 
-export type BrokerAccessToken = {
-  name: string
-  tokenIdHash: string
+export type AccessGrant = {
+  id: string
+  parentGrantId: string | null
   scopes: string[]
   createdAt: Date
   expiresAt: Date
+}
+
+export type BrokerAccessToken = {
+  name: string
+  tokenIdHash: string
+  grantId: string
+  createdAt: Date
+  grant: AccessGrant
 }
 
 export type NewOAuthState = Pick<
@@ -123,8 +131,12 @@ export type ConnectionFilter = {
 
 export type NewBrokerAccessToken = Pick<
   BrokerAccessToken,
-  'name' | 'tokenIdHash' | 'scopes' | 'expiresAt'
->
+  'name' | 'tokenIdHash' | 'grantId'
+> & {
+  parentGrantId: string | null
+  scopes: string[]
+  expiresAt: Date
+}
 
 /** Persistence contract shared by Postgres, PGlite, and Durable Objects. */
 export interface Database {
@@ -162,12 +174,12 @@ export interface Database {
   deleteConnection(id: string): DatabaseResult<boolean>
 
   getValidBrokerAccessToken(
-    name: string,
     tokenIdHash: string,
+    grantId: string,
     now: Date,
   ): DatabaseResult<BrokerAccessToken | undefined>
   purgeExpiredBrokerAccessTokens(before: Date): DatabaseResult<void>
   createBrokerAccessToken(input: NewBrokerAccessToken): DatabaseResult<boolean>
   listBrokerAccessTokenNames(): DatabaseResult<string[]>
-  deleteBrokerAccessToken(name: string): DatabaseResult<boolean>
+  deleteBrokerAccessTokenGrant(name: string): DatabaseResult<boolean>
 }
