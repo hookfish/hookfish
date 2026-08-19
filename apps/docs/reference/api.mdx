@@ -91,7 +91,7 @@ Clients should render `input_schema.fields`.
 | --- | --- | --- |
 | `POST` | `/api/admin/tokens` | Mint a named scoped broker token |
 | `GET` | `/api/admin/tokens` | List active token names; root only |
-| `DELETE` | `/api/admin/tokens/{name}` | Revoke a token; root only |
+| `DELETE` | `/api/admin/tokens/{name}` | Revoke a token and its delegated descendants; root only |
 
 ## Browser facade
 

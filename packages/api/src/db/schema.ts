@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   index,
   integer,
   jsonb,
@@ -11,7 +12,12 @@ import {
 import type { PgliteDatabase } from 'drizzle-orm/pglite'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-export type { BrokerAccessToken, Connection, OAuthState } from './types.js'
+export type {
+  AccessGrant,
+  BrokerAccessToken,
+  Connection,
+  OAuthState,
+} from './types.js'
 
 /**
  * One row per structured connection identity. Credentials are encrypted at
@@ -98,16 +104,15 @@ export const oauthStates = pgTable(
   (table) => [index('oauth_states_expires_idx').on(table.expiresAt)],
 )
 
-/**
- * Administrative metadata for broker credentials. The signed credential itself is
- * never stored; this table exists so administrators can enumerate active
- * token names without exposing their scopes or bearer values.
- */
-export const brokerAccessTokens = pgTable(
-  'broker_access_tokens',
+/** Persisted authorization that can be delegated and revoked as a tree. */
+export const accessGrants = pgTable(
+  'access_grants',
   {
-    name: text('name').primaryKey(),
-    tokenIdHash: text('token_id_hash').notNull(),
+    id: uuid('id').primaryKey(),
+    parentGrantId: uuid('parent_grant_id').references(
+      (): AnyPgColumn => accessGrants.id,
+      { onDelete: 'cascade' },
+    ),
     scopes: text('scopes').array().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -115,12 +120,35 @@ export const brokerAccessTokens = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    index('access_grants_parent_idx').on(table.parentGrantId),
+    index('access_grants_expires_idx').on(table.expiresAt),
+  ],
+)
+
+/**
+ * Administrative metadata for broker credentials. Authorization lives on the
+ * attached grant so deleting a grant revokes every token in its subtree.
+ */
+export const brokerAccessTokens = pgTable(
+  'broker_access_tokens',
+  {
+    name: text('name').primaryKey(),
+    tokenIdHash: text('token_id_hash').notNull(),
+    grantId: uuid('grant_id')
+      .notNull()
+      .references(() => accessGrants.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
     uniqueIndex('broker_access_tokens_token_id_hash_idx').on(table.tokenIdHash),
-    index('broker_access_tokens_expires_idx').on(table.expiresAt),
+    index('broker_access_tokens_grant_idx').on(table.grantId),
   ],
 )
 
 type Schema = {
+  accessGrants: typeof accessGrants
   brokerAccessTokens: typeof brokerAccessTokens
   connections: typeof connections
   oauthStates: typeof oauthStates

@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
 import {
+  accessGrants,
   brokerAccessTokens,
   connections,
   type Database,
@@ -14,6 +15,7 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 
 const schema = {
+  accessGrants,
   brokerAccessTokens,
   connections,
   oauthStates,
