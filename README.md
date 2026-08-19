@@ -4,6 +4,7 @@ A portable OAuth and encrypted-secret broker with a static React dashboard and F
 backend runtimes:
 
 - `apps/frontend` — Vite SPA with TanStack Router and React Query
+- `apps/bff` — Node BFF with Better Auth and the mounted client facade
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
 - `packages/backend` — compatibility entry point for the client facade
 - `packages/client` — mountable authenticated client routes for Hono applications
@@ -32,6 +33,7 @@ cp apps/frontend/.env.example apps/frontend/.env
 
 pnpm dev
 # Frontend: http://127.0.0.1:5173
+# BFF:      http://127.0.0.1:8788
 # Backend:  http://127.0.0.1:8787
 
 pnpm dev --no-open
@@ -73,17 +75,19 @@ packaged server directly at `http://localhost:3000`. It mounts the raw API at
 unset or empty. Use `INSPECTOR_PORT` to choose another port. In Conductor, the
 CLI uses the third allocated workspace port automatically.
 
-The repository's `pnpm dev` script builds the packaged dashboard, runs the
-selected backend through Turbo, and places the loopback operator BFF in front.
+The repository's `pnpm dev` script runs the frontend, the authenticated Node
+BFF, and the selected backend through Turbo. The frontend proxies only
+`/api/auth` and `/api/client` to the BFF; it cannot address the raw broker.
 Choose `hono-node` (the default), `express`, `nextjs`, or `cloudflare-worker`
 with `--backend`. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
-it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
-and the next allocated port for the backend.
+it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend,
+the second port for the BFF, reserves the third for the inspector, and uses the
+fourth port for the backend.
 
 Outside this repository, `hookfish dev` and its `hookfish serve` alias serve the
-packaged dashboard behind the same restricted local BFF. An explicit backend
-and server-side `HOOKFISH_API_KEY` are required.
+packaged dashboard behind a separate loopback operator BFF with a process-local
+session. An explicit backend and server-side `HOOKFISH_API_KEY` are required.
 
 ## Pointing the local dashboard at another backend
 

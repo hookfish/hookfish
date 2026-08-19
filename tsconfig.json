@@ -8,6 +8,7 @@
   },
   "files": [],
   "references": [
+    { "path": "./apps/bff" },
     { "path": "./apps/frontend" },
     { "path": "./examples/backends/cloudflare-worker" },
     { "path": "./examples/backends/express" },

@@ -4,9 +4,9 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-const backendUrl =
-  process.env.HOOKFISH_BACKEND_URL ??
-  `http://127.0.0.1:${process.env.HOOKFISH_BACKEND_PORT ?? '8787'}`
+const bffUrl =
+  process.env.HOOKFISH_BFF_URL ??
+  `http://127.0.0.1:${process.env.BFF_PORT ?? '8788'}`
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -31,7 +31,8 @@ export default defineConfig({
     open: process.env.HOOKFISH_OPEN === 'true',
     strictPort: true,
     proxy: {
-      '/api': backendUrl,
+      '/api/auth': bffUrl,
+      '/api/client': bffUrl,
     },
   },
 })
