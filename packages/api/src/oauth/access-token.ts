@@ -7,7 +7,8 @@ import {
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const APPLICATION_TOKEN_PREFIX = 'hookfish_app_v1'
-const TOKEN_VERSION = 2
+const BROKER_TOKEN_VERSION = 2
+const APPLICATION_TOKEN_VERSION = 2
 
 export const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 export const MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -33,7 +34,7 @@ export type ScopedAccessGrant = {
 export type AccessGrant = RootAccessGrant | ScopedAccessGrant
 
 type AccessTokenPayload = {
-  v: typeof TOKEN_VERSION
+  v: typeof BROKER_TOKEN_VERSION
   gid: string
   iat: number
   exp: number
@@ -41,7 +42,7 @@ type AccessTokenPayload = {
 }
 
 type ApplicationTokenPayload = {
-  v: typeof TOKEN_VERSION
+  v: typeof APPLICATION_TOKEN_VERSION
   sub: string
   tenant: string
   scopes: string[]
@@ -129,7 +130,7 @@ export async function mintApplicationAccessToken(
   }
   const issuedAt = Math.floor(now / 1000)
   const payload: ApplicationTokenPayload = {
-    v: TOKEN_VERSION,
+    v: APPLICATION_TOKEN_VERSION,
     sub: input.subject,
     tenant: input.tenantId,
     scopes: normalizeResourceScopes(input.scopes),
@@ -184,7 +185,7 @@ async function verifyApplicationAccessToken(
     const expiresAt = Reflect.get(parsed, 'exp')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      version !== TOKEN_VERSION ||
+      version !== APPLICATION_TOKEN_VERSION ||
       typeof subject !== 'string' ||
       !subject ||
       typeof tenant !== 'string' ||
@@ -432,7 +433,7 @@ export async function mintAccessToken(
   const tokenId = randomId()
   const grantId = crypto.randomUUID()
   const payload: AccessTokenPayload = {
-    v: TOKEN_VERSION,
+    v: BROKER_TOKEN_VERSION,
     gid: grantId,
     iat: issuedAt,
     exp: expiresAt,
@@ -502,7 +503,7 @@ export async function verifyAccessToken(
     const grantId = Reflect.get(parsed, 'gid')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      version !== TOKEN_VERSION ||
+      version !== BROKER_TOKEN_VERSION ||
       typeof issuedAt !== 'number' ||
       typeof expiresAt !== 'number' ||
       typeof tokenId !== 'string' ||

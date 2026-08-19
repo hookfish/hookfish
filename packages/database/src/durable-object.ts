@@ -658,7 +658,7 @@ export class HookfishDurableObject<Env = object>
 
   getValidBrokerAccessToken(
     tokenIdHash: string,
-    grantId: string | undefined,
+    grantId: string,
     now: Date,
   ): BrokerAccessToken | undefined {
     const row = this.ctx.storage.sql
@@ -671,11 +671,10 @@ export class HookfishDurableObject<Env = object>
          FROM broker_access_tokens token
          JOIN access_grants grant ON grant.id = token.grant_id
          WHERE token.token_id_hash = ?
-           AND (? IS NULL OR token.grant_id = ?)
+           AND token.grant_id = ?
            AND grant.expires_at > ? LIMIT 1`,
         tokenIdHash,
-        grantId ?? null,
-        grantId ?? null,
+        grantId,
         now.getTime(),
       )
       .toArray()[0]

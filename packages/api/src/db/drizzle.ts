@@ -195,7 +195,7 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
         .where(
           and(
             eq(brokerAccessTokens.tokenIdHash, tokenIdHash),
-            grantId ? eq(brokerAccessTokens.grantId, grantId) : undefined,
+            eq(brokerAccessTokens.grantId, grantId),
             gt(accessGrants.expiresAt, now),
           ),
         )

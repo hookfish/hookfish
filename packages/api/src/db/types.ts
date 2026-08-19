@@ -175,7 +175,7 @@ export interface Database {
 
   getValidBrokerAccessToken(
     tokenIdHash: string,
-    grantId: string | undefined,
+    grantId: string,
     now: Date,
   ): DatabaseResult<BrokerAccessToken | undefined>
   purgeExpiredBrokerAccessTokens(before: Date): DatabaseResult<void>

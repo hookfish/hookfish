@@ -7,6 +7,7 @@ CREATE TABLE "access_grants" (
 );
 --> statement-breakpoint
 DROP INDEX "broker_access_tokens_expires_idx";--> statement-breakpoint
+DELETE FROM "broker_access_tokens";--> statement-breakpoint
 ALTER TABLE "broker_access_tokens" ADD COLUMN "grant_id" uuid NOT NULL;--> statement-breakpoint
 ALTER TABLE "access_grants" ADD CONSTRAINT "access_grants_parent_grant_id_access_grants_id_fk" FOREIGN KEY ("parent_grant_id") REFERENCES "public"."access_grants"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "access_grants_parent_idx" ON "access_grants" USING btree ("parent_grant_id");--> statement-breakpoint
