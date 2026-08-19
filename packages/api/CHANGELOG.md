@@ -1,5 +1,25 @@
 # @hookfish/api
 
+## 1.2.0
+
+### Minor Changes
+
+- ad10b9a: Make `HookfishServer` directly mountable as a Hono sub-application and preserve
+  SDK error responses through Hono's default error handler. Generate Hono-based
+  Node, Docker, and Vercel starters that mount `HookfishServer` directly.
+- cbb2be5: Back named broker tokens with persisted, delegatable access grants. New token
+  payloads reference their grant instead of embedding resource scopes, while
+  revoking a named token deletes its grant and recursively revokes every delegated
+  descendant.
+  
+  Database adapters now store child grants and their token atomically across
+  Postgres, PGlite, and Durable Objects. The migration removes existing named
+  broker tokens; re-mint them after upgrading.
+- 530b921: Replace browser broker credentials with an authenticated, tenant-isolated
+  application API; add the Better Auth organization adapter; make the raw API
+  server-only by default; and put the local operator dashboard behind a
+  restricted loopback BFF.
+
 ## 1.1.0
 
 ### Minor Changes

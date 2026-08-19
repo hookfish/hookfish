@@ -1,5 +1,22 @@
 # hookfish
 
+## 0.13.0
+
+### Minor Changes
+
+- 530b921: Replace browser broker credentials with an authenticated, tenant-isolated
+  application API; add the Better Auth organization adapter; make the raw API
+  server-only by default; and put the local operator dashboard behind a
+  restricted loopback BFF.
+
+### Patch Changes
+
+- ad10b9a: Make `HookfishServer` directly mountable as a Hono sub-application and preserve
+  SDK error responses through Hono's default error handler. Generate Hono-based
+  Node, Docker, and Vercel starters that mount `HookfishServer` directly.
+- Updated dependencies [cbb2be5]
+  - @hookfish/database@1.2.0
+
 ## 0.12.1
 
 ### Patch Changes
