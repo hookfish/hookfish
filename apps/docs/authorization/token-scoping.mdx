@@ -34,7 +34,7 @@ curl --request POST http://127.0.0.1:8787/api/admin/tokens \
 
 The bearer value is returned once. A scoped token may delegate only equal or
 narrower scopes, under its dot-delimited token-name namespace, with an equal or
-earlier expiration.
+earlier expiration. Hookfish records each delegation as a child grant.
 
 Use the token on access:
 
@@ -51,5 +51,7 @@ For a multi-tenant application, begin every connection and secret path with a
 tenant prefix such as `organizations/acme`. Mint tokens against that same
 prefix so a credential for one tenant cannot address another tenant's paths.
 
-Revoke a name with `DELETE /api/admin/tokens/{name}`. Rotating the root key
-invalidates all scoped tokens because it signs them.
+Revoke a name with `DELETE /api/admin/tokens/{name}`. This revokes the named
+token, every token delegated from it, and all deeper descendants. Unrelated
+token grant trees remain active. Rotating the root key invalidates all scoped
+tokens because it signs them.

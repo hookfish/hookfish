@@ -1,4 +1,5 @@
 import {
+  accessGrants,
   brokerAccessTokens,
   connections,
   type Database,
@@ -13,6 +14,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgresClient from 'postgres'
 
 const schema = {
+  accessGrants,
   brokerAccessTokens,
   connections,
   oauthStates,
