@@ -43,6 +43,11 @@ export const connections = hookfishSchema.table(
 
     secret: text('secret_encrypted'),
     refreshToken: text('refresh_token_encrypted'),
+    /** Internal lease fields. They are never returned by the public API. */
+    refreshLockOwner: text('refresh_lock_owner'),
+    refreshLockExpiresAt: timestamp('refresh_lock_expires_at', {
+      withTimezone: true,
+    }),
     tokenType: text('token_type').notNull().default('Bearer'),
     requestedScopes: text('requested_scopes').array().notNull().default([]),
     scopes: text('scopes').array().notNull().default([]),

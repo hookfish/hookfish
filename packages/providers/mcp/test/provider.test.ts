@@ -145,6 +145,26 @@ describe('McpProvider', () => {
     ).rejects.toThrow('does not match')
   })
 
+  it('reports OAuth token errors with their status and identifier', async () => {
+    const provider = new McpProvider({
+      resourceUrl,
+      clientId: 'client',
+      fetch: async (input) => {
+        if (String(input) === `${issuer}/token`) {
+          return Response.json({ error: 'invalid_grant' }, { status: 400 })
+        }
+        return discoveryResponse(input)
+      },
+    })
+
+    await expect(
+      provider.refreshToken({ refreshToken: 'rejected-refresh-token' }),
+    ).rejects.toMatchObject({
+      status: 400,
+      oauthError: 'invalid_grant',
+    })
+  })
+
   it('prefers an OAuth client metadata document when the server supports it', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       if (String(input) === authorizationMetadataUrl) {

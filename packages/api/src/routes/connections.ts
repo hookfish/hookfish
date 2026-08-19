@@ -93,6 +93,10 @@ const commonErrors = {
     description: 'Upstream provider error',
     content: { 'application/json': { schema: errorSchema } },
   },
+  503: {
+    description: 'Connection refresh is still in progress',
+    content: { 'application/json': { schema: errorSchema } },
+  },
 }
 
 const connectionPathParam = z.object({

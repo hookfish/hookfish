@@ -21,6 +21,7 @@ import {
   requireEncryptionKey,
 } from './crypto.js'
 import { BrokerError } from './errors.js'
+import { withDatabaseRefreshLock } from './refresh-lock.js'
 import { formatConnectionPath } from './resource-path.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -67,7 +68,12 @@ async function callProvider<T>(
       )
     }
     if (error instanceof ProviderRequestError) {
-      throw new BrokerError(502, requestErrorCode, error.message)
+      const errorCode =
+        requestErrorCode === 'reauthorization_required' &&
+        error.oauthError !== 'invalid_grant'
+          ? 'token_refresh_failed'
+          : requestErrorCode
+      throw new BrokerError(502, errorCode, error.message)
     }
     throw error
   }
@@ -643,21 +649,68 @@ export async function accessConnection(
   let refreshed = false
   if (connection.secret && isExpired(connection)) {
     try {
-      connection = await refreshConnection(
-        db,
-        env,
-        connection,
-        providers,
-        input.redirectUri,
-        input.clientMetadataUrl,
-      )
-      refreshed = true
+      const result = await withDatabaseRefreshLock(db, connection, async () => {
+        const latest = await db.getConnection(
+          connection.namespace,
+          connection.providerId,
+        )
+        if (!latest) {
+          throw new BrokerError(
+            404,
+            'connection_not_found',
+            'Connection not found.',
+          )
+        }
+        if (!latest.secret || !isExpired(latest)) {
+          return { connection: latest, refreshed: false }
+        }
+        try {
+          return {
+            connection: await refreshConnection(
+              db,
+              env,
+              latest,
+              providers,
+              input.redirectUri,
+              input.clientMetadataUrl,
+            ),
+            refreshed: true,
+          }
+        } catch (error) {
+          if (
+            error instanceof BrokerError &&
+            error.code === 'reauthorization_required'
+          ) {
+            const invalidated = await db.updateConnection(latest.id, {
+              secret: null,
+              refreshToken: null,
+              expiresAt: null,
+            })
+            if (!invalidated) {
+              throw new BrokerError(
+                404,
+                'connection_not_found',
+                'Connection not found.',
+              )
+            }
+          }
+          throw error
+        }
+      })
+      connection = result.connection
+      refreshed = result.refreshed
     } catch (error) {
       if (
         !(error instanceof BrokerError) ||
         error.code !== 'reauthorization_required'
       )
         throw error
+
+      const latest = await db.getConnection(
+        connection.namespace,
+        connection.providerId,
+      )
+      if (latest) connection = latest
     }
   }
 

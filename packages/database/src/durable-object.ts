@@ -172,7 +172,7 @@ export class HookfishDurableObject<Env = object>
         'SELECT COALESCE(MAX(version), 0) AS version FROM _hookfish_schema_migrations',
       )
       .one().version
-    if (current >= 5) return
+    if (current >= 6) return
 
     this.ctx.storage.transactionSync(() => {
       if (current < 3) this.migrateToV3(current)
@@ -187,7 +187,20 @@ export class HookfishDurableObject<Env = object>
         )
       }
       if (current < 5) this.migrateToV5()
+      if (current < 6) this.migrateToV6()
     })
+  }
+
+  private migrateToV6(): void {
+    this.ctx.storage.sql.exec(`
+      ALTER TABLE connections ADD COLUMN refresh_lock_owner TEXT;
+      ALTER TABLE connections ADD COLUMN refresh_lock_expires_at INTEGER;
+    `)
+    this.ctx.storage.sql.exec(
+      `INSERT INTO _hookfish_schema_migrations(version, applied_at)
+       VALUES (6, ?)`,
+      Date.now(),
+    )
   }
 
   private migrateToV5(): void {
@@ -598,6 +611,52 @@ export class HookfishDurableObject<Env = object>
       )
       .toArray()[0]
     return updated ? toConnection(updated) : undefined
+  }
+
+  acquireConnectionRefreshLock(
+    id: string,
+    owner: string,
+    leaseDurationMs: number,
+  ): boolean {
+    const now = Date.now()
+    return (
+      this.ctx.storage.sql.exec(
+        `UPDATE connections
+         SET refresh_lock_owner = ?, refresh_lock_expires_at = ?
+         WHERE id = ?
+           AND (refresh_lock_owner IS NULL OR refresh_lock_expires_at <= ?)`,
+        owner,
+        now + leaseDurationMs,
+        id,
+        now,
+      ).rowsWritten > 0
+    )
+  }
+
+  renewConnectionRefreshLock(
+    id: string,
+    owner: string,
+    leaseDurationMs: number,
+  ): boolean {
+    return (
+      this.ctx.storage.sql.exec(
+        `UPDATE connections SET refresh_lock_expires_at = ?
+         WHERE id = ? AND refresh_lock_owner = ?`,
+        Date.now() + leaseDurationMs,
+        id,
+        owner,
+      ).rowsWritten > 0
+    )
+  }
+
+  releaseConnectionRefreshLock(id: string, owner: string): void {
+    this.ctx.storage.sql.exec(
+      `UPDATE connections
+       SET refresh_lock_owner = NULL, refresh_lock_expires_at = NULL
+       WHERE id = ? AND refresh_lock_owner = ?`,
+      id,
+      owner,
+    )
   }
 
   listConnections(filter: ConnectionFilter = {}): ConnectionSummary[] {

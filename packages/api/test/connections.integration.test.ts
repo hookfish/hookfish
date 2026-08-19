@@ -245,6 +245,189 @@ describe('connections', () => {
     })
   })
 
+  it('deduplicates concurrent refreshes through the database lease', async () => {
+    const authorization = await harness.authorize()
+    const callbackUrl = new URL(authorization.callbackUrl)
+    const callback = await harness.fetch(
+      `${callbackUrl.pathname}${callbackUrl.search}`,
+    )
+    expect(callback.status).toBe(200)
+
+    const connection = await harness.db.getConnection('user/personal', 'stub')
+    if (!connection) throw new Error('Connection was not stored.')
+    await harness.db.updateConnection(connection.id, {
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+    harness.stub.tokenRequests.length = 0
+    harness.stub.tokenDelayMs = 100
+
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        harness.fetch('/api/connections/access/user/personal/stub', {
+          method: 'POST',
+        }),
+      ),
+    )
+    const bodies = await Promise.all(
+      responses.map(async (response) => {
+        expect(response.status).toBe(200)
+        return z
+          .object({ secret: z.string(), refreshed: z.boolean() })
+          .parse(await response.json())
+      }),
+    )
+
+    expect(
+      harness.stub.tokenRequests.filter(
+        ({ grantType }) => grantType === 'refresh_token',
+      ),
+    ).toHaveLength(1)
+    expect(new Set(bodies.map(({ secret }) => secret))).toHaveProperty(
+      'size',
+      1,
+    )
+    expect(bodies.filter(({ refreshed }) => refreshed)).toHaveLength(1)
+  })
+
+  it('shares a rejected refresh through the database lease', async () => {
+    const authorization = await harness.authorize()
+    const callbackUrl = new URL(authorization.callbackUrl)
+    const callback = await harness.fetch(
+      `${callbackUrl.pathname}${callbackUrl.search}`,
+    )
+    expect(callback.status).toBe(200)
+
+    const connection = await harness.db.getConnection('user/personal', 'stub')
+    if (!connection) throw new Error('Connection was not stored.')
+    await harness.db.updateConnection(connection.id, {
+      expiresAt: new Date(Date.now() - 60_000),
+    })
+    harness.stub.tokenRequests.length = 0
+    harness.stub.tokenDelayMs = 100
+    harness.stub.tokenStatus = 400
+
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        harness.fetch('/api/connections/access/user/personal/stub', {
+          method: 'POST',
+        }),
+      ),
+    )
+    const bodies = await Promise.all(
+      responses.map(async (response) => {
+        expect(response.status).toBe(401)
+        return z
+          .object({
+            error: z.object({
+              code: z.literal('authorization_required'),
+              authorize_url: z.url(),
+            }),
+          })
+          .parse(await response.json())
+      }),
+    )
+
+    expect(
+      harness.stub.tokenRequests.filter(
+        ({ grantType }) => grantType === 'refresh_token',
+      ),
+    ).toHaveLength(1)
+    expect(bodies).toHaveLength(8)
+    await expect(
+      harness.db.getConnection('user/personal', 'stub'),
+    ).resolves.toMatchObject({
+      secret: null,
+      refreshToken: null,
+      expiresAt: null,
+    })
+  })
+
+  it('preserves credentials after a transient refresh failure', async () => {
+    const authorization = await harness.authorize()
+    const callbackUrl = new URL(authorization.callbackUrl)
+    const callback = await harness.fetch(
+      `${callbackUrl.pathname}${callbackUrl.search}`,
+    )
+    expect(callback.status).toBe(200)
+
+    const connection = await harness.db.getConnection('user/personal', 'stub')
+    if (!connection) throw new Error('Connection was not stored.')
+    const expiresAt = new Date(Date.now() - 60_000)
+    const expired = await harness.db.updateConnection(connection.id, {
+      expiresAt,
+    })
+    if (!expired) throw new Error('Connection was not updated.')
+    harness.stub.tokenStatus = 503
+
+    const failed = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      { method: 'POST' },
+    )
+    expect(failed.status).toBe(502)
+    await expect(failed.json()).resolves.toMatchObject({
+      error: { code: 'token_refresh_failed' },
+    })
+    await expect(
+      harness.db.getConnection('user/personal', 'stub'),
+    ).resolves.toMatchObject({
+      secret: expired.secret,
+      refreshToken: expired.refreshToken,
+      expiresAt,
+    })
+
+    harness.stub.tokenStatus = null
+    const recovered = await harness.fetch(
+      '/api/connections/access/user/personal/stub',
+      { method: 'POST' },
+    )
+    expect(recovered.status).toBe(200)
+    await expect(recovered.json()).resolves.toMatchObject({ refreshed: true })
+  })
+
+  it('expires refresh leases and ignores releases from stale owners', async () => {
+    const stored = await harness.db.putConnection({
+      namespace: 'lease',
+      providerId: 'stub',
+      configuration: {},
+    })
+    if (
+      !harness.db.acquireConnectionRefreshLock ||
+      !harness.db.renewConnectionRefreshLock ||
+      !harness.db.releaseConnectionRefreshLock
+    ) {
+      throw new Error('PGlite must support refresh leases.')
+    }
+
+    await expect(
+      harness.db.acquireConnectionRefreshLock(stored.id, 'owner-a', 60_000),
+    ).resolves.toBe(true)
+    await expect(
+      harness.db.acquireConnectionRefreshLock(stored.id, 'owner-b', 60_000),
+    ).resolves.toBe(false)
+
+    await expect(
+      harness.db.renewConnectionRefreshLock(stored.id, 'owner-a', 60_000),
+    ).resolves.toBe(true)
+    await expect(
+      harness.db.renewConnectionRefreshLock(stored.id, 'owner-b', 60_000),
+    ).resolves.toBe(false)
+
+    await harness.db.releaseConnectionRefreshLock(stored.id, 'owner-b')
+    await expect(
+      harness.db.acquireConnectionRefreshLock(stored.id, 'owner-b', 60_000),
+    ).resolves.toBe(false)
+
+    await harness.db.releaseConnectionRefreshLock(stored.id, 'owner-a')
+    await expect(
+      harness.db.acquireConnectionRefreshLock(stored.id, 'owner-b', -1),
+    ).resolves.toBe(true)
+
+    await harness.db.releaseConnectionRefreshLock(stored.id, 'owner-a')
+    await expect(
+      harness.db.acquireConnectionRefreshLock(stored.id, 'owner-c', 60_000),
+    ).resolves.toBe(true)
+  })
+
   it('lists metadata without returning stored credentials', async () => {
     await harness.fetch('/api/connections/secret/team/openai/secret', {
       method: 'PUT',

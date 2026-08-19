@@ -21,8 +21,12 @@ export type OAuthStub = {
   nextTokenResponse: StubTokenResponse | null
   /** Force the next token request to fail with this status. */
   nextTokenStatus: number | null
+  /** Force every token request to fail with this status. */
+  tokenStatus: number | null
   /** Return a non-JSON body on the next token call (still HTTP 200). */
   nextTokenNonJson: boolean
+  /** Delay token responses so tests can overlap requests. */
+  tokenDelayMs: number
   tokenRequests: Array<{
     grantType: string
     body: Record<string, string>
@@ -81,7 +85,9 @@ export async function startOAuthStub(): Promise<OAuthStub> {
     pendingCodes,
     nextTokenResponse: null,
     nextTokenStatus: null,
+    tokenStatus: null,
     nextTokenNonJson: false,
+    tokenDelayMs: 0,
     tokenRequests,
     close: async () => undefined,
   }
@@ -120,11 +126,20 @@ export async function startOAuthStub(): Promise<OAuthStub> {
         contentType: req.headers['content-type'],
       })
 
-      if (stub.nextTokenStatus !== null) {
-        const status = stub.nextTokenStatus
-        stub.nextTokenStatus = null
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ error: 'invalid_grant' }))
+      if (stub.tokenDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, stub.tokenDelayMs))
+      }
+
+      const tokenStatus = stub.tokenStatus ?? stub.nextTokenStatus
+      if (tokenStatus !== null) {
+        if (stub.tokenStatus === null) stub.nextTokenStatus = null
+        res.writeHead(tokenStatus, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            error:
+              tokenStatus === 400 ? 'invalid_grant' : 'temporarily_unavailable',
+          }),
+        )
         return
       }
 

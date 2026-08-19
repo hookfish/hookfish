@@ -1,7 +1,19 @@
+export type ProviderRequestErrorOptions = ErrorOptions & {
+  /** HTTP status returned by the upstream provider, when available. */
+  status?: number
+  /** OAuth error identifier returned by the provider, such as `invalid_grant`. */
+  oauthError?: string
+}
+
 export class ProviderRequestError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  readonly status: number | undefined
+  readonly oauthError: string | undefined
+
+  constructor(message: string, options: ProviderRequestErrorOptions = {}) {
     super(message, options)
     this.name = 'ProviderRequestError'
+    this.status = options.status
+    this.oauthError = options.oauthError
   }
 }
 

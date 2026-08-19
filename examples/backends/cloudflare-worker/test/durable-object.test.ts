@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test'
 import { HookfishServer } from '@hookfish/api'
 import { durableObjects } from '@hookfish/database/durable-object'
 import { describe, expect, it } from 'vitest'
+import { withDatabaseRefreshLock } from '../../../../packages/api/src/oauth/refresh-lock'
 
 function database(name: string) {
   return env.HOOKFISH_DB.getByName(name)
@@ -56,6 +57,61 @@ describe('HookfishDurableObject', () => {
       requestedScopes: ['repo'],
       scopes: ['repo'],
     })
+  })
+
+  it('leases one connection refresh to one owner', async () => {
+    const db = database('refresh-lease')
+    const connection = await db.putConnection({
+      namespace: 'shared',
+      providerId: 'github',
+      configuration: {},
+    })
+
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-a', 60_000),
+    ).toBe(true)
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+    expect(
+      await db.renewConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+
+    await db.releaseConnectionRefreshLock(connection.id, 'owner-b')
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(false)
+
+    await db.releaseConnectionRefreshLock(connection.id, 'owner-a')
+    expect(
+      await db.acquireConnectionRefreshLock(connection.id, 'owner-b', 60_000),
+    ).toBe(true)
+  })
+
+  it('coordinates refreshes through a Durable Object RPC stub', async () => {
+    const db = database('refresh-coordinator')
+    const connection = await db.putConnection({
+      namespace: 'shared',
+      providerId: 'github',
+      configuration: {},
+    })
+    let refreshes = 0
+
+    await expect(
+      withDatabaseRefreshLock(db, connection, async () => {
+        refreshes += 1
+        return 'refreshed'
+      }),
+    ).resolves.toBe('refreshed')
+    expect(refreshes).toBe(1)
+
+    expect(
+      await db.acquireConnectionRefreshLock(
+        connection.id,
+        'next-owner',
+        60_000,
+      ),
+    ).toBe(true)
   })
 
   it('isolates named database partitions', async () => {
