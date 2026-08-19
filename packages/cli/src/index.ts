@@ -726,35 +726,23 @@ program
   .action(async (options: { backend: string; open: boolean }) => {
     const backendPackage = developmentBackendPackage(options.backend)
     const environment = developmentEnvironment()
-    const backend = spawn(
-      'pnpm',
-      [
-        'exec',
-        'turbo',
-        'dev',
-        '--env-mode=loose',
-        `--filter=${backendPackage}`,
-      ],
-      {
-        cwd: findWorkspaceRoot(),
-        env: environment,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      },
+    await exitWith(
+      await run(
+        'pnpm',
+        [
+          'exec',
+          'turbo',
+          'dev',
+          '--env-mode=loose',
+          '--filter=@hookfish/frontend',
+          `--filter=${backendPackage}`,
+        ],
+        {
+          ...environment,
+          HOOKFISH_OPEN: options.open ? 'true' : 'false',
+        },
+      ),
     )
-    backend.once('error', (error) => {
-      process.stderr.write(`Backend failed to start: ${error.message}\n`)
-    })
-    let exitCode = 1
-    try {
-      exitCode = await runPackagedFrontend(
-        options.open,
-        environment.HOOKFISH_BACKEND_URL,
-      )
-    } finally {
-      backend.kill('SIGTERM')
-    }
-    await exitWith(exitCode)
   })
 
 program
