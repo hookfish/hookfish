@@ -7,7 +7,8 @@ import {
 
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const APPLICATION_TOKEN_PREFIX = 'hookfish_app_v1'
-const TOKEN_VERSION = 1
+const TOKEN_VERSION = 2
+const LEGACY_TOKEN_VERSION = 1
 
 export const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 export const MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -20,6 +21,8 @@ export type RootAccessGrant = {
 export type ScopedAccessGrant = {
   kind: 'scoped'
   name: string
+  /** Persisted named grants have an ID; ephemeral application grants do not. */
+  grantId?: string
   scopes: string[]
   expiresAt: number
   application?: {
@@ -32,8 +35,7 @@ export type AccessGrant = RootAccessGrant | ScopedAccessGrant
 
 type AccessTokenPayload = {
   v: typeof TOKEN_VERSION
-  name: string
-  scopes: string[]
+  gid: string
   iat: number
   exp: number
   jti: string
@@ -408,6 +410,7 @@ export async function mintAccessToken(
   token: string
   tokenIdHash: string
   name: string
+  grantId: string
   scopes: string[]
   expiresAt: number
 }> {
@@ -428,10 +431,10 @@ export async function mintAccessToken(
   const issuedAt = Math.floor(now / 1000)
   const expiresAt = issuedAt + input.expiresIn
   const tokenId = randomId()
+  const grantId = crypto.randomUUID()
   const payload: AccessTokenPayload = {
     v: TOKEN_VERSION,
-    name,
-    scopes,
+    gid: grantId,
     iat: issuedAt,
     exp: expiresAt,
     jti: tokenId,
@@ -453,6 +456,7 @@ export async function mintAccessToken(
     token: `${signingInput}.${toBase64Url(new Uint8Array(signature))}`,
     tokenIdHash,
     name,
+    grantId,
     scopes,
     expiresAt,
   }
@@ -462,7 +466,12 @@ export async function verifyAccessToken(
   rootApiKey: string,
   token: string,
   now = Date.now(),
-): Promise<ScopedAccessGrant & { tokenIdHash: string }> {
+): Promise<{
+  tokenIdHash: string
+  grantId?: string
+  legacyName?: string
+  expiresAt: number
+}> {
   try {
     const [prefix, encodedPayload, encodedSignature, extra] = token.split('.')
     if (
@@ -489,17 +498,12 @@ export async function verifyAccessToken(
     if (typeof parsed !== 'object' || parsed === null) throw invalidToken()
 
     const version = Reflect.get(parsed, 'v')
-    const name = Reflect.get(parsed, 'name')
-    const scopes = Reflect.get(parsed, 'scopes')
     const issuedAt = Reflect.get(parsed, 'iat')
     const expiresAt = Reflect.get(parsed, 'exp')
     const tokenId = Reflect.get(parsed, 'jti')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      version !== TOKEN_VERSION ||
-      typeof name !== 'string' ||
-      !Array.isArray(scopes) ||
-      !scopes.every((scope) => typeof scope === 'string') ||
+      (version !== TOKEN_VERSION && version !== LEGACY_TOKEN_VERSION) ||
       typeof issuedAt !== 'number' ||
       typeof expiresAt !== 'number' ||
       typeof tokenId !== 'string' ||
@@ -511,10 +515,28 @@ export async function verifyAccessToken(
       throw invalidToken()
     }
 
+    if (version === TOKEN_VERSION) {
+      const grantId = Reflect.get(parsed, 'gid')
+      if (typeof grantId !== 'string' || !grantId) throw invalidToken()
+      return {
+        grantId,
+        expiresAt,
+        tokenIdHash: await hashTokenId(tokenId),
+      }
+    }
+
+    const legacyName = Reflect.get(parsed, 'name')
+    const legacyScopes = Reflect.get(parsed, 'scopes')
+    if (
+      typeof legacyName !== 'string' ||
+      !Array.isArray(legacyScopes) ||
+      !legacyScopes.every((scope) => typeof scope === 'string')
+    ) {
+      throw invalidToken()
+    }
+    normalizeResourceScopes(legacyScopes)
     return {
-      kind: 'scoped',
-      name: normalizeTokenName(name),
-      scopes: normalizeResourceScopes(scopes),
+      legacyName: normalizeTokenName(legacyName),
       expiresAt,
       tokenIdHash: await hashTokenId(tokenId),
     }
@@ -542,21 +564,24 @@ export async function authenticateAccessToken(
   }
   const verified = await verifyAccessToken(rootApiKey, token, now)
   const stored = await db.getValidBrokerAccessToken(
-    verified.name,
     verified.tokenIdHash,
+    verified.grantId,
     new Date(now),
   )
 
-  if (!stored) throw invalidToken()
+  if (!stored || (verified.legacyName && stored.name !== verified.legacyName)) {
+    throw invalidToken()
+  }
 
   try {
     return {
       kind: 'scoped',
       name: stored.name,
-      scopes: normalizeResourceScopes(stored.scopes),
+      grantId: stored.grantId,
+      scopes: normalizeResourceScopes(stored.grant.scopes),
       expiresAt: Math.min(
         verified.expiresAt,
-        Math.floor(stored.expiresAt.getTime() / 1000),
+        Math.floor(stored.grant.expiresAt.getTime() / 1000),
       ),
     }
   } catch {

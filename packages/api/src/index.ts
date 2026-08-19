@@ -316,6 +316,7 @@ export {
   migrateDatabase,
 } from './db/binding.js'
 export type {
+  AccessGrant,
   BrokerAccessToken,
   Connection,
   ConnectionFilter,

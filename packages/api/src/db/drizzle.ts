@@ -1,5 +1,6 @@
 import { and, asc, eq, gt, inArray, lt, lte, or, sql } from 'drizzle-orm'
 import {
+  accessGrants,
   brokerAccessTokens,
   connections,
   type DrizzleDatabase,
@@ -183,34 +184,68 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
       return deleted.length > 0
     },
 
-    async getValidBrokerAccessToken(name, tokenIdHash, now) {
-      const [token] = await db
-        .select()
+    async getValidBrokerAccessToken(tokenIdHash, grantId, now) {
+      const [row] = await db
+        .select({ token: brokerAccessTokens, grant: accessGrants })
         .from(brokerAccessTokens)
+        .innerJoin(
+          accessGrants,
+          eq(brokerAccessTokens.grantId, accessGrants.id),
+        )
         .where(
           and(
-            eq(brokerAccessTokens.name, name),
             eq(brokerAccessTokens.tokenIdHash, tokenIdHash),
-            gt(brokerAccessTokens.expiresAt, now),
+            grantId ? eq(brokerAccessTokens.grantId, grantId) : undefined,
+            gt(accessGrants.expiresAt, now),
           ),
         )
         .limit(1)
-      return token
+      return row
+        ? {
+            ...row.token,
+            grant: row.grant,
+          }
+        : undefined
     },
 
     async purgeExpiredBrokerAccessTokens(before) {
-      await db
-        .delete(brokerAccessTokens)
-        .where(lte(brokerAccessTokens.expiresAt, before))
+      await db.delete(accessGrants).where(lte(accessGrants.expiresAt, before))
     },
 
     async createBrokerAccessToken(input) {
-      const inserted = await db
-        .insert(brokerAccessTokens)
-        .values(input)
-        .onConflictDoNothing({ target: brokerAccessTokens.name })
-        .returning()
-      return inserted.length > 0
+      return db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ name: brokerAccessTokens.name })
+          .from(brokerAccessTokens)
+          .where(
+            or(
+              eq(brokerAccessTokens.name, input.name),
+              eq(brokerAccessTokens.tokenIdHash, input.tokenIdHash),
+            ),
+          )
+          .limit(1)
+        if (existing.length > 0) return false
+
+        await tx.insert(accessGrants).values({
+          id: input.grantId,
+          parentGrantId: input.parentGrantId,
+          scopes: input.scopes,
+          expiresAt: input.expiresAt,
+        })
+        const inserted = await tx
+          .insert(brokerAccessTokens)
+          .values({
+            name: input.name,
+            tokenIdHash: input.tokenIdHash,
+            grantId: input.grantId,
+          })
+          .onConflictDoNothing()
+          .returning()
+        if (inserted.length > 0) return true
+
+        await tx.delete(accessGrants).where(eq(accessGrants.id, input.grantId))
+        return false
+      })
     },
 
     async listBrokerAccessTokenNames() {
@@ -221,10 +256,18 @@ export function drizzleDatabase(db: DrizzleDatabase): Database {
       return tokens.map(({ name }) => name)
     },
 
-    async deleteBrokerAccessToken(name) {
+    async deleteBrokerAccessTokenGrant(name) {
       const deleted = await db
-        .delete(brokerAccessTokens)
-        .where(eq(brokerAccessTokens.name, name))
+        .delete(accessGrants)
+        .where(
+          inArray(
+            accessGrants.id,
+            db
+              .select({ grantId: brokerAccessTokens.grantId })
+              .from(brokerAccessTokens)
+              .where(eq(brokerAccessTokens.name, name)),
+          ),
+        )
         .returning()
       return deleted.length > 0
     },
