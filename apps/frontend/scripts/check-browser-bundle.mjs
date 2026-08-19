@@ -12,7 +12,7 @@ async function files(directory) {
   return nested.flat()
 }
 
-const directory = path.resolve(process.argv[2] ?? 'dist')
+const directory = path.resolve(process.argv[2] ?? 'dist/client')
 const output = (
   await Promise.all(
     (await files(directory)).map((file) => readFile(file, 'utf8')),

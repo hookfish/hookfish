@@ -1,11 +1,11 @@
 ---
 title: "CLI"
-description: "Install, update, scaffold, serve, inspect, and migrate Hookfish from the command line."
+description: "Install, update, scaffold, inspect, and migrate Hookfish from the command line."
 ---
 
-The `hookfish` package provides the project initializer, packaged dashboard,
-MCP inspector, and local migration command. Run it through your package manager
-without a global installation, or install it globally for a persistent command.
+The `hookfish` package provides the project initializer, MCP inspector, and
+local migration command. Run it through your package manager without a global
+installation, or install it globally for a persistent command.
 
 ## Install and update the CLI
 
@@ -39,24 +39,6 @@ pnpm dlx hookfish init my-broker --backend node
 
 The default backend is `node`. The target directory must be empty, and its name
 must be a lowercase npm-compatible name.
-
-## Serve the dashboard
-
-```bash
-pnpm dlx hookfish serve --backend-url http://127.0.0.1:8787
-```
-
-`hookfish dev` is an alias. The command serves the packaged dashboard behind a
-loopback operator BFF. It forwards only explicit safe operations and keeps
-`HOOKFISH_API_KEY` in the CLI process.
-
-| Option | Environment alternative |
-| --- | --- |
-| `--backend-url <url>` | `HOOKFISH_BACKEND_URL` |
-| `--no-open` | None |
-
-Generated projects already combine this command with their runtime-native
-development server under `pnpm dev`.
 
 ## Run the MCP inspector
 

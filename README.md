@@ -1,10 +1,11 @@
 # Hookfish
 
-A portable OAuth and encrypted-secret broker with a static React dashboard and Fetch-compatible
-backend runtimes:
+A portable OAuth and encrypted-secret broker with a TanStack Start frontend and
+Fetch-compatible backend runtimes:
 
-- `apps/frontend` — Vite SPA with TanStack Router and React Query
+- `apps/frontend` — TanStack Start SPA with TanStack Router and React Query
 - `apps/inspector` — TanStack Start inspector for remote MCP servers
+- `packages/client` — mountable Hono facade for the Hookfish frontend
 - `packages/backend` — authenticated application facade plus raw API composition
 - `packages/api` — shared Hono API and OAuth broker
 - `packages/auth-better-auth` — Better Auth session and organization adapter
@@ -16,11 +17,14 @@ backend runtimes:
 - `examples/backends/express` and `examples/backends/nextjs` — alternative Node hosts
 - `examples/backends/cloudflare-worker` — Worker backend using SQLite Durable Objects
 
-The frontend contains no server functions, database code, or broker
-credentials. A configured host exposes two separate surfaces:
+The frontend uses no TanStack Start server functions, database code, or browser
+credentials. Its custom server entry mounts `@hookfish/client`, which points at
+the separately running Hookfish API and exposes two browser-facing surfaces:
 
-- `/api/*` — server-only raw Hookfish API plus public OAuth callbacks
-- `/api/client/*` — explicit safe operations, only when application auth is configured
+- `/api/connections/callback/*` — public OAuth callbacks
+- `/api/client/*` — explicit operator-safe operations backed by a server-only key
+
+The raw Hookfish API remains available only on the separate backend origin.
 
 ## Local development
 
@@ -39,7 +43,7 @@ pnpm dev --backend cloudflare-worker
 
 ## Create a standalone project
 
-Scaffold a deployable Hookfish backend with the dashboard development server:
+Scaffold a deployable Hookfish backend:
 
 ```sh
 npm install --global hookfish@latest
@@ -52,15 +56,11 @@ pnpm dev
 pnpm dev:server
 ```
 
-The generated `dev:server` script runs the platform-native development server
-(`vercel dev`, `wrangler dev`, Node, Bun, or Docker). The `dev` script runs it in
-parallel with `hookfish serve --backend-url <backend-url>`, which serves the
-packaged frontend behind a loopback operator BFF. The BFF forwards only safe
-connection-management operations and keeps `HOOKFISH_API_KEY` in the CLI
-process. Use `--no-install` during
-initialization to skip dependency installation. The Cloudflare scaffold uses a
-PostgreSQL database through Hyperdrive; the Vercel scaffold expects Postgres
-through `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
+The generated `dev` and `dev:server` scripts run the platform-native development
+server (`vercel dev`, `wrangler dev`, Node, Bun, or Docker). Use `--no-install`
+during initialization to skip dependency installation. The Cloudflare scaffold
+uses a PostgreSQL database through Hyperdrive; the Vercel scaffold expects
+Postgres through `DATABASE_URL`; Node, Bun, and Docker use PGlite by default.
 Each scaffold generates a gitignored local environment file with a unique
 encryption key and broker API key.
 
@@ -72,29 +72,27 @@ packaged server directly at `http://localhost:3000`. It mounts the raw API at
 unset or empty. Use `INSPECTOR_PORT` to choose another port. In Conductor, the
 CLI uses the third allocated workspace port automatically.
 
-The repository's `pnpm dev` script builds the packaged dashboard, runs the
-selected backend through Turbo, and places the loopback operator BFF in front.
+The repository's `pnpm dev` script runs the TanStack Start frontend and the
+selected backend through Turbo. The frontend mounts `@hookfish/client` and uses
+`HOOKFISH_BACKEND_URL` to reach the backend.
 Choose `hono-node` (the default), `express`, `nextjs`, or `cloudflare-worker`
 with `--backend`. The default Hono backend stores PGlite data in
 `pgdata` and applies embedded migrations lazily. Set `PGLITE_DATA_DIR` to move
 it. In Conductor, the CLI automatically uses `CONDUCTOR_PORT` for the frontend
 and the next allocated port for the backend.
 
-Outside this repository, `hookfish dev` and its `hookfish serve` alias serve the
-packaged dashboard behind the same restricted local BFF. An explicit backend
-and server-side `HOOKFISH_API_KEY` are required.
+## Pointing the frontend at another backend
 
-## Pointing the local dashboard at another backend
+Run any Hookfish API, then start the frontend with its server-only configuration:
 
-Run any backend, then start the local operator server:
-
-```sh
+```bash
+HOOKFISH_BACKEND_URL=http://127.0.0.1:3000 \
 HOOKFISH_API_KEY=your-server-key \
-  pnpm cli serve --backend-url http://127.0.0.1:3000
+  pnpm --filter @hookfish/frontend dev
 ```
 
-The dashboard never receives that key and does not expose the raw API. Product
-UIs should use an authenticated `/api/client` deployment instead.
+`@hookfish/client` keeps that key on the Start server and does not expose the raw
+API to the browser.
 
 Available backends:
 
@@ -149,11 +147,9 @@ Rerun `pnpm cf-typegen` whenever a binding changes.
 
 ## Product frontend
 
-The packaged dashboard is a loopback operator tool, not a remotely hosted
-admin surface. For a production product UI, configure an application auth
-provider and call `/api/client` from your own frontend. Hookfish verifies the user and
-current tenant, then internally scopes every `/api/client` request to that
-tenant:
+For a production product UI, configure an application auth provider and call
+the authenticated `/api/client` API from your own frontend. Hookfish verifies
+the user and current tenant, then internally scopes every request to that tenant:
 
 ```ts
 import { createHookfish } from '@hookfish/api'

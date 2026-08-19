@@ -47,7 +47,7 @@ describe('scaffoldProject', () => {
 
   it.each(
     scaffoldBackends,
-  )('creates a %s project that runs hookfish serve', (backend) => {
+  )('creates a %s project that runs its backend directly', (backend) => {
     const parentDirectory = temporaryDirectory()
     const result = scaffoldProject({
       name: `broker-${backend}`,
@@ -59,10 +59,10 @@ describe('scaffoldProject', () => {
     expect(
       existsSync(path.join(result.directory, 'hookfish.project.json')),
     ).toBe(false)
-    expect(packageJson.scripts.dev).toContain('npm:dev:server')
-    expect(packageJson.scripts.dev).toContain('hookfish serve --backend-url')
+    expect(packageJson.scripts.dev).toBe(packageJson.scripts['dev:server'])
     expect(packageJson.scripts['dev:server']).toBeTruthy()
     expect(packageJson.scripts['dev:server']).not.toContain('hookfish serve')
+    expect(packageJson.devDependencies.concurrently).toBeUndefined()
     expect(packageJson.dependencies['@hookfish/api']).toBe('latest')
     expect(
       readFileSync(path.join(result.directory, 'pnpm-workspace.yaml'), 'utf8'),

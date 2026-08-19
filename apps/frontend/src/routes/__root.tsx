@@ -1,14 +1,34 @@
+import {
+  createRootRoute,
+  HeadContent,
+  Link,
+  Outlet,
+  Scripts,
+} from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import '@fontsource-variable/ibm-plex-sans'
+import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import '../index.css'
+import appCss from '../index.css?url'
 
 const queryClient = new QueryClient()
 
 export const Route = createRootRoute({
+  head: () => ({
+    meta: [
+      { charSet: 'utf-8' },
+      {
+        name: 'viewport',
+        content: 'width=device-width, initial-scale=1',
+      },
+      { title: 'Hookfish' },
+    ],
+    links: [{ rel: 'stylesheet', href: appCss }],
+  }),
   component: RootLayout,
+  shellComponent: RootDocument,
 })
 
 function RootLayout() {
@@ -31,11 +51,9 @@ function AppShell() {
       <div className="h-svh overflow-hidden bg-background">
         <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur-sm motion-reduce:backdrop-blur-none">
           <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
-            <div className="flex shrink-0 items-baseline">
-              <strong className="text-sm font-medium tracking-widest uppercase">
-                Hookfish
-              </strong>
-            </div>
+            <strong className="text-sm font-medium tracking-widest uppercase">
+              Hookfish
+            </strong>
             <nav
               aria-label="Primary navigation"
               className="flex items-center gap-1"
@@ -60,5 +78,19 @@ function AppShell() {
       </div>
       <TanStackRouterDevtools />
     </TooltipProvider>
+  )
+}
+
+function RootDocument({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
   )
 }

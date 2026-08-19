@@ -23,8 +23,7 @@ pnpm dlx hookfish init my-broker --backend <backend>
 
 Every scaffold provides:
 
-- `pnpm dev` for the backend and packaged dashboard
-- `pnpm dev:server` for only the runtime-native backend
+- `pnpm dev` and `pnpm dev:server` for the runtime-native backend
 - `hookfish.config.ts` or an equivalent Worker entrypoint
 - A gitignored local environment file with an encryption key and development
   broker key
@@ -41,12 +40,12 @@ production storage path.
 
 ## Separate the dashboard from the backend
 
-The dashboard assets are static, but `hookfish serve` places a local operator
-BFF in front of them. The BFF keeps `HOOKFISH_API_KEY` in the server process,
+The `@hookfish/client` package is a mountable Hono facade for a separate
+server-rendered frontend. It keeps `HOOKFISH_API_KEY` in the frontend server,
 sets an ephemeral `HttpOnly` operator cookie, and forwards only explicit safe
-operations. It never proxies the raw API wholesale.
+operations to `HOOKFISH_BACKEND_URL`. It never proxies the raw API wholesale.
 
 <Tip>
-  The packaged operator dashboard binds to loopback. Build a separately
-  authenticated application or SSO-protected operator service for remote use.
+  Keep the repository operator frontend on loopback, or place a hosted operator
+  service behind SSO or another access-control layer.
 </Tip>
