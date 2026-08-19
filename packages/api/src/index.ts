@@ -7,11 +7,8 @@ import {
 import { Hono, type ExecutionContext } from 'hono'
 import { cors } from 'hono/cors'
 
-import type { ApplicationAuthProvider } from './application-auth.js'
-import { createHookfishBackend, type HookfishBackendOptions } from './client.js'
 import { type DatabaseInput, migrateDatabase } from './db/binding.js'
 import type { HookfishEventHandler } from './events.js'
-import { requireBrokerApiKey, resolveBrokerConfig } from './oauth/config.js'
 import type { BrokerContext } from './oauth/middleware.js'
 import {
   type BoundProviderSource,
@@ -20,6 +17,7 @@ import {
   type ProviderInput,
 } from './provider-source.js'
 import { createAdminRoutes } from './routes/admin.js'
+import { createAccessRoutes } from './routes/access.js'
 import { createConnectionRoutes } from './routes/connections.js'
 import { statsRoutes } from './routes/stats.js'
 
@@ -33,10 +31,6 @@ export type HookfishConfig<Bindings extends object = object> = {
   providers: HookfishProviders<Bindings>
   /** Default database binding. A runtime host may override it in `HookfishServer.init`. */
   db: DatabaseInput<Bindings>
-  /** Application authentication and tenant authorization for `/api/client`. */
-  auth?: ApplicationAuthProvider<Bindings>
-  /** Additional exact origins allowed to call `/api/client`. Same-origin is always allowed. */
-  clientOrigins?: readonly string[]
   /** Serve raw API OpenAPI JSON and Swagger UI. @default true */
   includeSwagger?: boolean
   /** Fixed destination after a successful OAuth callback. Omit for the development completion page. */
@@ -81,12 +75,11 @@ function validateExactOrigins(name: string, origins: readonly string[]): void {
 function validateHookfishOptions(
   options: Pick<
     HookfishConfig,
-    'returnTo' | 'trustedOrigins' | 'clientOrigins' | 'rawApiOrigins'
+    'returnTo' | 'trustedOrigins' | 'rawApiOrigins'
   >,
 ): void {
   if (options.returnTo) validateHttpUrl('returnTo', options.returnTo)
   validateExactOrigins('trustedOrigins', options.trustedOrigins ?? [])
-  validateExactOrigins('clientOrigins', options.clientOrigins ?? [])
   validateExactOrigins('rawApiOrigins', options.rawApiOrigins ?? [])
 }
 
@@ -130,6 +123,7 @@ function createApiRoutes<Bindings extends object>(
       credentials: false,
       origin: (origin) => (rawOrigins.includes(origin) ? origin : ''),
     })
+    base.use('/access', rawCors)
     base.use('/stats', rawCors)
     base.use('/admin/*', rawCors)
     base.use('/connections', rawCors)
@@ -137,6 +131,7 @@ function createApiRoutes<Bindings extends object>(
   }
 
   const api = base
+    .route('/access', createAccessRoutes(database))
     .route('/stats', statsRoutes)
     .route('/admin', createAdminRoutes(database, options.onEvent))
     .route(
@@ -171,15 +166,6 @@ export async function createHookfishOpenAPIDocument(): Promise<unknown> {
 
 export type AppType = ReturnType<typeof createApiRoutes>
 
-export type HookfishRuntime<Bindings extends object = object> = {
-  /** Label shown by `/api/client/health`. @default "fetch" */
-  runtime?: HookfishBackendOptions<Bindings>['runtime']
-  /** Override application origins for a runtime-specific deployment. */
-  clientOrigins?: HookfishBackendOptions<Bindings>['clientOrigins']
-  /** Override the root key used to sign ephemeral application capabilities. */
-  rootApiKey?: HookfishBackendOptions<Bindings>['rootApiKey']
-}
-
 function optionalExecutionContext(context: {
   readonly executionCtx: ExecutionContext
 }): ExecutionContext | undefined {
@@ -207,7 +193,6 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
   ) => Promise<BoundProviderSource>
   private constructor(
     options: HookfishConfig<Bindings>,
-    runtime: HookfishRuntime<Bindings>,
     resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   ) {
     super()
@@ -222,26 +207,14 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
       this.includeSwagger,
     )
     const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
-    const backend = createHookfishBackend({
-      config: options,
-      hookfishFetch: (request, bindings, executionContext) =>
-        rawApp.fetch(request, bindings ?? {}, executionContext),
-      runtime: runtime.runtime,
-      clientOrigins: runtime.clientOrigins,
-      rootApiKey:
-        runtime.rootApiKey ??
-        ((bindings) =>
-          requireBrokerApiKey(resolveBrokerConfig(bindings ?? {}))),
-    })
-
     const handleRequest = (context: {
       readonly env: Bindings
       readonly executionCtx: ExecutionContext
       readonly req: { readonly raw: Request }
     }) =>
-      backend.fetch(
+      rawApp.fetch(
         context.req.raw,
-        context.env,
+        context.env ?? {},
         optionalExecutionContext(context),
       )
 
@@ -251,11 +224,10 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
 
   static async init<Bindings extends object = object>(
     options: HookfishConfig<Bindings>,
-    runtime: HookfishRuntime<Bindings> = {},
   ): Promise<HookfishServer<Bindings>> {
     validateHookfishOptions(options)
     const resolveProviders = createProviderResolver(options.providers)
-    return new HookfishServer<Bindings>(options, runtime, resolveProviders)
+    return new HookfishServer<Bindings>(options, resolveProviders)
   }
 
   /** Resolve one provider without listing a lazy source. */
@@ -278,12 +250,11 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
   }
 }
 
-/** Create a Hookfish server with an optional application auth provider. */
+/** Create a Hookfish raw API server. */
 export function createHookfish<Bindings extends object = object>(
   options: HookfishConfig<Bindings>,
-  runtime: HookfishRuntime<Bindings> = {},
 ): Promise<HookfishServer<Bindings>> {
-  return HookfishServer.init(options, runtime)
+  return HookfishServer.init(options)
 }
 
 export function isHookfish(value: unknown): value is HookfishServer<object> {
@@ -294,12 +265,6 @@ export function isHookfish(value: unknown): value is HookfishServer<object> {
     typeof Reflect.get(value, 'getProviders') === 'function'
   )
 }
-
-export type {
-  ApplicationAuthProvider,
-  ApplicationAuthResult,
-  ApplicationPrincipal,
-} from './application-auth.js'
 
 export {
   createProviderSource,

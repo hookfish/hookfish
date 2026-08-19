@@ -1,37 +1,34 @@
 import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
-import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import react from '@vitejs/plugin-react'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import viteReact from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-const backendUrl =
-  process.env.HOOKFISH_BACKEND_URL ??
-  `http://127.0.0.1:${process.env.HOOKFISH_BACKEND_PORT ?? '8787'}`
+const browserSource = path.resolve(__dirname, '../../packages/browser/src')
 
-// https://vite.dev/config/
 export default defineConfig({
-  build: {
-    emptyOutDir: Boolean(process.env.FRONTEND_OUT_DIR),
-    outDir: process.env.FRONTEND_OUT_DIR ?? 'dist',
-  },
-  plugins: [
-    tanstackRouter({
-      target: 'react',
-      autoCodeSplitting: true,
-    }),
-    tailwindcss(),
-    react(),
-  ],
+  publicDir: path.resolve(__dirname, '../../packages/browser/public'),
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@hookfish/browser/router': path.resolve(browserSource, 'router.tsx'),
+      '@': browserSource,
     },
+    dedupe: ['react', 'react-dom', '@tanstack/react-router'],
   },
-  server: {
-    open: process.env.HOOKFISH_OPEN === 'true',
-    strictPort: true,
-    proxy: {
-      '/api': backendUrl,
-    },
-  },
+  plugins: [
+    tanstackStart({
+      srcDirectory: '../../packages/browser/src',
+      router: {
+        entry: '../../../apps/frontend/router',
+        generatedRouteTree: '../../../apps/frontend/routeTree.gen.ts',
+      },
+      server: { entry: '../../../apps/frontend/server' },
+    }),
+    tailwindcss(),
+    viteReact(),
+  ],
+  build: process.env.FRONTEND_OUT_DIR
+    ? { emptyOutDir: true, outDir: process.env.FRONTEND_OUT_DIR }
+    : undefined,
+  server: { open: process.env.HOOKFISH_OPEN === 'true' },
 })

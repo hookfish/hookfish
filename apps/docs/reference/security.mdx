@@ -1,6 +1,6 @@
 ---
 title: "Production security"
-description: "Review Hookfish credential boundaries, tenant isolation, and production controls."
+description: "Review Hookfish credential boundaries, path scopes, and frontend controls."
 ---
 
 Hookfish encrypts stored credentials and enforces broker scopes. Your host
@@ -12,75 +12,59 @@ and operator access.
 - Generate independent high-entropy `OAUTH_ENCRYPTION_KEY` and
   `HOOKFISH_API_KEY` values.
 - Store every secret in the runtime's secret manager.
-- Set `OAUTH_REDIRECT_BASE_URL` to the public HTTPS broker origin.
-- Register `/api/connections/callback/{providerId}` for fixed OAuth providers.
-- Leave `rawApiOrigins` empty unless a server-to-server deployment explicitly
-  requires cross-origin raw API access.
-- Configure `auth` before exposing `/api/client`.
-- Verify current tenant membership inside every application auth provider.
+- Set `OAUTH_REDIRECT_BASE_URL` to the public HTTPS callback origin.
+- Leave `rawApiOrigins` empty unless a server-to-server deployment requires
+  cross-origin raw API access.
+- Keep the Hookfish API and every broker credential in trusted server code.
+- Verify the application session and permissions before deriving a Hookfish
+  resource path.
 - Give services scoped, expiring broker tokens instead of the root key.
-- Export lifecycle events with `subject` and `tenantId` to an audit system.
+- Export lifecycle events with `subject` and `basePath` to an audit system.
 - Back up the database and encryption key through separate controlled systems.
-- Test restoration, scoped-token revocation, tenant isolation, and provider
-  reauthorization.
 
 ## Credential boundaries
 
-Hookfish uses three distinct credentials:
-
 | Credential | Where it may exist |
 | --- | --- |
-| Broker credential | Trusted server code only |
-| Application session cookie or token | Application-facing routes |
+| Broker root or downscoped token | Trusted server code only |
+| Application session cookie or token | Your application |
+| Scoped broker token | Authorized application service to Hookfish API only |
 | Provider credential | Encrypted broker storage and trusted server operations only |
 
 No browser-facing response contains a provider access token, refresh token,
-stored API key, OAuth client secret, or broker credential.
+stored API key, OAuth client secret, application capability, or broker token.
 
-## Tenant isolation
+## Path isolation
 
-The application auth provider returns a verified `subject` and `tenantId`.
-Hookfish converts the tenant into an internal resource namespace. Browser paths
-remain relative to that namespace.
+Your application verifies the session and resolves a canonical base path before
+calling Hookfish. Construct every resource path beneath that base, and use a
+`basePath/**` broker token when you need enforcement at the Hookfish boundary.
 
-For each request, Hookfish signs a short-lived capability scoped to the tenant
-subtree. The raw API independently verifies and enforces that scope. A tenant
-cannot list, read, authorize, modify, or disconnect another tenant's paths.
+Paths are not rewritten. If `resolveBasePath` returns `organizations/acme`, the
+connection remains `organizations/acme/team/github` in the browser-safe API,
+raw API, database, OAuth state, and audit events.
 
-OAuth state stores the internal connection namespace and is claimed once
-before code exchange. The callback remains public because the OAuth provider
-must reach it, but the one-time state binds the callback to the authorization
-that created it.
+A root or downscoped token remains server-side, and the Hookfish API remains the
+authority for every operation. Never place either credential in an untrusted
+frontend.
 
 ## Network boundary
 
-The raw `/api/*` API emits no CORS headers by default. Requests without an
-`Origin`, such as trusted server-to-server calls, continue to work with a valid
-broker credential.
+The raw `/api/*` server emits no CORS headers by default. `rawApiOrigins` is a
+separate exact-origin allowlist and does not weaken bearer authentication.
 
-`rawApiOrigins` is a separate exact-origin allowlist. It rejects `"*"` and is
-not derived from OAuth redirect trust. CORS is not authentication; every raw
-operation still requires a valid broker credential.
+Application-owned browser endpoints should use the same origin, session, and
+CSRF protections as the rest of your application.
 
-The authenticated `/api/client` API accepts same-origin calls by default.
-State-changing requests require an exact trusted `Origin`. Configure additional
-origins with `clientOrigins` only when your application needs them.
-
-## Operator dashboard
-
-`hookfish serve` reads the broker credential in the server process, binds to
-loopback, and issues an ephemeral `HttpOnly`, `SameSite=Strict` operator cookie.
-Its BFF exposes only safe connection-management operations. It does not proxy
-the raw API or provider-token retrieval.
-
-Use application authentication or SSO for remotely hosted operator tools.
+`hookfish serve` binds the first-party Start frontend to loopback and keeps its
+API key server-side. Use Better Auth, Clerk, WorkOS, Auth0, or another verified
+provider for a remotely hosted frontend.
 
 ## Database and key recovery
 
 Database backups without `OAUTH_ENCRYPTION_KEY` cannot restore encrypted
-credentials. An encryption-key change without re-encrypting existing rows
-makes those rows unreadable. Keep tested, access-controlled copies of both
-inputs.
+credentials. Changing that key without re-encrypting existing rows makes those
+rows unreadable. Keep tested, access-controlled copies of both inputs.
 
 <Warning>
   Never log connection-access responses, authorization headers, callback codes,

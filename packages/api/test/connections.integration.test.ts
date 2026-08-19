@@ -486,6 +486,20 @@ describe('connections', () => {
       Authorization: `Bearer ${token}`,
     })
 
+    const rootContext = await harness.fetch('/api/access')
+    await expect(rootContext.json()).resolves.toEqual({
+      kind: 'root',
+      scopes: ['**'],
+    })
+    const subtreeContext = await harness.fetch('/api/access', {
+      headers: authorize(subtree.access_token),
+    })
+    await expect(subtreeContext.json()).resolves.toMatchObject({
+      kind: 'scoped',
+      name: 'subtree',
+      scopes: ['organizations/acme/team/allowed/**'],
+    })
+
     const exactAccess = await harness.fetch(
       '/api/connections/access/organizations/acme/team/allowed/secret',
       { method: 'POST', headers: authorize(exact.access_token) },

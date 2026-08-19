@@ -27,7 +27,7 @@ export type ScopedAccessGrant = {
   expiresAt: number
   application?: {
     subject: string
-    tenantId: string
+    basePath: string
   }
 }
 
@@ -44,7 +44,7 @@ type AccessTokenPayload = {
 type ApplicationTokenPayload = {
   v: typeof APPLICATION_TOKEN_VERSION
   sub: string
-  tenant: string
+  base: string
   scopes: string[]
   iat: number
   exp: number
@@ -114,7 +114,7 @@ export async function mintApplicationAccessToken(
   rootApiKey: string,
   input: {
     subject: string
-    tenantId: string
+    basePath: string
     scopes: string[]
     expiresIn?: number
   },
@@ -129,11 +129,20 @@ export async function mintApplicationAccessToken(
     )
   }
   const issuedAt = Math.floor(now / 1000)
+  const basePath = normalizeResourcePath(input.basePath, 'base')
+  const scopes = normalizeResourceScopes(input.scopes)
+  if (!scopesContainScopes([`${basePath}/**`], scopes)) {
+    throw new BrokerError(
+      500,
+      'invalid_application_scopes',
+      'Application capability scopes must remain within its base path.',
+    )
+  }
   const payload: ApplicationTokenPayload = {
     v: APPLICATION_TOKEN_VERSION,
     sub: input.subject,
-    tenant: input.tenantId,
-    scopes: normalizeResourceScopes(input.scopes),
+    base: basePath,
+    scopes,
     iat: issuedAt,
     exp: issuedAt + expiresIn,
   }
@@ -179,7 +188,7 @@ async function verifyApplicationAccessToken(
     if (typeof parsed !== 'object' || parsed === null) throw invalidToken()
     const version = Reflect.get(parsed, 'v')
     const subject = Reflect.get(parsed, 'sub')
-    const tenant = Reflect.get(parsed, 'tenant')
+    const basePath = Reflect.get(parsed, 'base')
     const scopes = Reflect.get(parsed, 'scopes')
     const issuedAt = Reflect.get(parsed, 'iat')
     const expiresAt = Reflect.get(parsed, 'exp')
@@ -188,8 +197,8 @@ async function verifyApplicationAccessToken(
       version !== APPLICATION_TOKEN_VERSION ||
       typeof subject !== 'string' ||
       !subject ||
-      typeof tenant !== 'string' ||
-      !tenant ||
+      typeof basePath !== 'string' ||
+      !basePath ||
       !Array.isArray(scopes) ||
       !scopes.every((scope) => typeof scope === 'string') ||
       !Number.isInteger(issuedAt) ||
@@ -200,12 +209,17 @@ async function verifyApplicationAccessToken(
     ) {
       throw invalidToken()
     }
+    const normalizedBasePath = normalizeResourcePath(basePath, 'base')
+    const normalizedScopes = normalizeResourceScopes(scopes)
+    if (!scopesContainScopes([`${normalizedBasePath}/**`], normalizedScopes)) {
+      throw invalidToken()
+    }
     return {
       kind: 'scoped',
-      name: `application.${toBase64Url(new TextEncoder().encode(tenant)).slice(0, 96)}`,
-      scopes: normalizeResourceScopes(scopes),
+      name: `application.${toBase64Url(new TextEncoder().encode(basePath)).slice(0, 96)}`,
+      scopes: normalizedScopes,
       expiresAt,
-      application: { subject, tenantId: tenant },
+      application: { subject, basePath: normalizedBasePath },
     }
   } catch (error) {
     if (error instanceof BrokerError && error.code === 'invalid_access_token') {

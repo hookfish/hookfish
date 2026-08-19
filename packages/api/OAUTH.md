@@ -76,10 +76,12 @@ const { secret } = await hookfish.connections.access(
 | `GET` | `/api/connections/providers` |
 | `GET` | `/api/connections/callback/{provider_id}` |
 | `GET` | `/api/connections/client-metadata.json` |
+| `GET` | `/api/access` |
 
 Callbacks and client metadata are public. Other connection routes require the
 root key or a scoped broker token. Exact path scopes and `namespace/**` scopes
-are distinct.
+are distinct. `/api/access` returns safe metadata describing the presented
+root or scoped grant; it never returns the token.
 
 ## MCP client registration
 
@@ -94,4 +96,4 @@ credentials are encrypted and owned by that connection.
 
 Access and secret writes are server-only. Successful access responses, refresh
 tokens, OAuth client secrets, and stored static values never appear in
-connection metadata or the browser-safe facade.
+connection metadata or the separate `@hookfish/client` Hono app.

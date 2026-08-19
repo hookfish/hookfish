@@ -1,8 +1,8 @@
 # Hono Node example
 
-This example hosts the raw Hookfish API at `/api` and the browser facade at
-`/api/client` on Node. Its local `hookfish.config.ts` stores PGlite data in
-`pgdata` by default.
+This example hosts only the raw Hookfish API at `/api` on Node. The separate
+frontend points its client Hono app at this server. The local
+`hookfish.config.ts` stores PGlite data in `pgdata` by default.
 
 It reads `../../../apps/frontend/.env`:
 

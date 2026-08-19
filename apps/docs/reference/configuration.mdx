@@ -1,17 +1,16 @@
 ---
 title: "Configuration"
-description: "Reference Hookfish broker, application auth, callback, and runtime options."
+description: "Configure the raw Hookfish API."
 ---
+
+## Raw API
 
 ```ts
 import { defineHookfishConfig } from '@hookfish/api'
-import { betterAuth } from '@hookfish/auth-better-auth'
-import { auth } from './auth'
 
 export default defineHookfishConfig({
   db,
   providers,
-  auth: betterAuth(auth),
   includeSwagger: false,
   returnTo: 'https://app.example.com/settings/integrations',
   trustedOrigins: ['https://app.example.com'],
@@ -23,34 +22,11 @@ export default defineHookfishConfig({
 | --- | --- | --- |
 | `db` | Required | Ready, promised, or request-aware database |
 | `providers` | Required | Trusted provider map, registry, source, or factory |
-| `auth` | Unset | Authenticate an application user and assert their current tenant |
-| `clientOrigins` | `[]` | Additional exact origins allowed to call `/api/client` |
 | `includeSwagger` | `true` | Serve `/api/openapi.json` and `/api/docs` |
 | `returnTo` | Completion page | Fixed post-callback destination |
 | `trustedOrigins` | `[]` | Allow per-authorization `return_to` destinations |
 | `rawApiOrigins` | `[]` | Exceptional exact origins allowed to call the raw API with CORS |
 | `onEvent` | Unset | Receive best-effort lifecycle and audit events |
 
-Supplying `auth` mounts the application-facing API at `/api/client`. Hookfish
-does not mount that API without an auth provider. The auth provider returns a
-verified application subject and tenant. Hookfish creates a short-lived,
-tenant-scoped capability for each request and never sends it to the browser.
-
-`trustedOrigins`, `clientOrigins`, and `rawApiOrigins` are separate controls.
-Redirect trust does not grant raw API access. Origin entries must include the
-scheme and port, when present. Wildcards are rejected for raw API access.
-
-There is no provider-management switch. Provider implementations are trusted
-deployment code. Providers declare `oauth` or `secret` authentication plus a
-small input schema for connection identity and non-secret configuration.
-
-## Runtime options
-
-The second argument to `createHookfish` or `HookfishServer.init` accepts
-`runtime`, `clientOrigins`, and `rootApiKey`. Most deployments should let
-Hookfish resolve `HOOKFISH_API_KEY` from server bindings instead of passing
-`rootApiKey` directly.
-
-Use a provider factory when credentials come from request bindings. Use a lazy
-`ProviderSource` for a large application-owned catalog while keeping provider
-IDs and implementations trusted.
+`HookfishServer` is API-only. It does not mount browser routes or application
+sessions.

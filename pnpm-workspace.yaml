@@ -3,3 +3,4 @@ packages:
   - examples/backends/*
   - packages/*
   - packages/providers/*
+  - scripts/*

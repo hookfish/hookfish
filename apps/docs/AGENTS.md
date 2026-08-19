@@ -19,7 +19,7 @@
 - Distinguish a **broker access token** from an upstream **provider access token**.
 - Use **resource scope** for Hookfish's hierarchical authorization paths.
 - Use **provider scope** for permissions requested from an OAuth provider.
-- Use **browser facade** for the allowlisted API mounted at `/api/client`.
+- Use **client API** for the allowlisted Hono app mounted at `/api/client`.
 
 ## Style preferences
 

@@ -31,8 +31,9 @@ export default defineHookfishConfig({
 | Broker tokens | `broker_token.created`, `broker_token.revoked` |
 
 Events can include a provider ID, connection path, token name, error code,
-refresh flag, or replay flag depending on the operation. They do not include
-access tokens, refresh tokens, client secrets, or stored secret values.
+refresh flag, replay flag, application subject, or resolved base path depending
+on the operation. They do not include access tokens, refresh tokens, client
+secrets, or stored secret values.
 
 ## Delivery behavior
 

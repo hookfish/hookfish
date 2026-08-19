@@ -15,10 +15,10 @@ export type HookfishEvent = {
   errorCode?: string
   refreshed?: boolean
   replayed?: boolean
-  /** Authenticated application user, when initiated through `/api/client`. */
+  /** Authenticated application user, when initiated through a client facade. */
   subject?: string
-  /** Authenticated application tenant, when initiated through `/api/client`. */
-  tenantId?: string
+  /** Resource namespace granted to the application user. */
+  basePath?: string
 }
 
 export type HookfishEventHandler = (

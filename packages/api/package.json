@@ -26,9 +26,9 @@
       "types": "./src/db/index.ts",
       "default": "./dist/db/index.js"
     },
-    "./client": {
-      "types": "./src/client.ts",
-      "default": "./dist/client.js"
+    "./capabilities": {
+      "types": "./src/capabilities.ts",
+      "default": "./dist/capabilities.js"
     },
     "./migrations": {
       "types": "./src/migrations.ts",

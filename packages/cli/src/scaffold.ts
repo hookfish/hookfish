@@ -426,7 +426,7 @@ pnpm dev
 pnpm dev:server
 \`\`\`
 
-\`pnpm dev:server\` starts the ${backend} development server directly. \`pnpm dev\` runs that script beside \`hookfish serve --backend-url <backend-url>\`, which serves the packaged dashboard and proxies \`/api\` to the backend so the browser stays same-origin.
+\`pnpm dev:server\` starts the API-only ${backend} development server directly. \`pnpm dev\` runs that script beside \`hookfish serve --backend-url <backend-url>\`, which serves the packaged TanStack Start frontend. Its server-side client app calls the separate backend; the browser stays on the frontend origin.
 
 A gitignored \`${localEnvironmentFile}\` is generated with unique local encryption and broker API keys. The scaffold enables remote MCP OAuth and supplied-secret connections by default. Add other trusted providers in the Hookfish configuration when needed.
 
