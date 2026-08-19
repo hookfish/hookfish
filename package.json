@@ -32,7 +32,6 @@
     "@changesets/cli": "^3.0.0",
     "@hookfish/api": "workspace:*",
     "@hookfish/backend": "workspace:*",
-    "@hookfish/client": "workspace:*",
     "hookfish": "workspace:*",
     "@hookfish/database": "workspace:*",
     "@hookfish/provider": "workspace:*",

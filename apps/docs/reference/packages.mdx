@@ -10,13 +10,12 @@ provider implementations, React integration, and CLI into published packages.
 | --- | --- |
 | `hookfish` | CLI, scaffolding, packaged dashboard, and MCP inspector |
 | `@hookfish/api` | `HookfishServer`, config types, events, database contract, and route types |
-| `@hookfish/client` | Authenticated, tenant-isolated client routes mountable in any Hono app |
 | `@hookfish/sdk` | Typed `Hookfish` client plus authenticated Octokit and MCP client initialization for trusted application code |
 | `@hookfish/database` | Shared database types and migration helper |
 | `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
 | `@hookfish/hooks` | Typed client and React hooks for the authenticated application API |
-| `@hookfish/backend` | Compatibility entry point for `@hookfish/client` |
+| `@hookfish/backend` | Lower-level raw API and application-facade composition |
 | `@hookfish/auth-better-auth` | Better Auth session and organization adapter |
 
 ## Database import paths
@@ -38,7 +37,7 @@ Hyperdrive for production Workers deployments.
 
 ```ts
 import { HookfishServer, defineHookfishConfig } from '@hookfish/api'
-import { createHookfishClientRoutes } from '@hookfish/client'
+import { createHookfishBackend } from '@hookfish/api/client'
 import {
   defineDatabase,
   migrateDatabase,
@@ -56,22 +55,6 @@ const hookfish = await createHookfish({
   providers,
   auth: betterAuth(auth),
 })
-```
-
-To mount the authenticated routes separately or at a custom path:
-
-```ts
-import { Hono } from 'hono'
-
-const broker = await HookfishServer.init({ db, providers })
-const clientRoutes = createHookfishClientRoutes({
-  auth: betterAuth(auth),
-  hookfishFetch: broker.fetch,
-})
-
-const app = new Hono()
-  .route('/connections', clientRoutes)
-  .route('/', broker)
 ```
 
 For trusted application code, construct `Hookfish` from `@hookfish/sdk`. Put
@@ -108,6 +91,6 @@ package such as `@hookfish/provider-github` or `@hookfish/provider-mcp` when you
 want to keep the dependency surface narrow.
 
 <Note>
-  `@hookfish/backend` remains available for compatibility. New code should
-  import the facade from `@hookfish/client`.
+  Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
+  handler yourself. `HookfishServer.init(...).fetch` already applies that layer.
 </Note>
