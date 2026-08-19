@@ -530,4 +530,77 @@ describe('connections', () => {
       ],
     })
   })
+
+  it('stores authorization in grant trees and revokes every descendant', async () => {
+    const mint = async (
+      name: string,
+      scopes: string[],
+      accessToken = 'test',
+    ) => {
+      const response = await harness.fetch('/api/admin/tokens', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, scopes }),
+      })
+      expect(response.status).toBe(200)
+      return z
+        .object({ name: z.string(), access_token: z.string() })
+        .parse(await response.json())
+    }
+    const authorize = (token: string) => ({
+      Authorization: `Bearer ${token}`,
+    })
+
+    const parent = await mint('team', ['organizations/acme/**'])
+    const payloadPart = parent.access_token.split('.')[1]
+    if (!payloadPart) throw new Error('Token payload is missing.')
+    const payload: Record<string, unknown> = JSON.parse(
+      Buffer.from(payloadPart, 'base64url').toString(),
+    )
+    expect(payload).toMatchObject({
+      v: 2,
+      gid: expect.any(String),
+      jti: expect.any(String),
+    })
+    expect(payload).not.toHaveProperty('name')
+    expect(payload).not.toHaveProperty('scopes')
+
+    const child = await mint(
+      'team.child',
+      ['organizations/acme/team/**'],
+      parent.access_token,
+    )
+    const grandchild = await mint(
+      'team.child.worker',
+      ['organizations/acme/team/service'],
+      child.access_token,
+    )
+    const unrelated = await mint('other', ['organizations/beta/**'])
+
+    const revoked = await harness.fetch('/api/admin/tokens/team', {
+      method: 'DELETE',
+    })
+    expect(revoked.status).toBe(200)
+    await expect(revoked.json()).resolves.toEqual({
+      name: 'team',
+      revoked: true,
+    })
+
+    for (const token of [parent, child, grandchild]) {
+      const response = await harness.fetch('/api/connections', {
+        headers: authorize(token.access_token),
+      })
+      expect(response.status).toBe(401)
+    }
+    const stillValid = await harness.fetch('/api/connections', {
+      headers: authorize(unrelated.access_token),
+    })
+    expect(stillValid.status).toBe(200)
+
+    const list = await harness.fetch('/api/admin/tokens')
+    await expect(list.json()).resolves.toEqual({ tokens: ['other'] })
+  })
 })

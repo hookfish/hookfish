@@ -84,6 +84,8 @@ describe('HookfishDurableObject', () => {
     const token = {
       name: 'worker',
       tokenIdHash: 'hash',
+      grantId: crypto.randomUUID(),
+      parentGrantId: null,
       scopes: ['team/**'],
       expiresAt: new Date(Date.now() + 60_000),
     }
@@ -91,6 +93,44 @@ describe('HookfishDurableObject', () => {
     expect(await db.createBrokerAccessToken(token)).toBe(true)
     expect(await db.createBrokerAccessToken(token)).toBe(false)
     expect(await db.listBrokerAccessTokenNames()).toEqual(['worker'])
+  })
+
+  it('atomically stores grants with tokens and cascades grant revocation', async () => {
+    const db = database('grant-tree')
+    const parentGrantId = crypto.randomUUID()
+    const childGrantId = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + 60_000)
+
+    expect(
+      await db.createBrokerAccessToken({
+        name: 'parent',
+        tokenIdHash: 'parent-hash',
+        grantId: parentGrantId,
+        parentGrantId: null,
+        scopes: ['team/**'],
+        expiresAt,
+      }),
+    ).toBe(true)
+    expect(
+      await db.createBrokerAccessToken({
+        name: 'parent.child',
+        tokenIdHash: 'child-hash',
+        grantId: childGrantId,
+        parentGrantId,
+        scopes: ['team/service'],
+        expiresAt,
+      }),
+    ).toBe(true)
+
+    expect(await db.deleteBrokerAccessTokenGrant('parent')).toBe(true)
+    expect(await db.listBrokerAccessTokenNames()).toEqual([])
+    expect(
+      await db.getValidBrokerAccessToken(
+        'child-hash',
+        childGrantId,
+        new Date(),
+      ),
+    ).toBeUndefined()
   })
 
   it('uses the configured partition for broker requests', async () => {
