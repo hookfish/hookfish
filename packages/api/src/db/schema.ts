@@ -3,7 +3,7 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
+  pgSchema,
   text,
   timestamp,
   uniqueIndex,
@@ -19,11 +19,14 @@ export type {
   OAuthState,
 } from './types.js'
 
+/** Keep Hookfish-owned database objects isolated from host application tables. */
+export const hookfishSchema = pgSchema('hookfish')
+
 /**
  * One row per structured connection identity. Credentials are encrypted at
  * rest; plaintext never touches the database.
  */
-export const connections = pgTable(
+export const connections = hookfishSchema.table(
   'connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -80,7 +83,7 @@ export const connections = pgTable(
  * hashed before storage; status transitions make callback completion
  * single-exchange and idempotent until the row expires.
  */
-export const oauthStates = pgTable(
+export const oauthStates = hookfishSchema.table(
   'oauth_states',
   {
     id: text('id').primaryKey(),
@@ -105,7 +108,7 @@ export const oauthStates = pgTable(
 )
 
 /** Persisted authorization that can be delegated and revoked as a tree. */
-export const accessGrants = pgTable(
+export const accessGrants = hookfishSchema.table(
   'access_grants',
   {
     id: uuid('id').primaryKey(),
@@ -129,7 +132,7 @@ export const accessGrants = pgTable(
  * Administrative metadata for broker credentials. Authorization lives on the
  * attached grant so deleting a grant revokes every token in its subtree.
  */
-export const brokerAccessTokens = pgTable(
+export const brokerAccessTokens = hookfishSchema.table(
   'broker_access_tokens',
   {
     name: text('name').primaryKey(),
