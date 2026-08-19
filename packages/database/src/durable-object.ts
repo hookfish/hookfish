@@ -202,21 +202,13 @@ export class HookfishDurableObject<Env = object>
       CREATE INDEX access_grants_parent_idx ON access_grants(parent_grant_id);
       CREATE INDEX access_grants_expires_idx ON access_grants(expires_at);
 
-      INSERT INTO access_grants (id, parent_grant_id, scopes, created_at, expires_at)
-      SELECT 'legacy:' || token_id_hash, NULL, scopes, created_at, expires_at
-      FROM broker_access_tokens;
-
-      CREATE TABLE broker_access_tokens_v5 (
+      DROP TABLE broker_access_tokens;
+      CREATE TABLE broker_access_tokens (
         name TEXT PRIMARY KEY,
         token_id_hash TEXT NOT NULL UNIQUE,
         grant_id TEXT NOT NULL REFERENCES access_grants(id) ON DELETE CASCADE,
         created_at INTEGER NOT NULL
       );
-      INSERT INTO broker_access_tokens_v5 (name, token_id_hash, grant_id, created_at)
-      SELECT name, token_id_hash, 'legacy:' || token_id_hash, created_at
-      FROM broker_access_tokens;
-      DROP TABLE broker_access_tokens;
-      ALTER TABLE broker_access_tokens_v5 RENAME TO broker_access_tokens;
       CREATE INDEX broker_access_tokens_grant_idx ON broker_access_tokens(grant_id);
     `)
     this.ctx.storage.sql.exec(

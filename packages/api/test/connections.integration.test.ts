@@ -8,46 +8,6 @@ const authorizationRequiredSchema = z.object({
 })
 const accessTokenSchema = z.object({ access_token: z.string() })
 
-function base64Url(value: Uint8Array): string {
-  return Buffer.from(value).toString('base64url')
-}
-
-async function createLegacyAccessToken(input: {
-  name: string
-  scopes: string[]
-  expiresAt: number
-}): Promise<{ token: string; tokenIdHash: string }> {
-  const tokenId = crypto.randomUUID()
-  const payload = base64Url(
-    new TextEncoder().encode(
-      JSON.stringify({
-        v: 1,
-        name: input.name,
-        scopes: input.scopes,
-        iat: Math.floor(Date.now() / 1000),
-        exp: input.expiresAt,
-        jti: tokenId,
-      }),
-    ),
-  )
-  const signingInput = `hookfish_at_v1.${payload}`
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode('test'),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const [signature, tokenIdHash] = await Promise.all([
-    crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signingInput)),
-    crypto.subtle.digest('SHA-256', new TextEncoder().encode(tokenId)),
-  ])
-  return {
-    token: `${signingInput}.${base64Url(new Uint8Array(signature))}`,
-    tokenIdHash: base64Url(new Uint8Array(tokenIdHash)),
-  }
-}
-
 describe('connections', () => {
   let harness: TestHarness
 
@@ -642,29 +602,5 @@ describe('connections', () => {
 
     const list = await harness.fetch('/api/admin/tokens')
     await expect(list.json()).resolves.toEqual({ tokens: ['other'] })
-  })
-
-  it('accepts pre-grant token payloads after their records are migrated', async () => {
-    const expiresAt = Math.floor(Date.now() / 1000) + 3_600
-    const legacy = await createLegacyAccessToken({
-      name: 'legacy',
-      scopes: ['organizations/acme/**'],
-      expiresAt,
-    })
-    await expect(
-      harness.db.createBrokerAccessToken({
-        name: 'legacy',
-        tokenIdHash: legacy.tokenIdHash,
-        grantId: crypto.randomUUID(),
-        parentGrantId: null,
-        scopes: ['organizations/acme/**'],
-        expiresAt: new Date(expiresAt * 1_000),
-      }),
-    ).resolves.toBe(true)
-
-    const response = await harness.fetch('/api/connections', {
-      headers: { Authorization: `Bearer ${legacy.token}` },
-    })
-    expect(response.status).toBe(200)
   })
 })

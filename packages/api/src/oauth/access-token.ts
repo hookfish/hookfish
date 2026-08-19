@@ -8,7 +8,6 @@ import {
 const TOKEN_PREFIX = 'hookfish_at_v1'
 const APPLICATION_TOKEN_PREFIX = 'hookfish_app_v1'
 const TOKEN_VERSION = 2
-const LEGACY_TOKEN_VERSION = 1
 
 export const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 export const MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -468,8 +467,7 @@ export async function verifyAccessToken(
   now = Date.now(),
 ): Promise<{
   tokenIdHash: string
-  grantId?: string
-  legacyName?: string
+  grantId: string
   expiresAt: number
 }> {
   try {
@@ -501,12 +499,15 @@ export async function verifyAccessToken(
     const issuedAt = Reflect.get(parsed, 'iat')
     const expiresAt = Reflect.get(parsed, 'exp')
     const tokenId = Reflect.get(parsed, 'jti')
+    const grantId = Reflect.get(parsed, 'gid')
     const nowSeconds = Math.floor(now / 1000)
     if (
-      (version !== TOKEN_VERSION && version !== LEGACY_TOKEN_VERSION) ||
+      version !== TOKEN_VERSION ||
       typeof issuedAt !== 'number' ||
       typeof expiresAt !== 'number' ||
       typeof tokenId !== 'string' ||
+      typeof grantId !== 'string' ||
+      !grantId ||
       !Number.isInteger(issuedAt) ||
       !Number.isInteger(expiresAt) ||
       issuedAt > nowSeconds + 60 ||
@@ -515,28 +516,8 @@ export async function verifyAccessToken(
       throw invalidToken()
     }
 
-    if (version === TOKEN_VERSION) {
-      const grantId = Reflect.get(parsed, 'gid')
-      if (typeof grantId !== 'string' || !grantId) throw invalidToken()
-      return {
-        grantId,
-        expiresAt,
-        tokenIdHash: await hashTokenId(tokenId),
-      }
-    }
-
-    const legacyName = Reflect.get(parsed, 'name')
-    const legacyScopes = Reflect.get(parsed, 'scopes')
-    if (
-      typeof legacyName !== 'string' ||
-      !Array.isArray(legacyScopes) ||
-      !legacyScopes.every((scope) => typeof scope === 'string')
-    ) {
-      throw invalidToken()
-    }
-    normalizeResourceScopes(legacyScopes)
     return {
-      legacyName: normalizeTokenName(legacyName),
+      grantId,
       expiresAt,
       tokenIdHash: await hashTokenId(tokenId),
     }
@@ -569,9 +550,7 @@ export async function authenticateAccessToken(
     new Date(now),
   )
 
-  if (!stored || (verified.legacyName && stored.name !== verified.legacyName)) {
-    throw invalidToken()
-  }
+  if (!stored) throw invalidToken()
 
   try {
     return {
