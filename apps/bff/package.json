@@ -1,0 +1,25 @@
+{
+  "name": "@hookfish/bff",
+  "private": true,
+  "version": "0.0.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../frontend/.env src/index.ts",
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.12",
+    "@hookfish/auth-better-auth": "workspace:*",
+    "@hookfish/client": "workspace:*",
+    "better-auth": "^1.7.0",
+    "hono": "^4.12.34"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

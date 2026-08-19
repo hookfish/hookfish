@@ -549,22 +549,34 @@ function developmentEnvironment(): NodeJS.ProcessEnv {
     allocatedPort ??
     requestedPort ??
     5173
-  const backendPort =
-    parsePort(process.env.HOOKFISH_BACKEND_PORT) ??
+  const bffPort =
+    parsePort(process.env.BFF_PORT) ??
     followingPort(allocatedPort) ??
     followingPort(requestedPort) ??
+    8788
+  const backendPort =
+    parsePort(process.env.HOOKFISH_BACKEND_PORT) ??
+    followingPort(followingPort(followingPort(allocatedPort))) ??
+    followingPort(followingPort(requestedPort)) ??
     8787
+  const frontendOrigin = `http://${frontendHostname}:${frontendPort}`
 
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
+    BETTER_AUTH_SECRET:
+      process.env.BETTER_AUTH_SECRET?.trim() ||
+      randomBytes(32).toString('base64url'),
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? frontendOrigin,
+    BFF_HOST: process.env.BFF_HOST ?? '127.0.0.1',
+    BFF_PORT: String(bffPort),
     FRONTEND_HOST: process.env.FRONTEND_HOST ?? frontendHostname,
     FRONTEND_PORT: String(frontendPort),
     PORT: String(backendPort),
+    HOOKFISH_BFF_URL:
+      process.env.HOOKFISH_BFF_URL ?? `http://127.0.0.1:${bffPort}`,
     HOOKFISH_BACKEND_URL:
       process.env.HOOKFISH_BACKEND_URL ?? `http://127.0.0.1:${backendPort}`,
-    HOOKFISH_FRONTEND_URL:
-      process.env.HOOKFISH_FRONTEND_URL ??
-      `http://${frontendHostname}:${frontendPort}`,
+    HOOKFISH_FRONTEND_URL: process.env.HOOKFISH_FRONTEND_URL ?? frontendOrigin,
   }
 
   return environment
@@ -716,7 +728,7 @@ program
 
 program
   .command('repo-dev', { hidden: true })
-  .description('Run the Hookfish repository frontend and example backend')
+  .description('Run the repository frontend, BFF, and example backend')
   .addOption(
     new Option('-b, --backend <name>', 'Backend example to run')
       .choices([...developmentBackends.keys()])
@@ -726,35 +738,24 @@ program
   .action(async (options: { backend: string; open: boolean }) => {
     const backendPackage = developmentBackendPackage(options.backend)
     const environment = developmentEnvironment()
-    const backend = spawn(
-      'pnpm',
-      [
-        'exec',
-        'turbo',
-        'dev',
-        '--env-mode=loose',
-        `--filter=${backendPackage}`,
-      ],
-      {
-        cwd: findWorkspaceRoot(),
-        env: environment,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      },
+    await exitWith(
+      await run(
+        'pnpm',
+        [
+          'exec',
+          'turbo',
+          'dev',
+          '--env-mode=loose',
+          '--filter=@hookfish/frontend',
+          '--filter=@hookfish/bff',
+          `--filter=${backendPackage}`,
+        ],
+        {
+          ...environment,
+          HOOKFISH_OPEN: options.open ? 'true' : 'false',
+        },
+      ),
     )
-    backend.once('error', (error) => {
-      process.stderr.write(`Backend failed to start: ${error.message}\n`)
-    })
-    let exitCode = 1
-    try {
-      exitCode = await runPackagedFrontend(
-        options.open,
-        environment.HOOKFISH_BACKEND_URL,
-      )
-    } finally {
-      backend.kill('SIGTERM')
-    }
-    await exitWith(exitCode)
   })
 
 program
