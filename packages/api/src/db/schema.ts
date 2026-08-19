@@ -2,7 +2,7 @@ import {
   index,
   integer,
   jsonb,
-  pgTable,
+  pgSchema,
   text,
   timestamp,
   uniqueIndex,
@@ -13,11 +13,14 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 export type { BrokerAccessToken, Connection, OAuthState } from './types.js'
 
+/** Keep Hookfish-owned database objects isolated from host application tables. */
+export const hookfishSchema = pgSchema('hookfish')
+
 /**
  * One row per structured connection identity. Credentials are encrypted at
  * rest; plaintext never touches the database.
  */
-export const connections = pgTable(
+export const connections = hookfishSchema.table(
   'connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -74,7 +77,7 @@ export const connections = pgTable(
  * hashed before storage; status transitions make callback completion
  * single-exchange and idempotent until the row expires.
  */
-export const oauthStates = pgTable(
+export const oauthStates = hookfishSchema.table(
   'oauth_states',
   {
     id: text('id').primaryKey(),
@@ -103,7 +106,7 @@ export const oauthStates = pgTable(
  * never stored; this table exists so administrators can enumerate active
  * token names without exposing their scopes or bearer values.
  */
-export const brokerAccessTokens = pgTable(
+export const brokerAccessTokens = hookfishSchema.table(
   'broker_access_tokens',
   {
     name: text('name').primaryKey(),
