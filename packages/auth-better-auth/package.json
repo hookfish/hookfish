@@ -28,7 +28,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
-    "@hookfish/client": "workspace:*"
+    "@hookfish/api": "workspace:*"
   },
   "peerDependencies": {
     "better-auth": ">=1.3.0 <2"

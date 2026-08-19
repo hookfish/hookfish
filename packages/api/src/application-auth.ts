@@ -1,8 +1,8 @@
-import { HookfishClientError } from './errors.js'
+import { BrokerError } from './oauth/errors.js'
 import {
   MAX_RESOURCE_PATH_LENGTH,
   normalizeResourcePath,
-} from './resource-path.js'
+} from './oauth/resource-path.js'
 
 export type ApplicationPrincipal = {
   /** Stable application user identifier used in audit events. */
@@ -45,14 +45,14 @@ export function normalizeApplicationPrincipal(
   const subject = principal.subject.trim()
   const tenantId = principal.tenantId.trim()
   if (!subject || subject.length > 512) {
-    throw new HookfishClientError(
+    throw new BrokerError(
       403,
       'invalid_application_subject',
       'The application auth provider returned an invalid subject.',
     )
   }
   if (!tenantId || tenantId.length > 512) {
-    throw new HookfishClientError(
+    throw new BrokerError(
       403,
       'invalid_application_tenant',
       'The application auth provider returned an invalid tenant.',
@@ -65,7 +65,7 @@ export function normalizeApplicationPrincipal(
 export function applicationTenantNamespace(tenantId: string): string {
   const namespace = `${applicationTenantRoot}/${toBase64Url(tenantId)}`
   if (namespace.length > MAX_RESOURCE_PATH_LENGTH - 130) {
-    throw new HookfishClientError(
+    throw new BrokerError(
       403,
       'invalid_application_tenant',
       'The application tenant identifier is too long.',

@@ -1,7 +1,7 @@
 import type {
   ApplicationAuthProvider,
   ApplicationAuthResult,
-} from '@hookfish/client'
+} from '@hookfish/api'
 
 export type BetterAuthSession = {
   user: { id: string }

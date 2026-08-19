@@ -51,7 +51,6 @@
   "dependencies": {
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.4.0",
-    "@hookfish/client": "workspace:*",
     "@hookfish/provider": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.34",

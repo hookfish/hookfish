@@ -8,7 +8,6 @@
   },
   "files": [],
   "references": [
-    { "path": "./apps/bff" },
     { "path": "./apps/frontend" },
     { "path": "./examples/backends/cloudflare-worker" },
     { "path": "./examples/backends/express" },
@@ -17,7 +16,6 @@
     { "path": "./packages/api" },
     { "path": "./packages/auth-better-auth" },
     { "path": "./packages/backend" },
-    { "path": "./packages/client" },
     { "path": "./packages/cli" },
     { "path": "./packages/database" },
     { "path": "./packages/hooks" },

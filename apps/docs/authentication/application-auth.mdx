@@ -59,7 +59,7 @@ when your product supports personal workspaces.
 Clerk, WorkOS, and other integrations can implement the same contract:
 
 ```ts
-import type { ApplicationAuthProvider } from '@hookfish/client'
+import type { ApplicationAuthProvider } from '@hookfish/api'
 
 export const applicationAuth: ApplicationAuthProvider = {
   async authenticate(request) {

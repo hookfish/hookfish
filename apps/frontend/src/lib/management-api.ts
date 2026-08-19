@@ -1,3 +1,5 @@
+import { browserApiUrl } from './api-url'
+
 export type AuthorizationInput = {
   configuration?: Record<string, unknown>
   scopes?: string[]
@@ -33,7 +35,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   headers.set('Accept', 'application/json')
   if (init?.body) headers.set('Content-Type', 'application/json')
-  const response = await fetch(`/api/client${path}`, {
+  const response = await fetch(`${browserApiUrl}${path}`, {
     credentials: 'include',
     ...init,
     headers,
