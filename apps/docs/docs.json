@@ -51,6 +51,7 @@
             "group": "Deploy",
             "pages": [
               "deployment/choose-backend",
+              "deployment/managed-oauth-backends",
               "deployment/vercel",
               "deployment/bun",
               "deployment/docker",

@@ -15,7 +15,7 @@ provider implementations, React integration, and CLI into published packages.
 | `@hookfish/providers` | GitHub, Linear, Notion, MCP, and static-secret factories |
 | `@hookfish/provider` | Custom provider and registry contracts |
 | `@hookfish/hooks` | Typed client and React hooks for the authenticated application API |
-| `@hookfish/backend` | Lower-level raw API and application-facade composition |
+| `@hookfish/backend` | Managed `HookfishBackend` contract and lower-level request composition |
 | `@hookfish/auth-better-auth` | Better Auth session and organization adapter |
 
 ## Database import paths
@@ -90,7 +90,12 @@ the migration helper from `@hookfish/database`.
 package such as `@hookfish/provider-github` or `@hookfish/provider-mcp` when you
 want to keep the dependency surface narrow.
 
+Import `HookfishBackend` from `@hookfish/backend` when a managed service owns
+OAuth connections. The package also exports `createHookfishBackend` for
+lower-level raw API and application-facade composition.
+
 <Note>
-  Import `@hookfish/backend` only when composing a raw Hookfish-compatible API
-  handler yourself. `HookfishServer.init(...).fetch` already applies that layer.
+  You do not need `createHookfishBackend` when using
+  `HookfishServer.init(...).fetch`; the server already applies that request
+  composition layer.
 </Note>
