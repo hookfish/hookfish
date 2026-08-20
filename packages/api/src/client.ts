@@ -57,6 +57,8 @@ export type HookfishBackendOptions<Bindings extends object = object> = {
   /** Resolve the server-only root key used to sign ephemeral client grants. */
   rootApiKey?: string | ((bindings: Bindings | undefined) => string)
   runtime?: string | ((bindings: Bindings | undefined) => string)
+  /** Whether the selected connection backend accepts caller-supplied secrets. */
+  supportsStaticSecrets?: boolean
 }
 
 export type HookfishBackend<Bindings extends object = object> = {
@@ -359,6 +361,20 @@ export function createHookfishBackend<Bindings extends object = object>(
             runtime,
             checkedAt: new Date().toISOString(),
           } satisfies HealthResponse),
+          origin,
+        )
+      }
+
+      if (
+        operation.kind === 'secret' &&
+        options.supportsStaticSecrets === false
+      ) {
+        return addClientHeaders(
+          jsonError(
+            409,
+            'static_secrets_unsupported',
+            'Managed OAuth backends do not store caller-supplied static secrets.',
+          ),
           origin,
         )
       }

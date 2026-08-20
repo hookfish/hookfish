@@ -3,8 +3,8 @@ import { isSecretProvider } from '@hookfish/provider'
 import { stripAnyApplicationNamespace } from '../application-auth.js'
 import type { DatabaseInput } from '../db/binding.js'
 import { emitHookfishEvent, type HookfishEventHandler } from '../events.js'
-import { assertConnectionAccess } from '../oauth/access-token.js'
 import type { AccessGrant } from '../oauth/access-token.js'
+import { assertConnectionAccess } from '../oauth/access-token.js'
 import {
   accessConnection,
   authorizeConnection,
@@ -410,6 +410,16 @@ const disconnectRuntimeRoute = createRoute({
   path: '/entry/:connection_path{.+}',
   hide: true,
 })
+
+/** OpenAPI paths shared by self-hosted and managed OAuth backends. */
+export const managedBackendConnectionOpenAPIRoutes = [
+  listProvidersRoute,
+  accessRoute,
+  authorizeRoute,
+  listRoute,
+  getRoute,
+  disconnectRoute,
+]
 
 function completionPage(path: string): string {
   const safe = path.replace(
