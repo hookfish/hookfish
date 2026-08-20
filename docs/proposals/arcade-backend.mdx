@@ -22,7 +22,7 @@ application for each one, and when you would rather not operate a token vault.
 
 | Concern | Self-hosted backend | Arcade backend |
 | --- | --- | --- |
-| OAuth application registration | You register one per provider | Arcade provides the catalog |
+| OAuth application registration | Required per provider | Optional to start; recommended for production |
 | Provider access tokens | Encrypted in your database | Held in Arcade's vault |
 | Database | PGlite or PostgreSQL | None |
 | `OAUTH_ENCRYPTION_KEY` | Required | Not used |
@@ -97,6 +97,22 @@ const credential = await hookfish.connections.access('team/acme/slack')
 `team/acme` is the namespace and `slack` is the Arcade provider. Nothing in
 `hookfish.config.ts` mentions Slack. Add a provider in the Arcade dashboard and
 it becomes reachable immediately.
+
+Arcade's pre-built providers include a shared OAuth application, so a provider
+works before you register anything. Register your own OAuth application in
+Arcade before production: a shared application requests a fixed scope list,
+shares rate limits with other Arcade customers, and shows Arcade's name on the
+consent screen instead of yours. Registering your own moves the client ID and
+secret into Arcade rather than into this configuration file, and Arcade
+continues to own the flow, the refresh, and the vault.
+
+<Note>
+  Hookfish needs no OAuth application for a provider reachable as a remote MCP
+  server, because it registers a client through the server's own discovery
+  metadata. Those providers are unsupported on this backend, so compare against
+  a [remote MCP connection](/providers/remote-mcp) before assuming Arcade
+  removes registration work.
+</Note>
 
 Call `GET /api/connections/providers` to list what the configured Arcade
 organization offers. The dashboard uses the same endpoint, so its provider
