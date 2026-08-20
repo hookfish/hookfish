@@ -172,6 +172,29 @@ The Better Auth instance must include the organization plugin. Its active
 organization becomes the tenant; there are no tenant presets or browser-chosen
 tenant IDs.
 
+### Managed OAuth backend
+
+OAuth infrastructure can be supplied as a first-class backend instead of a
+Hookfish database and provider registry:
+
+```ts
+import { createHookfish } from '@hookfish/api'
+import { HookfishBackend } from '@hookfish/backend'
+
+export const hookfish = await createHookfish({
+  auth,
+  backend: new HookfishBackend(arcadeAdapter),
+})
+```
+
+This mode is designed for services such as Arcade: the backend owns OAuth
+authorization, token storage, refresh, and revocation, while Hookfish maps the
+application's verified user and tenant into every backend call. Managed
+backends are intentionally OAuth-only. They cannot store caller-supplied static
+secrets, and they do not expose Hookfish's database-backed broker-token admin
+routes. Existing self-hosted `{ db, providers }` configurations continue to
+support both OAuth and static-secret providers.
+
 ## Frontend hooks
 
 `@hookfish/hooks` consumes the authenticated application API:

@@ -21,8 +21,9 @@ export default defineHookfishConfig({
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `db` | Required | Ready, promised, or request-aware database |
-| `providers` | Required | Trusted provider map, registry, source, or factory |
+| `db` | Required in self-hosted mode | Ready, promised, or request-aware database |
+| `providers` | Required in self-hosted mode | Trusted provider map, registry, source, or factory |
+| `backend` | Required in managed mode | OAuth-only `HookfishBackend` supplied instead of `db` and `providers` |
 | `auth` | Unset | Authenticate an application user and assert their current tenant |
 | `clientOrigins` | `[]` | Additional exact origins allowed to call `/api/client` |
 | `includeSwagger` | `true` | Serve `/api/openapi.json` and `/api/docs` |
@@ -30,6 +31,27 @@ export default defineHookfishConfig({
 | `trustedOrigins` | `[]` | Allow per-authorization `return_to` destinations |
 | `rawApiOrigins` | `[]` | Exceptional exact origins allowed to call the raw API with CORS |
 | `onEvent` | Unset | Receive best-effort lifecycle and audit events |
+
+Choose exactly one connection configuration:
+
+- `{ db, providers }` makes Hookfish own OAuth state, encrypted tokens, and
+  static-secret connections.
+- `{ backend: new HookfishBackend(adapter) }` delegates OAuth connections to a
+  managed service. This mode does not accept `db` or `providers`.
+
+```ts
+import { createHookfish } from '@hookfish/api'
+import { HookfishBackend } from '@hookfish/backend'
+
+const hookfish = await createHookfish({
+  auth,
+  backend: new HookfishBackend(arcadeAdapter),
+})
+```
+
+Managed backends cannot store static secrets and do not mount the
+database-backed `/admin/tokens` routes. See [managed OAuth
+backends](/deployment/managed-oauth-backends) for the lifecycle contract.
 
 Supplying `auth` mounts the application-facing API at `/api/client`. Hookfish
 does not mount that API without an auth provider. The auth provider returns a

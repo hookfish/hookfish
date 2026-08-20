@@ -1,0 +1,101 @@
+---
+title: "Managed OAuth backends"
+description: "Delegate OAuth connection storage and lifecycle to a managed service such as Arcade."
+---
+
+A managed OAuth backend replaces Hookfish's database and provider registry for
+connection operations. The managed service owns OAuth state, provider tokens,
+refresh, and revocation. Hookfish continues to own application authentication,
+tenant isolation, resource paths, and its HTTP and SDK interfaces.
+
+Use this mode when your organization already manages OAuth connections through
+a service such as Arcade and wants applications to delegate that access to
+agents through Hookfish.
+
+<Warning>
+  Managed backends are OAuth-only. They cannot store caller-supplied static
+  secrets. Use the self-hosted `{ db, providers }` configuration when your
+  application needs the generic `secret` provider.
+</Warning>
+
+## Configure the backend
+
+Install the API and backend packages:
+
+```bash
+pnpm add @hookfish/api @hookfish/backend
+```
+
+Pass a `HookfishBackend` instance instead of `db` and `providers`:
+
+```ts
+import { createHookfish } from '@hookfish/api'
+import { HookfishBackend } from '@hookfish/backend'
+import { arcadeAdapter } from './arcade-backend'
+import { applicationAuth } from './application-auth'
+
+export const hookfish = await createHookfish({
+  auth: applicationAuth,
+  backend: new HookfishBackend(arcadeAdapter),
+})
+```
+
+The adapter is trusted server code. It implements
+`HookfishBackendAdapter` with these OAuth connection operations:
+
+| Operation | Responsibility |
+| --- | --- |
+| `listProviders` | Return the OAuth providers available to this deployment |
+| `listConnections` | Return connection metadata visible to the authenticated principal |
+| `getConnection` | Resolve metadata for one connection path |
+| `authorize` | Start OAuth and return an authorization URL and expiration |
+| `access` | Return the current provider token or require authorization |
+| `disconnect` | Revoke or remove the managed connection |
+
+There is no static-secret write operation in the adapter contract.
+
+## Map application identity
+
+Configure an [application auth provider](/authentication/application-auth) so
+Hookfish can verify the user and current tenant. Every adapter call receives
+the resulting `principal`:
+
+```ts
+type ApplicationPrincipal = {
+  subject: string
+  tenantId: string
+  roles?: readonly string[]
+}
+```
+
+Map `{ subject, tenantId }` to a stable managed-service user identifier. Do not
+accept that identifier from browser input. Hookfish qualifies browser-facing
+connection paths with an internal tenant namespace before invoking the
+adapter, then removes that namespace from safe responses.
+
+## Keep Arcade at the OAuth boundary
+
+An Arcade-backed adapter should use Arcade to start authorization and retrieve
+the current provider token. Your trusted application then calls the provider's
+API or SDK directly. Hookfish does not require Arcade tool execution.
+
+When authorization is incomplete, return `authorization_required` with the
+Arcade authorization URL. Hookfish preserves the existing SDK error contract,
+and the browser facade converts the result into its safe authorization
+response. Arcade owns its OAuth callback; Hookfish does not store or exchange
+the resulting token.
+
+## Managed-mode differences
+
+- `PUT /connections/secret/:connection_path` returns
+  `static_secrets_unsupported`.
+- The authenticated browser facade rejects static-secret writes before calling
+  the adapter.
+- Database-backed broker-token administration under `/admin/tokens` is not
+  mounted.
+- `HookfishServer.migrate()` is a no-op because Hookfish has no connection
+  database to migrate.
+- Provider metadata remains available from `GET /connections/providers`.
+
+The regular [Hookfish SDK](/reference/packages) and browser facade continue to
+use the same connection endpoints in both modes.

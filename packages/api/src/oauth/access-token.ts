@@ -215,6 +215,16 @@ async function verifyApplicationAccessToken(
   }
 }
 
+/** Verify a stateless capability minted by Hookfish's application facade. */
+export async function authenticateApplicationAccessToken(
+  rootApiKey: string,
+  token: string,
+  now = Date.now(),
+): Promise<ScopedAccessGrant> {
+  if (!token.startsWith(`${APPLICATION_TOKEN_PREFIX}.`)) throw invalidToken()
+  return verifyApplicationAccessToken(rootApiKey, token, now)
+}
+
 /**
  * A scope is `**`, an exact resource path, or an explicit namespace ending in
  * `/**`. Exact and descendant access are intentionally distinct.

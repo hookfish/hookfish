@@ -4,8 +4,9 @@ description: "Compare Hookfish deployment targets, databases, and production tra
 ---
 
 `hookfish init` can scaffold five runtime targets. Choose the runtime that fits
-your existing infrastructure, then choose production storage independently
-where the target supports it.
+your existing infrastructure, then choose how Hookfish obtains connections.
+Self-hosted connections use Hookfish storage. A managed OAuth backend delegates
+connection storage and lifecycle to a service such as Arcade.
 
 | Backend | Local storage | Recommended production storage | Best fit |
 | --- | --- | --- | --- |
@@ -38,6 +39,19 @@ instances, or needs established backup and recovery tooling.
 On Cloudflare Workers, use Hyperdrive for PostgreSQL connections. The
 SQLite-backed Durable Objects adapter is experimental and is not the advised
 production storage path.
+
+## Choose the connection backend
+
+Use `{ db, providers }` when Hookfish should store encrypted OAuth tokens and
+static secrets. This mode supports PGlite, PostgreSQL, and the experimental
+Durable Objects adapter.
+
+Use `{ backend: new HookfishBackend(adapter) }` when a managed service should
+own OAuth state and provider tokens. Managed mode does not require a Hookfish
+connection database, but it does not support static-secret connections or
+database-backed broker-token administration. Continue with [managed OAuth
+backends](/deployment/managed-oauth-backends) for the adapter contract and
+Arcade boundary.
 
 ## Separate the dashboard from the backend
 

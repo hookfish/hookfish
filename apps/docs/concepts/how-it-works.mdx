@@ -7,6 +7,12 @@ Hookfish exposes one connection abstraction for OAuth tokens and static
 credentials. Trusted server code asks for access to a path. Hookfish either
 returns a usable secret or reports what the user must authorize.
 
+In self-hosted mode, Hookfish owns OAuth state and encrypted credential
+storage. A [managed OAuth backend](/deployment/managed-oauth-backends) can
+instead delegate OAuth state, provider tokens, refresh, and revocation to a
+service such as Arcade. Hookfish retains the same paths, tenant isolation, and
+HTTP contract in both modes.
+
 ## Connection identity
 
 A connection path ends with a trusted provider implementation:
@@ -63,6 +69,10 @@ after an upstream MCP server rejects a credential whose stored expiration has
 not passed.
 
 ## Lifecycle
+
+The following lifecycle describes self-hosted `{ db, providers }` mode. A
+managed backend implements the equivalent operations while owning its OAuth
+callback and token storage.
 
 <Steps>
   <Step title="Resolve the provider">

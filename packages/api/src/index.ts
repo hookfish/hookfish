@@ -4,10 +4,11 @@ import {
   type ConnectionProvider,
   type ProviderRegistry,
 } from '@hookfish/provider'
-import { Hono, type ExecutionContext } from 'hono'
+import { type ExecutionContext, Hono } from 'hono'
 import { cors } from 'hono/cors'
 
 import type { ApplicationAuthProvider } from './application-auth.js'
+import type { HookfishBackend } from './backend.js'
 import { createHookfishBackend, type HookfishBackendOptions } from './client.js'
 import { type DatabaseInput, migrateDatabase } from './db/binding.js'
 import type { HookfishEventHandler } from './events.js'
@@ -20,6 +21,7 @@ import {
   type ProviderInput,
 } from './provider-source.js'
 import { createAdminRoutes } from './routes/admin.js'
+import { createBackendConnectionRoutes } from './routes/backend-connections.js'
 import { createConnectionRoutes } from './routes/connections.js'
 import { statsRoutes } from './routes/stats.js'
 
@@ -28,11 +30,7 @@ export type { ProviderFactory, ProviderMap } from './provider-source.js'
 export type HookfishProviders<Bindings extends object = object> =
   ProviderInput<Bindings>
 
-export type HookfishConfig<Bindings extends object = object> = {
-  /** Fixed providers, a lazy provider source, or a request-aware factory. */
-  providers: HookfishProviders<Bindings>
-  /** Default database binding. A runtime host may override it in `HookfishServer.init`. */
-  db: DatabaseInput<Bindings>
+type HookfishCommonConfig<Bindings extends object = object> = {
   /** Application authentication and tenant authorization for `/api/client`. */
   auth?: ApplicationAuthProvider<Bindings>
   /** Additional exact origins allowed to call `/api/client`. Same-origin is always allowed. */
@@ -48,6 +46,27 @@ export type HookfishConfig<Bindings extends object = object> = {
   /** Best-effort lifecycle and audit event handler. */
   onEvent?: HookfishEventHandler
 }
+
+export type HookfishSelfHostedConfig<Bindings extends object = object> =
+  HookfishCommonConfig<Bindings> & {
+    /** Fixed providers, a lazy provider source, or a request-aware factory. */
+    providers: HookfishProviders<Bindings>
+    /** Default database binding. A runtime host may override it in `HookfishServer.init`. */
+    db: DatabaseInput<Bindings>
+    backend?: never
+  }
+
+export type HookfishManagedConfig<Bindings extends object = object> =
+  HookfishCommonConfig<Bindings> & {
+    /** OAuth connection lifecycle supplied by a managed service such as Arcade. */
+    backend: HookfishBackend<Bindings>
+    db?: never
+    providers?: never
+  }
+
+export type HookfishConfig<Bindings extends object = object> =
+  | HookfishSelfHostedConfig<Bindings>
+  | HookfishManagedConfig<Bindings>
 
 export function defineHookfishConfig<Bindings extends object = object>(
   config: HookfishConfig<Bindings>,
@@ -90,14 +109,35 @@ function validateHookfishOptions(
   validateExactOrigins('rawApiOrigins', options.rawApiOrigins ?? [])
 }
 
-function createApiRoutes<Bindings extends object>(
+type ApiRouteOptions<Bindings extends object> = Pick<
+  HookfishConfig<Bindings>,
+  'returnTo' | 'trustedOrigins' | 'rawApiOrigins' | 'onEvent'
+>
+
+function createSelfHostedApiRoutes<Bindings extends object>(
+  base: OpenAPIHono<BrokerContext<Bindings>>,
   resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
   database: DatabaseInput<Bindings>,
-  options: Pick<
-    HookfishConfig<Bindings>,
-    'returnTo' | 'trustedOrigins' | 'rawApiOrigins' | 'onEvent'
-  >,
+  options: ApiRouteOptions<Bindings>,
+) {
+  return base
+    .route('/stats', statsRoutes)
+    .route('/admin', createAdminRoutes(database, options.onEvent))
+    .route(
+      '/connections',
+      createConnectionRoutes(resolveProviders, database, options),
+    )
+}
+
+function createApiRoutes<Bindings extends object>(
+  resolveProviders:
+    | ((bindings: Bindings) => Promise<BoundProviderSource>)
+    | undefined,
+  database: DatabaseInput<Bindings> | undefined,
+  backend: HookfishBackend<Bindings> | undefined,
+  options: ApiRouteOptions<Bindings>,
   includeSwagger = true,
+  backendRootApiKey?: HookfishRuntime<Bindings>['rootApiKey'],
 ) {
   const base = new OpenAPIHono<BrokerContext<Bindings>>()
 
@@ -136,17 +176,21 @@ function createApiRoutes<Bindings extends object>(
     base.use('/connections/*', rawCors)
   }
 
-  const api = base
-    .route('/stats', statsRoutes)
-    .route('/admin', createAdminRoutes(database, options.onEvent))
-    .route(
+  if (backend) {
+    return base.route('/stats', statsRoutes).route(
       '/connections',
-      createConnectionRoutes(resolveProviders, database, {
-        ...options,
+      createBackendConnectionRoutes(backend, {
+        trustedOrigins: options.trustedOrigins,
+        rootApiKey: backendRootApiKey,
       }),
     )
+  }
 
-  return api
+  if (database && resolveProviders) {
+    return createSelfHostedApiRoutes(base, resolveProviders, database, options)
+  }
+
+  return base.route('/stats', statsRoutes)
 }
 
 /**
@@ -161,7 +205,12 @@ export async function createHookfishOpenAPIDocument(): Promise<unknown> {
   const unavailableProviders = async (): Promise<BoundProviderSource> => {
     throw new Error('The OpenAPI document does not resolve providers.')
   }
-  const api = createApiRoutes(unavailableProviders, unavailableDatabase, {})
+  const api = createApiRoutes(
+    unavailableProviders,
+    unavailableDatabase,
+    undefined,
+    {},
+  )
   const response = await api.request('/openapi.json')
   if (!response.ok) {
     throw new Error(`Failed to create Hookfish OpenAPI: ${response.status}`)
@@ -169,7 +218,8 @@ export async function createHookfishOpenAPIDocument(): Promise<unknown> {
   return response.json()
 }
 
-export type AppType = ReturnType<typeof createApiRoutes>
+/** Stable Hono RPC contract; managed backends implement the same connection API. */
+export type AppType = ReturnType<typeof createSelfHostedApiRoutes>
 
 export type HookfishRuntime<Bindings extends object = object> = {
   /** Label shown by `/api/client/health`. @default "fetch" */
@@ -199,27 +249,33 @@ function optionalExecutionContext(context: {
 export class HookfishServer<Bindings extends object = object> extends Hono<{
   Bindings: Bindings
 }> {
-  readonly db: DatabaseInput<Bindings>
+  readonly db: DatabaseInput<Bindings> | undefined
+  readonly backend: HookfishBackend<Bindings> | undefined
   readonly includeSwagger: boolean
   readonly returnTo: string | undefined
-  private readonly resolveProviders: (
-    bindings: Bindings,
-  ) => Promise<BoundProviderSource>
+  private readonly resolveProviders:
+    | ((bindings: Bindings) => Promise<BoundProviderSource>)
+    | undefined
   private constructor(
     options: HookfishConfig<Bindings>,
     runtime: HookfishRuntime<Bindings>,
-    resolveProviders: (bindings: Bindings) => Promise<BoundProviderSource>,
+    resolveProviders:
+      | ((bindings: Bindings) => Promise<BoundProviderSource>)
+      | undefined,
   ) {
     super()
     this.resolveProviders = resolveProviders
     this.db = options.db
+    this.backend = options.backend
     this.includeSwagger = options.includeSwagger ?? true
     this.returnTo = options.returnTo
     const api = createApiRoutes(
       resolveProviders,
       this.db,
+      this.backend,
       options,
       this.includeSwagger,
+      runtime.rootApiKey,
     )
     const rawApp = new OpenAPIHono<BrokerContext<Bindings>>().route('/api', api)
     const backend = createHookfishBackend({
@@ -232,6 +288,7 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
         runtime.rootApiKey ??
         ((bindings) =>
           requireBrokerApiKey(resolveBrokerConfig(bindings ?? {}))),
+      supportsStaticSecrets: !this.backend,
     })
 
     const handleRequest = (context: {
@@ -254,7 +311,9 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
     runtime: HookfishRuntime<Bindings> = {},
   ): Promise<HookfishServer<Bindings>> {
     validateHookfishOptions(options)
-    const resolveProviders = createProviderResolver(options.providers)
+    const resolveProviders = options.backend
+      ? undefined
+      : createProviderResolver(options.providers)
     return new HookfishServer<Bindings>(options, runtime, resolveProviders)
   }
 
@@ -263,18 +322,25 @@ export class HookfishServer<Bindings extends object = object> extends Hono<{
     providerId: string,
     bindings: Bindings,
   ): Promise<ConnectionProvider | undefined> => {
-    return (await this.resolveProviders(bindings)).getProvider(providerId)
+    const providers = await this.resolveProviders?.(bindings)
+    return providers?.getProvider(providerId)
   }
 
   /** Materialize the configured provider listing as an in-memory registry. */
   readonly getProviders = async (
     bindings: Bindings,
   ): Promise<ProviderRegistry> => {
-    return materializeProviderRegistry(await this.resolveProviders(bindings))
+    const providers = await this.resolveProviders?.(bindings)
+    if (!providers) {
+      throw new Error(
+        'Managed backends expose provider metadata through the connections API.',
+      )
+    }
+    return materializeProviderRegistry(providers)
   }
 
   readonly migrate = (bindings: Bindings): Promise<void> => {
-    return migrateDatabase(this.db, bindings)
+    return this.db ? migrateDatabase(this.db, bindings) : Promise.resolve()
   }
 }
 
@@ -295,12 +361,6 @@ export function isHookfish(value: unknown): value is HookfishServer<object> {
   )
 }
 
-export type {
-  ApplicationAuthProvider,
-  ApplicationAuthResult,
-  ApplicationPrincipal,
-} from './application-auth.js'
-
 export {
   createProviderSource,
   type ProviderSource,
@@ -309,6 +369,22 @@ export {
   type ProviderSourceQuery,
 } from '@hookfish/provider'
 export { z } from 'zod'
+export type {
+  ApplicationAuthProvider,
+  ApplicationAuthResult,
+  ApplicationPrincipal,
+} from './application-auth.js'
+export {
+  HookfishBackend,
+  type HookfishBackendAccessResult,
+  type HookfishBackendAdapter,
+  type HookfishBackendAuthorizationRequired,
+  type HookfishBackendConnection,
+  type HookfishBackendConnectionInput,
+  type HookfishBackendContext,
+  type HookfishBackendDisconnectResult,
+  type HookfishBackendProvider,
+} from './backend.js'
 export {
   type DatabaseBinding,
   type DatabaseInput,
