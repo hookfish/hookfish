@@ -1,0 +1,222 @@
+---
+title: "Arcade backend"
+description: "Run Hookfish against Arcade's managed token vault and provider catalog with one API key."
+---
+
+<Note>
+  This page is a design proposal. `@hookfish/backend-arcade` does not exist yet,
+  and this document is written in the published documentation style so it can
+  move to `apps/docs/deployment/arcade.mdx` unchanged once the package ships.
+  Treat every code sample as a proposed API, not a released one.
+</Note>
+
+The Arcade backend delegates the credential vault and the OAuth flow to
+[Arcade](https://www.arcade.dev). You supply one API key. Hookfish keeps the
+same API surface, the same connection paths, the same SDK, and the same
+dashboard.
+
+Choose it when you want more OAuth providers without registering an OAuth
+application for each one, and when you would rather not operate a token vault.
+
+## What changes
+
+| Concern | Self-hosted backend | Arcade backend |
+| --- | --- | --- |
+| OAuth application registration | Required per provider | Optional to start; recommended for production |
+| Provider access tokens | Encrypted in your database | Held in Arcade's vault |
+| Database | PGlite or PostgreSQL | None |
+| `OAUTH_ENCRYPTION_KEY` | Required | Not used |
+| Key rotation | You own it | Arcade owns it |
+| `HOOKFISH_API_KEY` | Required | Required |
+
+Hookfish never returns a provider access token to browser code on either
+backend. The browser facade at `/api/client` exposes the same explicit
+operations in both modes.
+
+## Set up the Arcade backend
+
+<Steps>
+  <Step title="Create an Arcade API key">
+    Sign in to the Arcade dashboard and create an API key. Note the provider
+    IDs you intend to use, such as `google` or `slack`.
+  </Step>
+
+  <Step title="Install the backend package">
+    ```bash
+    pnpm add @hookfish/backend-arcade
+    ```
+  </Step>
+
+  <Step title="Point Hookfish at Arcade">
+    Replace the `db` and `providers` entries in `hookfish.config.ts` with a
+    single backend:
+
+    ```ts title="hookfish.config.ts"
+    import { defineHookfishConfig } from '@hookfish/api'
+    import { arcade } from '@hookfish/backend-arcade'
+
+    const frontendUrl = process.env.HOOKFISH_FRONTEND_URL ?? 'http://127.0.0.1:5173'
+
+    export default defineHookfishConfig({
+      backend: arcade(),
+      returnTo: frontendUrl,
+      trustedOrigins: [frontendUrl],
+    })
+    ```
+
+    `arcade()` reads `ARCADE_API_KEY` from the runtime bindings, falling back to
+    the ambient environment. Pass an explicit key or a resolver when the value
+    comes from somewhere else:
+
+    ```ts
+    backend: arcade({ apiKey: (bindings) => bindings.ARCADE_API_KEY })
+    ```
+
+    You no longer need `db`, `providers`, or `OAUTH_ENCRYPTION_KEY`. Keep
+    `HOOKFISH_API_KEY`: it still guards `/api/*` and signs the short-lived
+    capabilities the browser facade mints.
+  </Step>
+
+  <Step title="Set the environment">
+    ```bash title=".env"
+    ARCADE_API_KEY=arc_...
+    HOOKFISH_API_KEY=...
+    ```
+  </Step>
+</Steps>
+
+## Reference providers by name
+
+Connection paths do not change. The final segment still selects the provider,
+and on the Arcade backend that segment is the Arcade provider ID:
+
+```ts
+const credential = await hookfish.connections.access('team/acme/slack')
+```
+
+`team/acme` is the namespace and `slack` is the Arcade provider. Nothing in
+`hookfish.config.ts` mentions Slack. Add a provider in the Arcade dashboard and
+it becomes reachable immediately.
+
+Arcade's pre-built providers include a shared OAuth application, so a provider
+works before you register anything. Register your own OAuth application in
+Arcade before production: a shared application requests a fixed scope list,
+shares rate limits with other Arcade customers, and shows Arcade's name on the
+consent screen instead of yours. Registering your own moves the client ID and
+secret into Arcade rather than into this configuration file, and Arcade
+continues to own the flow, the refresh, and the vault.
+
+<Note>
+  Hookfish needs no OAuth application for a provider reachable as a remote MCP
+  server, because it registers a client through the server's own discovery
+  metadata. Those providers are unsupported on this backend, so compare against
+  a [remote MCP connection](/providers/remote-mcp) before assuming Arcade
+  removes registration work.
+</Note>
+
+Call `GET /api/connections/providers` to list what the configured Arcade
+organization offers. The dashboard uses the same endpoint, so its provider
+picker populates from Arcade rather than from your configuration file.
+
+<Tip>
+  Arcade provider IDs often contain hyphens, such as `my-google-provider`.
+  Hookfish provider IDs are lower-camel identifiers. Prefer hyphen-free IDs in
+  Arcade so the same string works in both places.
+</Tip>
+
+## Authorize a connection
+
+Server-side authorization is unchanged. The first access returns
+`401 authorization_required` with a fresh `authorize_url`, and a retry after
+approval succeeds:
+
+```bash
+curl https://app.example.com/inbox
+# {"error":{"code":"authorization_required","authorize_url":"https://accounts.arcade.dev/..."}}
+```
+
+The `authorize_url` is hosted by Arcade instead of the upstream provider, and
+Arcade redeems the authorization code. Your Hookfish deployment never receives
+an OAuth callback, so `/api/connections/callback/{provider_id}` is unused on
+this backend.
+
+One consequence is worth planning for. Because no callback arrives, Hookfish
+cannot redirect the browser to `return_to` after approval. The dashboard polls
+for completion instead, which means a user who approves access in a new tab
+returns to a page that updates shortly afterward rather than one that
+redirects immediately.
+
+<Warning>
+  Provider access tokens are readable only by your trusted server code, exactly
+  as on a self-hosted backend. Keep any route that calls `access` behind your
+  application's authentication.
+</Warning>
+
+## What the Arcade backend does not support
+
+Some Hookfish capabilities depend on running the OAuth flow yourself or on
+owning storage. Configure a self-hosted backend when you need them.
+
+| Capability | Status | Why |
+| --- | --- | --- |
+| Remote MCP providers | Unsupported | Needs dynamic client registration per server |
+| Custom OAuth 2.0 providers not in Arcade | Unsupported | Arcade resolves the provider catalog |
+| Static secret providers | Unsupported | Needs a secret store the backend does not own |
+| Named broker access tokens | Unsupported | Revocation needs a persisted grant record |
+| Root and application authentication | Supported | Verified by signature, no storage required |
+| Resource scopes | Supported | Enforced by Hookfish before every operation |
+
+Hookfish validates this at startup. Configuring a remote MCP provider against
+the Arcade backend fails immediately with a clear message rather than failing
+at a user's first authorization attempt.
+
+Because named broker access tokens are unavailable, the admin token endpoints
+under `/api/admin/tokens` report an error on this backend. Use
+`HOOKFISH_API_KEY` for trusted server calls, and configure an [application auth
+provider](/authentication/application-auth) for per-user access through the
+browser facade. Neither path needs a database.
+
+## Switch an existing deployment
+
+Existing connections stay where they are. Provider access tokens already in
+your database remain encrypted under your `OAUTH_ENCRYPTION_KEY`, and Arcade
+cannot read them.
+
+For continuity, keep your current deployment serving the namespaces that
+already have connections, and send new namespaces to an Arcade-backed
+deployment. Existing connections keep refreshing against your database, new
+connections land in Arcade's vault, and no user is forced to reconnect on the
+day you switch.
+
+<Warning>
+  Replacing your backend outright does not move credentials. Every user would
+  authorize again through Arcade, because there is no import path from a
+  Hookfish vault into Arcade's vault.
+</Warning>
+
+## Leave the Arcade backend
+
+On the Arcade backend, Arcade holds both the credentials and the connection
+catalog, so moving away is a re-authorization rather than a data migration.
+Before you commit to it in production, confirm two things:
+
+1. You can export your connection catalog from Arcade, so you keep the record
+   of which namespaces connected to which providers.
+2. Your users can tolerate reconnecting once if you later move to a
+   self-hosted backend.
+
+A self-hosted backend keeps both the catalog and the credentials in a database
+you control. That remains the right choice when you need remote MCP providers,
+your own OAuth branding, or custody of the encryption key.
+
+## Environment reference
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `ARCADE_API_KEY` | Yes | Authenticates Hookfish to Arcade |
+| `HOOKFISH_API_KEY` | Yes | Guards `/api/*` and signs browser capabilities |
+| `OAUTH_REDIRECT_BASE_URL` | No | Unused; Arcade owns the redirect URI |
+| `OAUTH_ENCRYPTION_KEY` | No | Unused; Arcade holds the credentials |
+
+Next, read [Choose a deployment backend](/deployment/choose-backend) and
+[Application authentication](/authentication/application-auth).
