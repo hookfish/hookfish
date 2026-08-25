@@ -1,0 +1,3 @@
+# hookfish
+
+Scalar Docs project
